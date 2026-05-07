@@ -1,5 +1,6 @@
 .env
-venv_pentest/
 __pycache__/
-*.json
-.DS_Store
+venv_pentest/
+node_modules/
+.next/
+*.log
