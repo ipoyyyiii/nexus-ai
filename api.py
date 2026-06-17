@@ -1,12 +1,21 @@
 import os
 import uuid
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+import asyncio
+import json
+from datetime import datetime
+from typing import Optional, Dict, Any
+
+from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from dotenv import load_dotenv
 from supabase import create_client, Client
-
+from langchain_anthropic import ChatAnthropic
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import HumanMessage
 from crewai import Agent, Task, Crew
+
 from custom_tools import (
     baca_log_burp, tembak_payload, recon_target,
     scan_sql_injection, detect_xss_csrf, analyze_ssl_tls,
@@ -14,19 +23,14 @@ from custom_tools import (
     test_api_security, scan_lfi_rfi, test_header_injection,
     get_execution_logs, clear_execution_logs
 )
-from langchain_anthropic import ChatAnthropic
-from langchain_openai import ChatOpenAI
-from typing import Optional
-from langchain_core.messages import HumanMessage
 
 load_dotenv()
 
-# --- INISIALISASI SUPABASE ---
 url: str = os.environ.get("SUPABASE_URL")
 key: str = os.environ.get("SUPABASE_KEY")
 supabase: Client = create_client(url, key)
 
-app = FastAPI(title="AI Pentest OS API", version="5.0 - Advanced Logging Edition")
+app = FastAPI(title="Nexus AI Pentest API", version="6.0 - Async Edition")
 
 app.add_middleware(
     CORSMiddleware,
@@ -36,243 +40,380 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ============================================================
+# IN-MEMORY JOB STORE
+# Menyimpan status setiap pentest job secara thread-safe.
+# Di production ganti dengan Redis.
+# ============================================================
+jobs: Dict[str, Dict[str, Any]] = {}
+
+# ============================================================
+# HUMAN-IN-THE-LOOP CHECKPOINT STORE
+# ============================================================
+pending_checkpoints: Dict[str, asyncio.Future] = {}
+
+
+# ============================================================
+# MODELS
+# ============================================================
 class PentestRequest(BaseModel):
-    target: str
+    target: str           # URL eksplisit, sudah divalidasi di frontend
     goal: str
     session_id: Optional[str] = None
 
-class ImageRequest(BaseModel): 
-    image_data: str 
+class ImageRequest(BaseModel):
+    image_data: str
     session_id: Optional[str] = None
 
-# --- HELPER: SIMPAN PERCAKAPAN KE SUPABASE ---
-def save_message_to_cloud(session_id, role, content):
-    supabase.table("chat_messages").insert({
-        "session_id": session_id,
-        "role": role,
-        "content": content
-    }).execute()
+class CheckpointResponse(BaseModel):
+    job_id: str
+    approved: bool
 
-# --- ENDPOINT: AMBIL DAFTAR SESSION (SIDEBAR) ---
+
+# ============================================================
+# HELPERS
+# ============================================================
+def save_message(session_id: str, role: str, content: str):
+    try:
+        supabase.table("chat_messages").insert({
+            "session_id": session_id,
+            "role": role,
+            "content": content
+        }).execute()
+    except Exception as e:
+        print(f"[WARN] Supabase save failed: {e}")
+
+def update_job(job_id: str, **kwargs):
+    if job_id in jobs:
+        jobs[job_id].update(kwargs)
+        jobs[job_id]["updated_at"] = datetime.now().isoformat()
+
+
+# ============================================================
+# BACKGROUND PENTEST RUNNER
+# Ini yang dulu blocking sekarang jalan di background thread.
+# ============================================================
+def run_pentest_job(job_id: str, target: str, goal: str, session_id: str):
+    """
+    Dijalankan di background thread oleh FastAPI BackgroundTasks.
+    Update jobs[job_id] secara berkala agar bisa di-poll dari frontend.
+    """
+    try:
+        update_job(job_id, status="running", message="Inisialisasi agents...")
+        clear_execution_logs()
+
+        llm_sonnet = ChatAnthropic(
+            model_name="claude-3-5-sonnet-20240620",
+            anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"),
+            temperature=0.2
+        )
+        llm_llama = ChatOpenAI(
+            model="meta-llama/llama-3-70b-instruct",
+            base_url="https://openrouter.ai/api/v1",
+            api_key=os.environ.get("OPENROUTER_API_KEY"),
+            temperature=0.5
+        )
+
+        # --- AGENTS ---
+        recon = Agent(
+            role="Advanced Reconnaissance & Intel Gatherer",
+            goal="Deep recon: infrastruktur, tech-stack, WAF, DNS, SSL.",
+            backstory="Intel Red Team level elit. Ngebedah server pakai fingerprinting tingkat tinggi.",
+            llm=llm_sonnet,
+            tools=[recon_target, enumerate_dns_subdomains, analyze_ssl_tls],
+            verbose=True
+        )
+
+        analis = Agent(
+            role="Senior Vulnerability Strategist",
+            goal="Rancang payload presisi berdasarkan intel recon.",
+            backstory="Mastermind eksploitasi. Payload-nya surgical, WAF-aware.",
+            llm=llm_sonnet,
+            tools=[baca_log_burp, scan_sql_injection, detect_xss_csrf, scan_lfi_rfi, test_header_injection],
+            verbose=True
+        )
+
+        eksekutor = Agent(
+            role="Active Exploit Executor",
+            goal="Eksekusi payload, test API, analisis password.",
+            backstory="Eksekutor berdarah dingin. Laporkan response apa adanya.",
+            llm=llm_llama,
+            tools=[tembak_payload, test_api_security, analyze_password_strength],
+            verbose=True
+        )
+
+        assessor = Agent(
+            role="Chief Information Security Officer (CISO)",
+            goal="Risk assessment dan laporan eksekutif.",
+            backstory="Ahli CIA Triad + CVSS scoring.",
+            llm=llm_sonnet,
+            verbose=True
+        )
+
+        # --- TASKS ---
+        update_job(job_id, message="Phase 1: Reconnaissance...")
+
+        task_recon = Task(
+            description=f"Active Recon target: {target}. Petakan ports, tech-stack, WAF, DNS, SSL.",
+            expected_output="Laporan intelijen infrastruktur lengkap.",
+            agent=recon
+        )
+
+        task_analis = Task(
+            description=f"Target: {target} | Goal: {goal}\nBerdasarkan recon, rancang serangan: SQLi, XSS, LFI, Header Injection.",
+            expected_output="Instruksi eksekusi detail + vulnerability assessment.",
+            agent=analis
+        )
+
+        task_eksekusi = Task(
+            description="Eksekusi payload dari Analis. Test API endpoints. Report response mentah.",
+            expected_output="Log HTTP response + API security findings.",
+            agent=eksekutor
+        )
+
+        task_assessor = Task(
+            description=(
+                "Analisis semua findings. Buat laporan:\n"
+                "1. Kerentanan + deskripsi\n"
+                "2. Dampak CIA Triad\n"
+                "3. CVSS score\n"
+                "4. Mitigasi\n"
+                "5. PoC jika ada"
+            ),
+            expected_output="Laporan eksekutif risk assessment.",
+            agent=assessor
+        )
+
+        def on_step(step):
+            try:
+                msg = str(getattr(step, "thought", step))[:200]
+                update_job(job_id, message=msg)
+            except Exception:
+                pass
+
+        crew = Crew(
+            agents=[recon, analis, eksekutor, assessor],
+            tasks=[task_recon, task_analis, task_eksekusi, task_assessor],
+            step_callback=on_step,
+            verbose=True
+        )
+
+        update_job(job_id, message="Phase 2: Scanning vulnerabilities...")
+        result = crew.kickoff()
+        report = str(result)
+
+        logs_data = get_execution_logs()
+        save_message(session_id, "agent", report)
+
+        update_job(
+            job_id,
+            status="done",
+            message="Selesai.",
+            report=report,
+            logs=logs_data["logs"],
+            summary=logs_data["summary"]
+        )
+
+    except Exception as e:
+        err = str(e)
+        save_message(session_id, "agent", f"ERROR: {err}")
+        update_job(job_id, status="error", message=err, report=None)
+
+
+# ============================================================
+# ENDPOINTS
+# ============================================================
+
 @app.get("/sessions")
-async def get_all_sessions():
+async def get_sessions():
     try:
         res = supabase.table("sessions").select("*").order("created_at", desc=True).execute()
         return res.data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- ENDPOINT BARU: GET EXECUTION LOGS (Real-Time) ---
+
+@app.post("/pentest")
+async def start_pentest(req: PentestRequest, background_tasks: BackgroundTasks):
+    """
+    Langsung return job_id. Pentest jalan di background.
+    Frontend poll /job/{job_id} atau stream dari /job/{job_id}/stream.
+    """
+    # Buat atau ambil session
+    session_id = req.session_id
+    if not session_id:
+        res = supabase.table("sessions").insert({
+            "title": f"Scan: {req.target}"
+        }).execute()
+        session_id = res.data[0]["id"]
+
+    save_message(session_id, "user", f"[TARGET] {req.target}\n[GOAL] {req.goal}")
+
+    job_id = str(uuid.uuid4())
+    jobs[job_id] = {
+        "job_id": job_id,
+        "session_id": session_id,
+        "target": req.target,
+        "goal": req.goal,
+        "status": "queued",          # queued | running | waiting_hitl | done | error
+        "message": "Mengantre...",
+        "report": None,
+        "logs": [],
+        "summary": {},
+        "created_at": datetime.now().isoformat(),
+        "updated_at": datetime.now().isoformat(),
+    }
+
+    background_tasks.add_task(
+        run_pentest_job, job_id, req.target, req.goal, session_id
+    )
+
+    return {"job_id": job_id, "session_id": session_id, "status": "queued"}
+
+
+@app.get("/job/{job_id}")
+async def get_job(job_id: str):
+    """Poll status job."""
+    if job_id not in jobs:
+        raise HTTPException(status_code=404, detail="Job tidak ditemukan")
+    return jobs[job_id]
+
+
+@app.get("/job/{job_id}/stream")
+async def stream_job(job_id: str):
+    """
+    SSE endpoint — frontend subscribe ke sini untuk dapat update real-time
+    tanpa perlu polling manual.
+    """
+    if job_id not in jobs:
+        raise HTTPException(status_code=404, detail="Job tidak ditemukan")
+
+    async def event_generator():
+        last_message = ""
+        last_status = ""
+        while True:
+            job = jobs.get(job_id, {})
+            status = job.get("status", "")
+            message = job.get("message", "")
+
+            # Kirim event kalau ada perubahan
+            if message != last_message or status != last_status:
+                payload = {
+                    "status": status,
+                    "message": message,
+                    "logs": job.get("logs", []),
+                    "summary": job.get("summary", {}),
+                }
+                if status in ("done", "error"):
+                    payload["report"] = job.get("report")
+
+                yield f"data: {json.dumps(payload)}\n\n"
+                last_message = message
+                last_status = status
+
+            if status in ("done", "error"):
+                yield "data: {\"event\": \"close\"}\n\n"
+                break
+
+            await asyncio.sleep(1)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        }
+    )
+
+
+# ============================================================
+# HUMAN-IN-THE-LOOP CHECKPOINTS
+# ============================================================
+
+@app.post("/checkpoint/request")
+async def request_checkpoint(job_id: str, action: str, context: str):
+    """
+    Agent memanggil ini saat akan melakukan tindakan berbahaya.
+    Endpoint ini BLOCKING sampai user respond atau timeout 5 menit.
+    """
+    if job_id not in jobs:
+        raise HTTPException(status_code=404, detail="Job tidak ditemukan")
+
+    loop = asyncio.get_event_loop()
+    future = loop.create_future()
+    pending_checkpoints[job_id] = future
+
+    update_job(
+        job_id,
+        status="waiting_hitl",
+        message=f"Menunggu persetujuan: {action}",
+        checkpoint={
+            "action": action,
+            "context": context,
+            "requested_at": datetime.now().isoformat()
+        }
+    )
+
+    try:
+        approved = await asyncio.wait_for(future, timeout=300)
+        update_job(job_id, status="running", checkpoint=None)
+        return {"approved": approved}
+    except asyncio.TimeoutError:
+        update_job(job_id, status="running", checkpoint=None)
+        pending_checkpoints.pop(job_id, None)
+        return {"approved": False, "reason": "timeout"}
+
+
+@app.post("/checkpoint/respond")
+async def respond_checkpoint(data: CheckpointResponse):
+    """Frontend kirim approved=True/False ke sini."""
+    future = pending_checkpoints.pop(data.job_id, None)
+    if not future or future.done():
+        raise HTTPException(status_code=404, detail="Tidak ada checkpoint aktif")
+    future.set_result(data.approved)
+    return {"ok": True}
+
+
+# ============================================================
+# LOGS
+# ============================================================
+
 @app.get("/logs")
 async def get_logs():
-    """
-    Endpoint ini dipangin secara periodik dari frontend.
-    Return semua execution logs dari tools yang sedang/udah jalan.
-    """
-    try:
-        logs_data = get_execution_logs()
-        return {
-            "status": "success",
-            "logs": logs_data["logs"],
-            "summary": logs_data["summary"]
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    data = get_execution_logs()
+    return {"status": "success", "logs": data["logs"], "summary": data["summary"]}
 
-# --- ENDPOINT BARU: CLEAR EXECUTION LOGS ---
 @app.post("/logs/clear")
 async def clear_logs():
-    """Clear semua execution logs untuk fresh start."""
-    try:
-        clear_execution_logs()
-        return {"status": "success", "message": "Logs cleared"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-# ==========================================
-# ENDPOINT UTAMA: PENTEST EXECUTION (UPGRADED)
-# ==========================================
-@app.post("/pentest")
-async def execute_pentest(req: PentestRequest):
-    # 1. Tentukan Session ID (Bikin baru kalau tidak ada)
-    current_session_id = req.session_id
-    if not current_session_id:
-        new_session = supabase.table("sessions").insert({
-            "title": f"Scan: {req.target}" 
-        }).execute()
-        current_session_id = new_session.data[0]['id']
-
-    # 2. Simpan input user ke memori cloud
-    save_message_to_cloud(current_session_id, "user", req.goal)
-    
-    # 3. Clear logs untuk execution baru
     clear_execution_logs()
+    return {"status": "success"}
 
-    def log_step(step):
-        try:
-            from custom_tools import exec_logger
-            exec_logger.add_log("AI_THOUGHT", "PROCESSING", str(step.thought))
-        except:
-            pass
+@app.get("/export/logs.json")
+async def export_logs():
+    return get_execution_logs()
 
-    try:
-        # --- LLM CONFIG ---
-        llm_sonnet = ChatAnthropic(
-            model_name="claude-3-5-sonnet-20240620", 
-            anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"),
-            temperature=0.2
-        )
-        llm_llama = ChatOpenAI(
-            model="meta-llama/llama-3-70b-instruct", 
-            base_url="https://openrouter.ai/api/v1", 
-            api_key=os.environ.get("OPENROUTER_API_KEY"),
-            temperature=0.5
-        )
 
-        # --- AGEN-AGEN ELIT (UPGRADED DENGAN 11 TOOLS) ---
-        recon = Agent(
-            role='Advanced Reconnaissance & Intel Gatherer',
-            goal='Melakukan Deep Recon untuk memetakan infrastruktur, Tech-Stack, Port, dan WAF target.',
-            backstory='Lo adalah intel Red Team level elit. Lo nggak cuma ngecek web nyala atau mati, tapi lo ngebedah jeroan servernya pakai teknik fingerprinting tingkat tinggi sebelum tim lain bergerak.',
-            llm=llm_sonnet, 
-            tools=[
-                recon_target, 
-                enumerate_dns_subdomains,
-                analyze_ssl_tls
-            ], 
-            verbose=True
-        )
-        
-        analis = Agent(
-            role='Senior Vulnerability Strategist',
-            goal='Menganalisis data intelijen (Tech-Stack, Ports, WAF) dan meracik payload yang 100% akurat dengan arsitektur target.',
-            backstory='Lo adalah mastermind eksploitasi. Kalau tim Recon bilang target pakai PHP, lo nggak bakal buang waktu ngirim payload Node.js. Lo sangat memperhitungkan WAF dan merancang teknik stealth.',
-            llm=llm_sonnet, 
-            tools=[
-                baca_log_burp,
-                scan_sql_injection,
-                detect_xss_csrf,
-                scan_lfi_rfi,
-                test_header_injection
-            ], 
-            verbose=True
-        )
-        
-        eksekutor = Agent(
-            role='Active Exploit Executor',
-            goal='Menembakkan HTTP Request berdasarkan instruksi presisi dari Analis.',
-            backstory='Eksekutor berdarah dingin. Lo mengeksekusi payload tanpa ragu menggunakan tool "Tembak Request HTTP" dan melaporkan respons server apa adanya.',
-            llm=llm_llama, 
-            tools=[
-                tembak_payload,
-                test_api_security,
-                analyze_password_strength
-            ], 
-            verbose=True
-        )
-        
-        assessor = Agent(
-            role='Chief Information Security Officer (CISO)',
-            goal='Menilai dampak bisnis dari hasil eksploitasi dan menyusun laporan eksekutif.',
-            backstory='Ahli Risk Management. Mampu menerjemahkan celah teknis (dari response body/status code) menjadi laporan dampak CIA Triad dan kalkulasi skor CVSS.',
-            llm=llm_sonnet, 
-            verbose=True
-        )
-
-        # --- TASKS (TETAP SAMA TAPI LEBIH POWERFUL) ---
-        task_recon = Task(
-            description=f"Lakukan Active Recon Target ke URL: {req.target}. Petakan semua Open Ports, Tech-Stack, dan status WAF. Gunakan DNS enumeration, SSL analysis untuk insight maksimal.",
-            expected_output="Laporan intelijen infrastruktur, postur keamanan, DNS records, dan SSL certificate analysis.", 
-            agent=recon
-        )
-        
-        task_analis = Task(
-            description=f"Berdasarkan URL {req.target}, Goal '{req.goal}', dan laporan intelijen dari Recon, rancang strategi serangan komprehensif. Test SQLi, XSS/CSRF, LFI/RFI, Header Injection. Sesuaikan payload spesifik dengan Tech-Stack target dan hindari WAF.",
-            expected_output="Instruksi eksekusi detail (URL, method, headers, body payload) + hasil vulnerability assessment dari multiple vectors.", 
-            agent=analis
-        )
-        
-        task_eksekusi = Task(
-            description="Gunakan tool Tembak Request HTTP untuk mengeksekusi instruksi Analis secara live. Laporkan status code dan response body seakurat mungkin. Test API security dan analyze response patterns.",
-            expected_output="Log HTTP Response mentah dari server target setelah dieksploitasi + API security findings.", 
-            agent=eksekutor
-        )
-        
-        task_assessor = Task(
-            description="Analisis bukti HTTP Response dari Eksekutor + semua findings dari vulnerability scanners. Buat laporan profesional berisi:\n1. Nama & Deskripsi Kerentanan (SQLi, XSS, LFI, Header Injection, API issues, SSL/TLS weaknesses)\n2. Dampak terhadap CIA Triad (Confidentiality, Integrity, Availability)\n3. Estimasi Skor CVSS (Low/Medium/High/Critical)\n4. Saran Mitigasi Taktis",
-            expected_output="Laporan eksekutif risk assessment komprehensif dengan semua findings.", 
-            agent=assessor
-        )
-
-        crew = Crew(
-            agents=[recon, analis, eksekutor, assessor], 
-            tasks=[task_recon, task_analis, task_eksekusi, task_assessor], 
-            step_callback=log_step,
-            verbose=True
-        )
-        
-        hasil = crew.kickoff()
-        report_text = str(hasil)
-
-        # 4. Simpan balasan AI ke cloud
-        save_message_to_cloud(current_session_id, "agent", report_text)
-
-        return {
-            "status": "success",
-            "session_id": current_session_id,
-            "target": req.target,
-            "report": report_text
-        }
-
-    except Exception as e:
-        error_msg = str(e)
-        save_message_to_cloud(current_session_id, "agent", f"CRITICAL ERROR: {error_msg}")
-        raise HTTPException(status_code=500, detail=error_msg)
+# ============================================================
+# IMAGE ANALYSIS
+# ============================================================
 
 @app.post("/analyze-image")
 async def analyze_image(req: ImageRequest):
-    # Tentukan session (pake yang ada atau bikin baru)
-    current_session_id = req.session_id or str(uuid.uuid4())
-    
+    session_id = req.session_id or str(uuid.uuid4())
     try:
-        # Bersihin data base64 (buang header "data:image/jpeg;base64,")
-        base64_image = req.image_data.split(",")[1] if "," in req.image_data else req.image_data
-        
-        # Pake Sonnet 3.5 karena dia jago baca gambar (Multimodal)
-        llm_vision = ChatAnthropic(model="claude-3-5-sonnet-20240620", anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"))
-        
-        # Rakit perintah buat si AI
-        message = HumanMessage(
-            content=[
-                {"type": "text", "text": "Analyze this image technically. If it's a security dashboard, find vulnerabilities. If it's hardware, identify parts and issues."},
-                {
-                    "type": "image_url",
-                    "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"},
-                },
-            ]
+        b64 = req.image_data.split(",")[1] if "," in req.image_data else req.image_data
+        llm = ChatAnthropic(
+            model="claude-3-5-sonnet-20240620",
+            anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY")
         )
-        
-        response = llm_vision.invoke([message])
-        analysis_result = str(response.content)
-
-        # Simpan ke cloud biar log-nya sinkron
-        save_message_to_cloud(current_session_id, "agent", f"[VISION_ANALYSIS]: {analysis_result}")
-
-        return {"status": "success", "analysis": analysis_result}
-        
-    except Exception as e:
-        print(f"Vision Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ==========================================
-# ENDPOINT: DOWNLOAD EXECUTION REPORT AS JSON
-# ==========================================
-@app.get("/export/logs.json")
-async def export_logs_json():
-    """Export semua execution logs dalam format JSON untuk archiving."""
-    try:
-        logs_data = get_execution_logs()
-        return logs_data
+        message = HumanMessage(content=[
+            {"type": "text", "text": "Analyze this image for security vulnerabilities, misconfigurations, or interesting attack surface. Be specific and technical."},
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}
+        ])
+        response = llm.invoke([message])
+        analysis = str(response.content)
+        save_message(session_id, "agent", f"[VISION]: {analysis}")
+        return {"status": "success", "analysis": analysis}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

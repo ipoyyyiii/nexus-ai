@@ -1,4 +1,5 @@
 import os
+##from langchain_community.llms import Ollama
 from dotenv import load_dotenv
 from crewai import Agent, Task, Crew
 from langchain_anthropic import ChatAnthropic
@@ -19,20 +20,34 @@ load_dotenv()
 # ==========================================
 # 2. SETUP OTAK AI (LLM)
 # ==========================================
-llm_sonnet = ChatAnthropic(
-    model="claude-3-5-sonnet-20240620", 
-    temperature=0.2
+llm_sonnet = ChatOpenAI(
+    model="openrouter/z-ai/glm-4.5-air:free",
+    openai_api_proxy=os.environ.get("OPENAI_API_KEY"),
+    base_url="https://openrouter.ai/api/v1",
+    default_headers={
+        "HTTP-Referer": "http://localhost:3000",
+        "X-Title": "Nexus Pentest AI"
+    }
+
 )
 
-llm_llama = ChatOpenAI(
-    openai_api_base="https://openrouter.ai/api/v1",
-    openai_api_key=os.environ.get("OPENROUTER_API_KEY"),
-    model_name="meta-llama/llama-3-70b-instruct",
-    temperature=0.5 
-)
+llm_local = llm_sonnet
+
+
+##llm_sonnet = ChatAnthropic(
+##    model="claude-3-5-sonnet-20240620", 
+##    temperature=0.2
+##)
+
+##llm_llama = ChatOpenAI(
+##    openai_api_base="https://openrouter.ai/api/v1",
+##    openai_api_key=os.environ.get("OPENROUTER_API_KEY"),
+##   model_name="meta-llama/llama-3-70b-instruct",
+##    temperature=0.5 
+##)
 
 # ==========================================
-# 3. BENTUK TIM (4 Divisi Red Team - Holy Agent Version)
+# 3. BENTUK TIM (4 Divisi Red Team)
 # ==========================================
 tim_recon = Agent(
     role='Advanced Reconnaissance & Intel Gatherer',
@@ -66,7 +81,7 @@ tim_eksekutor = Agent(
     role='Active Exploit Executor & API Security Tester',
     goal='Menembakkan HTTP Request berdasarkan instruksi presisi dari Analis. Test API endpoints dan analyze password strength.',
     backstory='Eksekutor berdarah dingin. Lo mengeksekusi payload tanpa ragu menggunakan tool "Tembak Request HTTP" dan melaporkan respons server apa adanya. Lo juga expert dalam API security testing dan password analysis.',
-    llm=llm_llama,
+    llm=llm_local,
     tools=[
         tembak_payload,
         test_api_security,
@@ -110,7 +125,8 @@ if __name__ == "__main__":
     tugas_analis = Task(
         description=f"Berdasarkan URL {input_target}, Goal '{input_goal}', dan laporan intelijen dari Recon, rancang strategi serangan komprehensif. Test untuk:\n1. SQL Injection pada semua parameters\n2. XSS dan CSRF vulnerabilities\n3. Local/Remote File Inclusion (LFI/RFI)\n4. HTTP Header Injection\nSesuaikan payload dengan Tech-Stack target dan hindari WAF triggers.",
         expected_output="Instruksi eksekusi detail (URL, method, headers, body payload) + hasil dari semua vulnerability scanners.",
-        agent=tim_analis
+        agent=tim_analis,
+        human_input=True
     )
 
     tugas_eksekusi = Task(
