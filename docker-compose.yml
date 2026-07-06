@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  pentest-ai-backend:
+    build: .
+    container_name: nexus_pentest_api
+    restart: always
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    environment:
+      - ENV=production
+    env_file:
+      - .env

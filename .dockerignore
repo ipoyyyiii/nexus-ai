@@ -1,0 +1,7 @@
+venv_pentest/
+__pycache__/
+*.pyc
+.git/
+.gitignore
+*.png
+*.jpg
