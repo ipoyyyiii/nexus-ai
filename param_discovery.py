@@ -1,22 +1,3 @@
-"""
-PARAMETER DISCOVERY
-====================
-Nemuin hidden parameter di endpoint yang gak keliatan dari HTML/JS surface.
-Banyak vuln (SQLi, XSS, IDOR, SSRF) cuma bisa dieksploit kalau lo tau
-parameter apa yang diterima server — termasuk yang gak ada di form/docs.
-
-Strategy:
-1. Wordlist bruteforce — test ratusan common parameter names
-2. Response analysis — bandingkan response length/status buat detect param yang "nyambung"
-3. Technology-aware — prioritize parameter sesuai tech stack target
-4. Arjun-style heuristic — detect parameter via reflection atau error behavior
-
-Tools:
-- param_discovery_get  — discover GET parameters
-- param_discovery_post — discover POST body parameters
-- param_discover_headers — discover custom header parameters
-"""
-
 import json
 import time
 from typing import Optional
@@ -30,6 +11,8 @@ from cancellation import check_cancelled
 from checkpoint import require_approval
 from rate_limiter import rate_limiter
 from redact import redact
+# 1. Taruh import proxy router di sini men
+from proxy_router import proxy_router
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -55,52 +38,31 @@ def _logger():
 
 # ── Wordlists ─────────────────────────────────────────────────────────────────
 
-# Common GET parameters — Arjun-inspired wordlist
 COMMON_GET_PARAMS = [
-    # Auth & session
     "token", "key", "api_key", "apikey", "secret", "password", "pass",
     "auth", "access_token", "refresh_token", "session", "csrf", "nonce",
-
-    # User & identity
     "id", "user_id", "uid", "user", "username", "email", "account",
     "profile_id", "member_id", "customer_id", "admin", "role",
-
-    # Navigation & redirect
     "next", "redirect", "return", "url", "goto", "target", "page",
     "ref", "referrer", "callback", "continue", "forward",
-
-    # Data & content
     "q", "query", "search", "s", "keyword", "term", "filter",
     "sort", "order", "limit", "offset", "page_size", "per_page",
     "format", "type", "category", "tag", "lang", "locale",
-
-    # Debug & internal
     "debug", "test", "dev", "mode", "verbose", "trace", "log",
     "preview", "draft", "version", "v", "env", "config",
-
-    # File & path
     "file", "path", "dir", "folder", "document", "doc", "pdf",
     "image", "img", "src", "source", "load", "include",
-
-    # API specific
     "fields", "expand", "include", "exclude", "embed", "select",
     "scope", "grant_type", "response_type", "client_id",
-
-    # Common CMS
     "p", "post", "article", "slug", "feed", "attachment_id",
     "cat", "tag_id", "author", "m", "year", "month",
-
-    # PHP specific
     "action", "module", "controller", "view", "template",
     "cmd", "exec", "command", "op", "do", "func",
-
-    # Generic
     "data", "value", "input", "output", "name", "title",
     "content", "body", "message", "text", "info", "detail",
     "status", "state", "code", "error", "success",
 ]
 
-# Common POST body parameters
 COMMON_POST_PARAMS = [
     "username", "password", "email", "user", "pass", "login",
     "name", "first_name", "last_name", "phone", "address",
@@ -118,7 +80,6 @@ COMMON_POST_PARAMS = [
     "page", "limit", "offset", "sort",
 ]
 
-# Tech-stack specific parameters
 TECH_SPECIFIC = {
     "php": ["phpMyAdmin", "PHPSESSID", "php_errormsg"],
     "wordpress": ["p", "page_id", "cat", "m", "paged", "attachment_id"],
@@ -137,20 +98,7 @@ TECH_SPECIFIC = {
 @tool
 def param_discovery_get(url: str, tech_stack: str = "") -> str:
     """
-    Discover hidden GET parameters di endpoint target menggunakan wordlist bruteforce.
-    Teknik: bandingkan response baseline vs response dengan parameter tambahan.
-    Parameter yang "nyambung" biasanya menghasilkan:
-    - Response length yang berbeda dari baseline
-    - Status code berbeda (400 Bad Request = server kenal param-nya)
-    - Error message yang mention parameter name
-    - Redirect behavior yang berbeda
-
-    Args:
-        url: Target URL endpoint yang mau di-discover
-        tech_stack: Tech stack target (php/wordpress/django/laravel/spring/graphql/rest_api)
-                    untuk prioritize wordlist yang relevan
-    Returns:
-        JSON berisi discovered parameters dan evidence kenapa mereka interesting
+    Discover hidden GET parameters di endpoint target menggunakan wordlist bruteforce dan rotasi proxy.
     """
     logger = _logger()
     tool_name = "GET Parameter Discovery"
@@ -169,60 +117,63 @@ def param_discovery_get(url: str, tech_stack: str = "") -> str:
 
     domain = _domain_of(url)
 
-    # Build wordlist — tambah tech-specific params kalau ada
     wordlist = list(COMMON_GET_PARAMS)
     if tech_stack and tech_stack.lower() in TECH_SPECIFIC:
         tech_params = TECH_SPECIFIC[tech_stack.lower()]
         wordlist = tech_params + [p for p in wordlist if p not in tech_params]
 
-    # ── Baseline request ──────────────────────────────────────────────────────
+    # ── Baseline request dengan Proxy ──────────────────────────────────────────
     rate_limiter.wait(domain)
+    current_proxy = proxy_router.get_proxy()
     try:
-        baseline = SESSION.get(url, headers=HEADERS, timeout=10)
+        baseline = SESSION.get(url, headers=HEADERS, proxies=current_proxy, timeout=5)
         baseline_length = len(baseline.text)
         baseline_status = baseline.status_code
+    except (requests.exceptions.ProxyError, requests.exceptions.Timeout):
+        if current_proxy:
+            proxy_router.remove_dead_proxy(current_proxy)
+        return json.dumps({"error": "Baseline GET request gagal karena kendala proxy."})
     except Exception as e:
         return json.dumps({"error": f"Baseline request gagal: {str(e)}"})
 
     if logger:
-        logger.add_log(tool_name, "PROCESSING",
-            f"Baseline: status={baseline_status}, length={baseline_length}. Testing {len(wordlist)} params...")
+        logger.add_log(tool_name, "PROCESSING", f"Baseline: status={baseline_status}, length={baseline_length}. Testing {len(wordlist)} params...")
 
     discovered = []
     tested = 0
-
-    # ── Bruteforce in batches ─────────────────────────────────────────────────
-    # Test 5 params sekaligus dulu buat efficiency, kalau ada yang interesting
-    # baru test satu-satu untuk isolasi
     batch_size = 5
     interesting_batches = []
 
+    # ── Bruteforce in batches dengan Proxy ─────────────────────────────────────
     for i in range(0, len(wordlist), batch_size):
         if check_cancelled(logger):
             break
 
         batch = wordlist[i:i+batch_size]
-        # Inject semua params di batch dengan value unik
         batch_params = {p: f"nexus_test_{p}_1337" for p in batch}
         sep = "&" if "?" in url else "?"
         test_url = f"{url}{sep}{urlencode(batch_params)}"
 
         rate_limiter.wait(domain)
+        current_proxy = proxy_router.get_proxy()
         try:
-            resp = SESSION.get(test_url, headers=HEADERS, timeout=10)
+            resp = SESSION.get(test_url, headers=HEADERS, proxies=current_proxy, timeout=4)
             tested += 1
 
             length_diff = abs(len(resp.text) - baseline_length)
             status_diff = resp.status_code != baseline_status
 
-            # Kalau ada perbedaan signifikan di batch ini, flag buat individual test
             if length_diff > 100 or status_diff:
                 interesting_batches.append(batch)
 
+        except (requests.exceptions.ProxyError, requests.exceptions.Timeout):
+            if current_proxy:
+                proxy_router.remove_dead_proxy(current_proxy)
+            continue
         except Exception:
             continue
 
-    # ── Individual test untuk batch yang interesting ───────────────────────────
+    # ── Individual test untuk batch yang interesting dengan Proxy ───────────────
     for batch in interesting_batches:
         for param in batch:
             if check_cancelled(logger):
@@ -233,8 +184,9 @@ def param_discovery_get(url: str, tech_stack: str = "") -> str:
             test_url = f"{url}{sep}{param}={test_value}"
 
             rate_limiter.wait(domain)
+            current_proxy = proxy_router.get_proxy()
             try:
-                resp = SESSION.get(test_url, headers=HEADERS, timeout=10)
+                resp = SESSION.get(test_url, headers=HEADERS, proxies=current_proxy, timeout=4)
                 tested += 1
 
                 resp_length = len(resp.text)
@@ -243,19 +195,12 @@ def param_discovery_get(url: str, tech_stack: str = "") -> str:
 
                 evidence = []
 
-                # Heuristic 1: length difference
                 if length_diff > 150:
                     evidence.append(f"Response length berbeda: {baseline_length} → {resp_length} (diff: {length_diff})")
-
-                # Heuristic 2: status code difference
                 if status_diff:
                     evidence.append(f"Status code berbeda: {baseline_status} → {resp.status_code}")
-
-                # Heuristic 3: parameter name reflected di error
                 if param.lower() in resp.text.lower() and param.lower() not in baseline.text.lower():
                     evidence.append(f"Parameter name '{param}' ter-reflect di response")
-
-                # Heuristic 4: 400/422 = server kenal param tapi value salah
                 if resp.status_code in (400, 422):
                     evidence.append(f"Status {resp.status_code} = server mengenali parameter ini")
 
@@ -270,6 +215,10 @@ def param_discovery_get(url: str, tech_stack: str = "") -> str:
                         "test_url": test_url,
                     })
 
+            except (requests.exceptions.ProxyError, requests.exceptions.Timeout):
+                if current_proxy:
+                    proxy_router.remove_dead_proxy(current_proxy)
+                continue
             except Exception:
                 continue
 
@@ -284,11 +233,7 @@ def param_discovery_get(url: str, tech_stack: str = "") -> str:
     }
 
     if logger:
-        logger.add_log(
-            tool_name,
-            "SUCCESS" if discovered else "INFO",
-            f"Discovery selesai. {tested} params tested, {len(discovered)} discovered."
-        )
+        logger.add_log(tool_name, "SUCCESS" if discovered else "INFO", f"Discovery selesai. {tested} params tested, {len(discovered)} discovered.")
     return json.dumps(redact(result), indent=2)
 
 
@@ -299,15 +244,7 @@ def param_discovery_get(url: str, tech_stack: str = "") -> str:
 @tool
 def param_discovery_post(url: str, content_type: str = "application/x-www-form-urlencoded") -> str:
     """
-    Discover hidden POST body parameters di endpoint target.
-    Support dua content type: form-urlencoded dan JSON body.
-
-    Args:
-        url: Target POST endpoint
-        content_type: "form" untuk application/x-www-form-urlencoded,
-                      "json" untuk application/json
-    Returns:
-        JSON berisi discovered POST parameters
+    Discover hidden POST body parameters di endpoint target dengan perlindungan proxy.
     """
     logger = _logger()
     tool_name = "POST Parameter Discovery"
@@ -327,15 +264,20 @@ def param_discovery_post(url: str, content_type: str = "application/x-www-form-u
     domain = _domain_of(url)
     use_json = "json" in content_type.lower()
 
-    # Baseline POST request
+    # Baseline POST request dengan Proxy
     rate_limiter.wait(domain)
+    current_proxy = proxy_router.get_proxy()
     try:
         if use_json:
-            baseline = SESSION.post(url, json={}, headers={**HEADERS, "Content-Type": "application/json"}, timeout=10)
+            baseline = SESSION.post(url, json={}, headers={**HEADERS, "Content-Type": "application/json"}, proxies=current_proxy, timeout=5)
         else:
-            baseline = SESSION.post(url, data={}, headers=HEADERS, timeout=10)
+            baseline = SESSION.post(url, data={}, headers=HEADERS, proxies=current_proxy, timeout=5)
         baseline_length = len(baseline.text)
         baseline_status = baseline.status_code
+    except (requests.exceptions.ProxyError, requests.exceptions.Timeout):
+        if current_proxy:
+            proxy_router.remove_dead_proxy(current_proxy)
+        return json.dumps({"error": "Baseline POST request gagal karena kendala proxy."})
     except Exception as e:
         return json.dumps({"error": f"Baseline POST gagal: {str(e)}"})
 
@@ -347,6 +289,7 @@ def param_discovery_post(url: str, content_type: str = "application/x-www-form-u
             break
 
         rate_limiter.wait(domain)
+        current_proxy = proxy_router.get_proxy()
         try:
             test_value = "nexus_test_1337"
             if use_json:
@@ -354,14 +297,16 @@ def param_discovery_post(url: str, content_type: str = "application/x-www-form-u
                     url,
                     json={param: test_value},
                     headers={**HEADERS, "Content-Type": "application/json"},
-                    timeout=10
+                    proxies=current_proxy,
+                    timeout=4
                 )
             else:
                 resp = SESSION.post(
                     url,
                     data={param: test_value},
                     headers=HEADERS,
-                    timeout=10
+                    proxies=current_proxy,
+                    timeout=4
                 )
             tested += 1
 
@@ -387,6 +332,10 @@ def param_discovery_post(url: str, content_type: str = "application/x-www-form-u
                     "found_status": resp.status_code,
                 })
 
+        except (requests.exceptions.ProxyError, requests.exceptions.Timeout):
+            if current_proxy:
+                proxy_router.remove_dead_proxy(current_proxy)
+            continue
         except Exception:
             continue
 
@@ -401,11 +350,7 @@ def param_discovery_post(url: str, content_type: str = "application/x-www-form-u
     }
 
     if logger:
-        logger.add_log(
-            tool_name,
-            "SUCCESS" if discovered else "INFO",
-            f"POST discovery selesai. {tested} tested, {len(discovered)} discovered."
-        )
+        logger.add_log(tool_name, "SUCCESS" if discovered else "INFO", f"POST discovery selesai. {tested} tested, {len(discovered)} discovered.")
     return json.dumps(redact(result), indent=2)
 
 
@@ -416,14 +361,7 @@ def param_discovery_post(url: str, content_type: str = "application/x-www-form-u
 @tool
 def param_discovery_headers(url: str) -> str:
     """
-    Discover custom HTTP headers yang diterima server.
-    Banyak backend punya hidden behavior waktu nerima header tertentu:
-    debug mode, internal routing, bypass access control, dll.
-
-    Args:
-        url: Target URL
-    Returns:
-        JSON berisi headers yang menghasilkan response berbeda
+    Discover custom HTTP headers yang diterima server dengan rotasi proxy acak.
     """
     logger = _logger()
     tool_name = "Header Parameter Discovery"
@@ -432,41 +370,35 @@ def param_discovery_headers(url: str) -> str:
         return "DIBATALKAN: job di-cancel oleh user."
 
     INTERESTING_HEADERS = [
-        # Debug & internal
         "X-Debug", "X-Debug-Mode", "X-Dev-Mode", "X-Internal",
         "X-Test", "X-Admin", "X-Forwarded-User",
-
-        # Access control bypass
         "X-Original-URL", "X-Rewrite-URL", "X-Custom-IP-Authorization",
         "X-Forwarded-For", "X-Real-IP", "X-Remote-IP",
         "X-Originating-IP", "X-Remote-Addr",
-
-        # Auth bypass
         "X-Auth-Token", "X-API-Key", "Authorization",
         "X-User-ID", "X-User-Role", "X-Admin-Token",
         "X-Bypass-Auth", "X-Internal-Auth",
-
-        # Routing
         "X-Forwarded-Host", "X-Host", "X-Custom-Host",
         "X-Override-URL", "X-Forwarded-Path",
-
-        # Feature flags
         "X-Feature-Flag", "X-Beta", "X-Preview",
         "X-Version", "X-API-Version",
-
-        # Common framework headers
         "X-CSRF-Token", "X-Requested-With",
         "X-HTTP-Method-Override", "X-Method-Override",
     ]
 
     domain = _domain_of(url)
 
-    # Baseline
+    # Baseline dengan Proxy
     rate_limiter.wait(domain)
+    current_proxy = proxy_router.get_proxy()
     try:
-        baseline = SESSION.get(url, headers=HEADERS, timeout=10)
+        baseline = SESSION.get(url, headers=HEADERS, proxies=current_proxy, timeout=5)
         baseline_length = len(baseline.text)
         baseline_status = baseline.status_code
+    except (requests.exceptions.ProxyError, requests.exceptions.Timeout):
+        if current_proxy:
+            proxy_router.remove_dead_proxy(current_proxy)
+        return json.dumps({"error": "Baseline Header request gagal karena kendala proxy."})
     except Exception as e:
         return json.dumps({"error": f"Baseline gagal: {str(e)}"})
 
@@ -478,9 +410,10 @@ def param_discovery_headers(url: str) -> str:
             break
 
         rate_limiter.wait(domain)
+        current_proxy = proxy_router.get_proxy()
         try:
             test_headers = {**HEADERS, header: "nexus-test-1337"}
-            resp = SESSION.get(url, headers=test_headers, timeout=10)
+            resp = SESSION.get(url, headers=test_headers, proxies=current_proxy, timeout=4)
             tested += 1
 
             length_diff = abs(len(resp.text) - baseline_length)
@@ -496,6 +429,10 @@ def param_discovery_headers(url: str) -> str:
                     "evidence": f"Response berbeda: status {baseline_status}→{resp.status_code}, length diff {length_diff}",
                 })
 
+        except (requests.exceptions.ProxyError, requests.exceptions.Timeout):
+            if current_proxy:
+                proxy_router.remove_dead_proxy(current_proxy)
+            continue
         except Exception:
             continue
 
@@ -508,9 +445,5 @@ def param_discovery_headers(url: str) -> str:
     }
 
     if logger:
-        logger.add_log(
-            tool_name,
-            "WARNING" if interesting_headers else "INFO",
-            f"Header discovery selesai. {tested} tested, {len(interesting_headers)} interesting."
-        )
+        logger.add_log(tool_name, "WARNING" if interesting_headers else "INFO", f"Header discovery selesai. {tested} tested, {len(interesting_headers)} interesting.")
     return json.dumps(redact(result), indent=2)

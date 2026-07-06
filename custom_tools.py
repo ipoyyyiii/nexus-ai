@@ -15,7 +15,7 @@ from crewai.tools import tool
 from typing import Dict, List, Any
 from urllib.parse import quote, parse_qs, urlparse
 import time
-
+from langchain.tools import tool
 from checkpoint import require_approval
 from rate_limiter import rate_limiter
 from redact import redact
@@ -876,6 +876,26 @@ def tembak_payload(url: str, method: str, headers_json: str, body_data: str) -> 
     except Exception as e:
         exec_logger.add_log(tool_name, "ERROR", f"Request failed: {str(e)}")
         return f"Request gagal: {e}"
+
+@tool("report_new_endpoint")
+def report_new_endpoint(session_id: str, new_url: str, discovered_by: str) -> str:
+    """
+    Digunakan ketika agent menemukan URL, path API, atau subdomain baru 
+    di tengah proses pentesting. URL ini akan dimasukkan ke antrean scan berikutnya.
+    """
+    url = new_url.strip()
+    try:
+        # Kirim target baru ke endpoint internal FastAPI kita (port 8000)
+        res = requests.post(
+            f"http://127.0.0.1:8000/api/v1/session/{session_id}/inject-target",
+            json={"url": url, "source": discovered_by},
+            timeout=3
+        )
+        if res.status_code == 200:
+            return f"[SUCCESS] Target baru '{url}' berhasil dimasukkan ke antrean pool oleh {discovered_by}."
+        return f"[-] Gagal mendaftarkan target, server merespon dengan status: {res.status_code}"
+    except Exception as e:
+        return f"[-] Gagal menghubungi internal orchestrator: {str(e)}"
 
 
 # ==========================================

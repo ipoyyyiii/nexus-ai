@@ -19,6 +19,10 @@ from param_discovery import param_discovery_get, param_discovery_post, param_dis
 from js_analysis import analyze_js_deep
 from model_registry import build_llm, chain_summary
 from scope import validate_target
+from nuclei_tool import run_nuclei_scan
+from subdomain_takeover import detect_subdomain_takeover
+from auth_testing import test_jwt_weakness, test_auth_rate_limiting
+from custom_tools import report_new_endpoint
 
 # ==========================================
 # 1. LOAD ENV
@@ -128,7 +132,8 @@ if __name__ == "__main__":
             browser_screenshot, browser_extract_surface,
             browser_intercept_requests, browser_check_security_headers,
             browser_extract_js_secrets, analyze_js_deep,
-            param_discovery_get, param_discovery_headers,
+            param_discovery_get, param_discovery_headers,detect_subdomain_takeover,
+            report_new_endpoint,
         ],
         verbose=True
     )
@@ -142,7 +147,7 @@ if __name__ == "__main__":
             baca_log_burp, scan_sql_injection, detect_xss_csrf,
             scan_lfi_rfi, test_header_injection,
             browser_simulate_form, browser_find_open_redirect,
-            param_discovery_post,
+            param_discovery_post,run_nuclei_scan,report_new_endpoint,
         ],
         verbose=True
     )
@@ -154,7 +159,8 @@ if __name__ == "__main__":
         llm=llm_eksekutor,
         tools=[
             tembak_payload, test_api_security, analyze_password_strength,
-            scan_ssrf, scan_idor,
+            scan_ssrf, scan_idor,test_jwt_weakness,test_auth_rate_limiting,
+            report_new_endpoint,
         ],
         verbose=True
     )

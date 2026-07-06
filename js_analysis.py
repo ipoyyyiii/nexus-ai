@@ -1,18 +1,3 @@
-"""
-DEEP JS ANALYSIS
-==================
-Analisa JavaScript lebih dalam dari sekedar regex scan.
-Difokuskan ke endpoint extraction dan dependency analysis
-yang sering jadi attack vector di modern SPA (React/Vue/Angular).
-
-Extends playwright_tools.browser_extract_js_secrets dengan:
-1. Source map detection & extraction
-2. webpack chunk analysis (nemuin semua route di SPA)
-3. API base URL detection
-4. GraphQL schema extraction dari introspection
-5. Environment variable leak detection
-"""
-
 import json
 import re
 from urllib.parse import urlparse, urljoin
@@ -24,6 +9,8 @@ from crewai.tools import tool
 from cancellation import check_cancelled
 from rate_limiter import rate_limiter
 from redact import redact
+# 1. Taruh import proxy router di paling atas file men
+from proxy_router import proxy_router
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -50,12 +37,9 @@ def _logger():
 # ── Patterns ─────────────────────────────────────────────────────────────────
 
 API_URL_PATTERNS = [
-    # Base URL patterns
     re.compile(r'(?:baseURL|baseUrl|API_URL|REACT_APP_API|VUE_APP_API|NEXT_PUBLIC_API)["\s:=]+["\']?(https?://[^\s"\'`,]+)', re.I),
     re.compile(r'(?:apiUrl|api_url|endpoint|base_url)["\s:=]+["\']?(https?://[^\s"\'`,]+)', re.I),
-    # Relative API paths
     re.compile(r'["\']/(api|v\d+|rest|graphql)/[a-zA-Z0-9_/\-]+["\']'),
-    # Axios/fetch base URL
     re.compile(r'axios\.create\(\{[^}]*baseURL[:\s]+["\']([^"\']+)["\']', re.I),
     re.compile(r'fetch\(["\']([^"\']+)["\']', re.I),
 ]
@@ -86,18 +70,7 @@ SOURCE_MAP_PATTERN = re.compile(r'//# sourceMappingURL=(.+\.map)')
 @tool
 def analyze_js_deep(url: str) -> str:
     """
-    Analisa JavaScript secara mendalam buat extract:
-    - Semua API endpoint dan base URLs
-    - Environment variable yang ke-leak
-    - GraphQL queries dan schema hints
-    - SPA routes (dari webpack chunks)
-    - Source maps yang exposed (bisa reveal original source code)
-    - Third-party service integrations
-
-    Args:
-        url: URL halaman target (bukan JS file langsung)
-    Returns:
-        JSON berisi semua findings dari JS analysis
+    Analisa JavaScript secara mendalam buat extract endpoint, env leak, dan info sensitif dengan rotasi proxy.
     """
     logger = _logger()
     tool_name = "Deep JS Analyzer"
@@ -112,15 +85,19 @@ def analyze_js_deep(url: str) -> str:
     if logger:
         logger.add_log(tool_name, "START", f"Deep JS analysis untuk {url}")
 
-    # ── 1. Collect JS files dari halaman ─────────────────────────────────────
+    # ── 1. Collect JS files dari halaman dengan Proxy ────────────────────────
     rate_limiter.wait(domain)
+    current_proxy = proxy_router.get_proxy()
     try:
-        page_resp = SESSION.get(url, headers=HEADERS, timeout=15)
+        page_resp = SESSION.get(url, headers=HEADERS, proxies=current_proxy, timeout=15)
         page_html = page_resp.text
+    except (requests.exceptions.ProxyError, requests.exceptions.Timeout):
+        if current_proxy:
+            proxy_router.remove_dead_proxy(current_proxy)
+        return json.dumps({"error": "Gagal load halaman karena kendala proxy saat scanning awal."})
     except Exception as e:
         return json.dumps({"error": f"Gagal load halaman: {str(e)}"})
 
-    # Extract script URLs dari HTML
     script_pattern = re.compile(r'<script[^>]+src=["\']([^"\']+)["\']', re.I)
     script_urls = []
     for match in script_pattern.finditer(page_html):
@@ -132,7 +109,6 @@ def analyze_js_deep(url: str) -> str:
         else:
             script_urls.append(urljoin(url, src))
 
-    # Deduplicate dan filter ke domain yang sama atau CDN
     seen = set()
     filtered_scripts = []
     for s in script_urls:
@@ -165,30 +141,31 @@ def analyze_js_deep(url: str) -> str:
         "HubSpot": re.compile(r'hubspot\.com|hubspot\.js', re.I),
     }
 
-    # ── 2. Analyze tiap JS file ───────────────────────────────────────────────
-    for js_url in filtered_scripts[:15]:  # Max 15 file
+    # ── 2. Analyze tiap JS file dengan Proxy ─────────────────────────────────
+    for js_url in filtered_scripts[:15]:
         if check_cancelled(logger):
             break
 
         rate_limiter.wait(_domain_of(js_url))
+        current_proxy = proxy_router.get_proxy()
         try:
-            js_resp = SESSION.get(js_url, headers=HEADERS, timeout=15)
+            js_resp = SESSION.get(js_url, headers=HEADERS, proxies=current_proxy, timeout=15)
             if "javascript" not in js_resp.headers.get("content-type", "") and js_resp.status_code != 200:
                 continue
 
             js_content = js_resp.text
-            js_size = len(js_content)
 
-            # Source map check
+            # Source map check dengan Proxy privat baru
             sm_match = SOURCE_MAP_PATTERN.search(js_content[-500:])
             if sm_match:
                 sm_url = sm_match.group(1)
                 if not sm_url.startswith("http"):
                     sm_url = urljoin(js_url, sm_url)
-                # Verify source map accessible
+                
                 rate_limiter.wait(_domain_of(sm_url))
+                sm_proxy = proxy_router.get_proxy()
                 try:
-                    sm_resp = SESSION.get(sm_url, headers=HEADERS, timeout=5)
+                    sm_resp = SESSION.get(sm_url, headers=HEADERS, proxies=sm_proxy, timeout=5)
                     if sm_resp.status_code == 200 and "sources" in sm_resp.text:
                         findings["source_maps"].append({
                             "js_file": js_url,
@@ -196,6 +173,9 @@ def analyze_js_deep(url: str) -> str:
                             "severity": "HIGH",
                             "impact": "Source map exposed — original source code bisa di-recover",
                         })
+                except (requests.exceptions.ProxyError, requests.exceptions.Timeout):
+                    if sm_proxy:
+                        proxy_router.remove_dead_proxy(sm_proxy)
                 except Exception:
                     pass
 
@@ -246,17 +226,20 @@ def analyze_js_deep(url: str) -> str:
             if chunks:
                 findings["webpack_chunks"].extend(chunks[:10])
 
+        except (requests.exceptions.ProxyError, requests.exceptions.Timeout):
+            if current_proxy:
+                proxy_router.remove_dead_proxy(current_proxy)
+            continue
         except Exception as e:
             if logger:
                 logger.add_log(tool_name, "WARNING", f"Error analyze {js_url}: {str(e)[:100]}")
             continue
 
-    # Deduplicate
     findings["api_endpoints"] = list(dict.fromkeys(findings["api_endpoints"]))[:50]
     findings["spa_routes"] = list(dict.fromkeys(findings["spa_routes"]))[:30]
     findings["webpack_chunks"] = list(dict.fromkeys(findings["webpack_chunks"]))[:20]
 
-    # ── 3. Check GraphQL introspection ────────────────────────────────────────
+    # ── 3. Check GraphQL introspection dengan Proxy ──────────────────────────
     if findings["graphql_hints"]:
         graphql_endpoints = [e for e in findings["api_endpoints"] if "graphql" in e.lower()]
         if not graphql_endpoints:
@@ -266,12 +249,14 @@ def analyze_js_deep(url: str) -> str:
             if check_cancelled(logger):
                 break
             rate_limiter.wait(_domain_of(gql_url))
+            gql_proxy = proxy_router.get_proxy()
             try:
                 introspection_query = '{"query": "{ __schema { queryType { name } } }"}'
                 resp = SESSION.post(
                     gql_url,
                     data=introspection_query,
                     headers={**HEADERS, "Content-Type": "application/json"},
+                    proxies=gql_proxy,
                     timeout=10
                 )
                 if resp.status_code == 200 and "__schema" in resp.text:
@@ -281,6 +266,10 @@ def analyze_js_deep(url: str) -> str:
                         "severity": "MEDIUM",
                         "impact": "GraphQL introspection enabled — full schema bisa di-dump",
                     })
+            except (requests.exceptions.ProxyError, requests.exceptions.Timeout):
+                if gql_proxy:
+                    proxy_router.remove_dead_proxy(gql_proxy)
+                continue
             except Exception:
                 pass
 

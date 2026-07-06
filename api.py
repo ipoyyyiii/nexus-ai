@@ -3,9 +3,10 @@ import uuid
 import asyncio
 import json
 import secrets
+import asyncio
 from datetime import datetime
 from typing import Optional, Dict, Any
-
+from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Header
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -37,6 +38,10 @@ from checkpoint import checkpoint_store, current_job_id
 from model_registry import build_llm, list_available_models, chain_summary
 from cancellation import cancellation_store, current_job_id as cancel_job_id
 from model_registry import build_llm, list_available_models, chain_summary
+from nuclei_tool import run_nuclei_scan
+from subdomain_takeover import detect_subdomain_takeover
+from auth_testing import test_jwt_weakness, test_auth_rate_limiting
+from custom_tools import report_new_endpoint
 
 load_dotenv()
 
@@ -96,6 +101,14 @@ app.add_middleware(
 # ============================================================
 jobs: Dict[str, Dict[str, Any]] = {}
 
+class JobQueueState:
+    def __init__(self):
+        self.queue = asyncio.Queue()
+        self.visited_targets = set()
+        self.max_depth = 3
+        self.is_running = False
+
+ACTIVE_QUEUE_SESSIONS: Dict[str, JobQueueState] = {}
 # ============================================================
 # HUMAN-IN-THE-LOOP: hubungkan checkpoint_store (dipanggil dari
 # dalam tool di worker thread) ke jobs dict supaya status job
@@ -167,11 +180,7 @@ def update_job(job_id: str, **kwargs):
 def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_models: Optional[Dict[str, Optional[str]]] = None):
     """
     Dijalankan di background thread oleh FastAPI BackgroundTasks.
-    Update jobs[job_id] secara berkala agar bisa di-poll dari frontend.
-
-    agent_models: optional dict {"recon": "claude-sonnet", "analis": None, ...}
-    None/key gak ada -> pakai default fallback chain (paid model dulu, baru
-    jatuh ke free kalau gagal/insufficient_quota).
+    Kini mendukung multi-target paralel (Async Worker Pool) tanpa merusak WAF.
     """
     agent_models = agent_models or {}
     try:
@@ -189,139 +198,190 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
         update_job(job_id, status="running", message="Inisialisasi agents & model chain...")
         clear_execution_logs()
 
-        # Load memory dari session sebelumnya buat target yang sama
+        # Load intelligence lama dari target utama
         memory_context = memory.build_context(target)
-        memory_note = ""
         if memory_context:
-            memory_note = memory_context
             update_job(job_id, message="📚 Loading previous intelligence from memory...")
-            if logger := None or True:
-                pass  # memory_context udah di-build
 
-        # Bangun LLM per-agent. Tiap agent boleh pilih model beda-beda dari
-        # frontend; kalau gak dipilih (None), pakai default chain (paid dulu,
-        # auto-fallback ke free kalau quota habis/gagal).
+        # Bangun engine LLM per agent
         llm_recon = build_llm(agent_models.get("recon"))
         llm_analis = build_llm(agent_models.get("analis"))
         llm_eksekutor = build_llm(agent_models.get("eksekutor"))
         llm_assessor = build_llm(agent_models.get("assessor"))
 
-        update_job(job_id, message=(
-            f"Model chain — Recon: {chain_summary(agent_models.get('recon'))[:2]} | "
-            f"Analis: {chain_summary(agent_models.get('analis'))[:2]} | "
-            f"Eksekutor: {chain_summary(agent_models.get('eksekutor'))[:2]} | "
-            f"Assessor: {chain_summary(agent_models.get('assessor'))[:2]}"
-        ))
+        # ============================================================
+        # BIKIN EVENT LOOP ASYNC DI DALAM BACKGROUND THREAD INI
+        # ============================================================
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        state = JobQueueState()
+        state.is_running = True
+        
+        # Masukkan target utama/pertama dari user ke antrean
+        loop.run_until_complete(state.queue.put(target))
+        ACTIVE_QUEUE_SESSIONS[job_id] = state
 
-        # --- AGENTS ---
-        recon = Agent(
-            role="Advanced Reconnaissance & Intel Gatherer",
-            goal="Deep recon: infrastruktur, tech-stack, WAF, DNS, SSL, browser-based surface mapping.",
-            backstory=(
-                "Intel Red Team level elit. Ngebedah server pakai fingerprinting tingkat tinggi, "
-                "dan bisa 'liat' web app kayak user beneran pakai headless browser."
-                + (f"\n{memory_context}" if memory_context else "")
-            ),
-            llm=llm_recon,
-            tools=[
-                recon_target, enumerate_dns_subdomains, analyze_ssl_tls,
-                browser_screenshot, browser_extract_surface,
-                browser_intercept_requests, browser_check_security_headers,
-                browser_extract_js_secrets, analyze_js_deep,
-                param_discovery_get, param_discovery_headers,
-            ],
-            verbose=True
-        )
+        all_reports = []  # Tempat nampung laporan dari tiap target yang kena scan
 
-        analis = Agent(
-            role="Senior Vulnerability Strategist",
-            goal="Rancang payload presisi berdasarkan intel recon. Manfaatkan hasil browser-based recon buat temuin attack vector yang lebih dalam.",
-            backstory="Mastermind eksploitasi. Payload-nya surgical, WAF-aware. Bisa analisa JS bundle, form behavior, dan hidden API endpoint.",
-            llm=llm_analis,
-            tools=[
-                baca_log_burp, scan_sql_injection, detect_xss_csrf,
-                scan_lfi_rfi, test_header_injection,
-                browser_simulate_form, browser_find_open_redirect,
-                param_discovery_post,
-            ],
-            verbose=True
-        )
+        # Fungsi worker asinkron yang bakal jalan barengan
+        async def worker(worker_id: int):
+            print(f"[Worker-{worker_id}] Aktif dan memantau antrean...")
+            while state.is_running:
+                try:
+                    # Ambil target baru dari antrean (tunggu maks 10 detik kalau kosong)
+                    current_target = await asyncio.wait_for(state.queue.get(), timeout=10.0)
+                except asyncio.TimeoutError:
+                    if state.queue.empty():
+                        break
+                    continue
 
-        eksekutor = Agent(
-            role="Active Exploit Executor",
-            goal="Eksekusi payload, test API, SSRF, IDOR, analisis password.",
-            backstory="Eksekutor berdarah dingin. Expert di SSRF dan IDOR yang sering jadi goldmine di H1.",
-            llm=llm_eksekutor,
-            tools=[
-                tembak_payload, test_api_security, analyze_password_strength,
-                scan_ssrf, scan_idor,
-            ],
-            verbose=True
-        )
+                if current_target in state.visited_targets:
+                    state.queue.task_done()
+                    continue
 
-        assessor = Agent(
-            role="Chief Information Security Officer (CISO)",
-            goal="Risk assessment dan laporan eksekutif.",
-            backstory="Ahli CIA Triad + CVSS scoring.",
-            llm=llm_assessor,
-            verbose=True
-        )
+                state.visited_targets.add(current_target)
+                update_job(job_id, message=f"🚀 [Worker-{worker_id}] Mulai menyisir target: {current_target}")
 
-        # --- TASKS ---
-        update_job(job_id, message="Phase 1: Reconnaissance...")
+                try:
+                    # --------------------------------------------------------
+                    # AGENTS (Konfigurasi dinamis menggunakan current_target)
+                    # --------------------------------------------------------
+                    recon = Agent(
+                        role="Advanced Reconnaissance & Intel Gatherer",
+                        goal="Deep recon: infrastruktur, tech-stack, WAF, DNS, SSL, browser-based surface mapping.",
+                        backstory=(
+                            "Intel Red Team level elit. Ngebedah server pakai fingerprinting tingkat tinggi, "
+                            "dan bisa 'liat' web app kayak user beneran pakai headless browser."
+                            + (f"\n{memory_context}" if memory_context else "")
+                        ),
+                        llm=llm_recon,
+                        tools=[
+                            recon_target, enumerate_dns_subdomains, analyze_ssl_tls,
+                            browser_screenshot, browser_extract_surface,
+                            browser_intercept_requests, browser_check_security_headers,
+                            browser_extract_js_secrets, analyze_js_deep,
+                            param_discovery_get, param_discovery_headers,
+                            detect_subdomain_takeover,
+                            report_new_endpoint
+                        ],
+                        verbose=True
+                    )
 
-        task_recon = Task(
-            description=f"Active Recon target: {target}. Petakan ports, tech-stack, WAF, DNS, SSL.",
-            expected_output="Laporan intelijen infrastruktur lengkap.",
-            agent=recon
-        )
+                    analis = Agent(
+                        role="Senior Vulnerability Strategist",
+                        goal="Rancang payload presisi berdasarkan intel recon. Manfaatkan hasil browser-based recon buat temuin attack vector yang lebih dalam.",
+                        backstory="Mastermind eksploitasi. Payload-nya surgical, WAF-aware. Bisa analisa JS bundle, form behavior, dan hidden API endpoint.",
+                        llm=llm_analis,
+                        tools=[
+                            baca_log_burp, scan_sql_injection, detect_xss_csrf,
+                            scan_lfi_rfi, test_header_injection,
+                            browser_simulate_form, browser_find_open_redirect,
+                            param_discovery_post,
+                            run_nuclei_scan,
+                            report_new_endpoint
+                        ],
+                        verbose=True
+                    )
 
-        task_analis = Task(
-            description=f"Target: {target} | Goal: {goal}\nBerdasarkan recon, rancang serangan: SQLi, XSS, LFI, Header Injection.",
-            expected_output="Instruksi eksekusi detail + vulnerability assessment.",
-            agent=analis
-        )
+                    eksekutor = Agent(
+                        role="Active Exploit Executor",
+                        goal="Eksekusi payload, test API, SSRF, IDOR, analisis password.",
+                        backstory="Eksekutor berdarah dingin. Expert di SSRF dan IDOR yang sering jadi goldmine di H1.",
+                        llm=llm_eksekutor,
+                        tools=[
+                            tembak_payload, test_api_security, analyze_password_strength,
+                            scan_ssrf, scan_idor,
+                            test_jwt_weakness,
+                            test_auth_rate_limiting,
+                            report_new_endpoint
+                        ],
+                        verbose=True
+                    )
 
-        task_eksekusi = Task(
-            description="Eksekusi payload dari Analis. Test API endpoints. Report response mentah.",
-            expected_output="Log HTTP response + API security findings.",
-            agent=eksekutor
-        )
+                    assessor = Agent(
+                        role="Chief Information Security Officer (CISO)",
+                        goal="Risk assessment dan laporan eksekutif.",
+                        backstory="Ahli CIA Triad + CVSS scoring.",
+                        llm=llm_assessor,
+                        verbose=True
+                    )
 
-        task_assessor = Task(
-            description=(
-                "Analisis semua findings. Buat laporan:\n"
-                "1. Kerentanan + deskripsi\n"
-                "2. Dampak CIA Triad\n"
-                "3. CVSS score\n"
-                "4. Mitigasi\n"
-                "5. PoC jika ada"
-            ),
-            expected_output="Laporan eksekutif risk assessment.",
-            agent=assessor
-        )
+                    # --------------------------------------------------------
+                    # TASKS
+                    # --------------------------------------------------------
+                    task_recon = Task(
+                        description=f"Active Recon target: {current_target}. Petakan ports, tech-stack, WAF, DNS, SSL.",
+                        expected_output="Laporan intelijen infrastruktur lengkap.",
+                        agent=recon
+                    )
 
-        def on_step(step):
-            try:
-                msg = str(getattr(step, "thought", step))[:200]
-                update_job(job_id, message=msg)
-            except Exception:
-                pass
+                    task_analis = Task(
+                        description=f"Target: {current_target} | Goal: {goal}\nBerdasarkan recon, rancang serangan: SQLi, XSS, LFI, Header Injection.",
+                        expected_output="Instruksi eksekusi detail + vulnerability assessment.",
+                        agent=analis
+                    )
 
-        crew = Crew(
-            agents=[recon, analis, eksekutor, assessor],
-            tasks=[task_recon, task_analis, task_eksekusi, task_assessor],
-            step_callback=on_step,
-            verbose=True
-        )
+                    task_eksekusi = Task(
+                        description="Eksekusi payload dari Analis. Test API endpoints. Report response mentah.",
+                        expected_output="Log HTTP response + API security findings.",
+                        agent=eksekutor
+                    )
 
-        update_job(job_id, message="Phase 2: Scanning vulnerabilities...")
-        result = crew.kickoff()
-        report = str(result)
+                    task_assessor = Task(
+                        description=(
+                            "Analisis semua findings. Buat laporan:\n"
+                            "1. Kerentanan + deskripsi\n"
+                            "2. Dampak CIA Triad\n"
+                            "3. CVSS score\n"
+                            "4. Mitigasi\n"
+                            "5. PoC jika ada"
+                        ),
+                        expected_output="Laporan eksekutif risk assessment.",
+                        agent=assessor
+                    )
 
+                    def on_step(step):
+                        try:
+                            msg = str(getattr(step, "thought", step))[:150]
+                            update_job(job_id, message=f"[Worker-{worker_id}] {msg}")
+                        except Exception:
+                            pass
+
+                    # Bangun Crew untuk current_target
+                    crew = Crew(
+                        agents=[recon, analis, eksekutor, assessor],
+                        tasks=[task_recon, task_analis, task_eksekusi, task_assessor],
+                        step_callback=on_step,
+                        verbose=True
+                    )
+
+                    # Kickoff berjalan secara blocking di dalam thread worker ini
+                    result = crew.kickoff()
+                    all_reports.append(f"## 🎯 Target Scan Result: {current_target}\n\n{str(result)}\n\n")
+
+                except Exception as worker_err:
+                    print(f"[Worker-{worker_id}] Gagal memproses {current_target}: {str(worker_err)}")
+                finally:
+                    state.queue.task_done()
+
+        # Buka 2 worker paralel (Bisa disesuaikan spek MacBook lo)
+        async def start_pool():
+            workers = [worker(i+1) for i in range(2)]
+            await asyncio.gather(*workers)
+
+        # Jalankan loop pool worker sampai antrean bener-benar kosong
+        loop.run_until_complete(start_pool())
+        state.is_running = False
+
+        # Gabungkan seluruh laporan target jadi satu string besar
+        report = "\n".join(all_reports) if all_reports else "Tidak ada target yang berhasil dianalisis."
+
+        # ============================================================
+        # BAGIAN AKHIR (Sama seperti kode lama lo, update status & log)
+        # ============================================================
         logs_data = get_execution_logs()
 
-        # Cek apakah job di-cancel selama eksekusi
         if cancellation_store.is_cancelled(job_id):
             save_message(session_id, "agent", "JOB DIBATALKAN oleh user.")
             update_job(
@@ -341,7 +401,6 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
                 logs=logs_data["logs"],
                 summary=logs_data["summary"]
             )
-            # Save findings ke memory buat session berikutnya
             try:
                 memory.save_findings_from_report(target, report, session_id)
             except Exception as mem_err:
@@ -354,6 +413,8 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
 
     finally:
         cancellation_store.cleanup(job_id)
+        if job_id in ACTIVE_QUEUE_SESSIONS:
+            del ACTIVE_QUEUE_SESSIONS[job_id]
 
 
 # ============================================================
@@ -750,3 +811,28 @@ async def analyze_image(req: ImageRequest, _: bool = Depends(require_api_key)):
         return {"status": "success", "analysis": analysis}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+class InjectTargetRequest(BaseModel):
+    url: str
+    source: str
+
+@app.post("/api/v1/job/{job_id}/inject-target")
+async def inject_new_target(job_id: str, req: InjectTargetRequest, _: bool = Depends(require_api_key)):
+    """
+    Endpoint tempat tool `report_new_endpoint` menyuntikkan target/path baru 
+    secara real-time ke dalam antrean yang sedang berjalan.
+    """
+    if job_id not in ACTIVE_QUEUE_SESSIONS:
+        raise HTTPException(status_code=404, detail="Job queue tidak aktif atau sudah selesai.")
+        
+    state = ACTIVE_QUEUE_SESSIONS[job_id]
+    new_url = req.url.strip()
+    
+    if new_url in state.visited_targets:
+        return {"status": "ignored", "message": "Target sudah masuk antrean atau sudah discan."}
+        
+    # Inject secara asinkron ke dalam queue yang lagi jalan
+    asyncio.run_coroutine_threadsafe(state.queue.put(new_url), asyncio.get_event_loop())
+    update_job(job_id, message=f"📥 Menambahkan target baru dari {req.source}: {new_url}")
+    
+    return {"status": "success", "message": f"Target {new_url} berhasil ditambahkan ke antrean pool."}

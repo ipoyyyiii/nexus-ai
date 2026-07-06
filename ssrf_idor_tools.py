@@ -3,11 +3,10 @@ import re
 import time
 from typing import Optional
 from urllib.parse import urlparse, urljoin, urlencode, parse_qs, urlunparse
-
+from proxy_router import proxy_router
 import requests
 import urllib3
 from crewai.tools import tool
-
 from cancellation import check_cancelled
 from checkpoint import require_approval
 from rate_limiter import rate_limiter
@@ -76,22 +75,7 @@ SSRF_HEADERS = [
 @tool
 def scan_ssrf(url: str, canary_domain: str = "your-canary-domain.example") -> str:
     """
-    Test target untuk Server-Side Request Forgery (SSRF) vulnerability.
-
-    Strategy:
-    1. Inject canary URL ke semua parameter yang ditemukan
-    2. Test cloud metadata endpoints (AWS/GCP/DO) via parameter injection
-    3. Test SSRF via HTTP headers (Host, X-Forwarded-For, dll)
-    4. Detect blind SSRF via response time difference (delay-based)
-
-    PENTING: Ganti canary_domain ke domain/Burp Collaborator yang lo kontrol
-    buat detect blind SSRF. Tanpa itu, hanya bisa detect error-based SSRF.
-
-    Args:
-        url: Target URL yang mau dites
-        canary_domain: Domain yang lo kontrol buat detect blind SSRF callback
-    Returns:
-        JSON berisi findings, parameter yang vulnerable, dan severity
+    Test target untuk Server-Side Request Forgery (SSRF) vulnerability dengan proteksi rotasi proxy.
     """
     logger = _logger()
     tool_name = "SSRF Scanner"
@@ -112,11 +96,9 @@ def scan_ssrf(url: str, canary_domain: str = "your-canary-domain.example") -> st
     findings = []
     tested = 0
 
-    # ── 1. Parameter-based SSRF ───────────────────────────────────────────────
     if logger:
         logger.add_log(tool_name, "PROCESSING", "Phase 1: Parameter-based SSRF test")
 
-    # Payload list — canary dulu, terus metadata endpoints
     ssrf_payloads = [
         f"http://{canary_domain}/ssrf-test",
         f"https://{canary_domain}/ssrf-test",
@@ -126,35 +108,25 @@ def scan_ssrf(url: str, canary_domain: str = "your-canary-domain.example") -> st
         if check_cancelled(logger):
             break
 
-        for payload in ssrf_payloads[:3]:  # Max 3 payload per param biar gak lama
+        for payload in ssrf_payloads[:3]:
             test_url = f"{url}{'&' if '?' in url else '?'}{param}={payload}"
             rate_limiter.wait(domain)
 
+            # [SUNTIK PROXY] Ambil proxy acak khusus untuk request ini
+            current_proxy = proxy_router.get_proxy()
+
             try:
                 t_start = time.time()
-                resp = SESSION.get(test_url, headers=HEADERS, allow_redirects=False)
+                # Tambahkan parameter proxies dan perkecil timeout agar tidak stuck lama kalau proxy lelet
+                resp = SESSION.get(test_url, headers=HEADERS, allow_redirects=False, proxies=current_proxy, timeout=4)
                 t_elapsed = time.time() - t_start
                 tested += 1
 
-                # Indicators SSRF berhasil:
-                # 1. Response body berisi konten dari metadata endpoint
                 body = resp.text[:2000]
-                metadata_indicators = [
-                    "ami-id", "instance-id", "local-ipv4",  # AWS
-                    "computeMetadata", "serviceAccounts",    # GCP
-                    "droplet_id", "interfaces",              # DO
-                ]
+                metadata_indicators = ["ami-id", "instance-id", "local-ipv4", "computeMetadata", "serviceAccounts", "droplet_id", "interfaces"]
                 metadata_hit = any(ind in body for ind in metadata_indicators)
-
-                # 2. Canary domain di-resolve (kalau response mention domain)
                 canary_hit = canary_domain in body
-
-                # 3. Error yang reveal internal network activity
-                error_indicators = [
-                    "connection refused", "ECONNREFUSED",
-                    "getaddrinfo", "Name or service not known",
-                    "failed to connect", "connection timeout",
-                ]
+                error_indicators = ["connection refused", "ECONNREFUSED", "getaddrinfo", "Name or service not known", "failed to connect", "connection timeout"]
                 error_hit = any(e.lower() in body.lower() for e in error_indicators)
 
                 if metadata_hit or canary_hit:
@@ -178,22 +150,27 @@ def scan_ssrf(url: str, canary_domain: str = "your-canary-domain.example") -> st
                         "response_preview": redact(body[:200]),
                     })
 
+            except (requests.exceptions.ProxyError, requests.exceptions.Timeout):
+                # Bersihkan proxy sampah dari pool memori jika RTO/Error
+                if current_proxy:
+                    proxy_router.remove_dead_proxy(current_proxy)
+                continue
             except requests.exceptions.ConnectionError:
                 pass
             except Exception as e:
                 if logger:
                     logger.add_log(tool_name, "WARNING", f"Error test {param}: {str(e)[:100]}")
 
-    # ── 2. Header-based SSRF ──────────────────────────────────────────────────
     if logger:
         logger.add_log(tool_name, "PROCESSING", "Phase 2: Header-based SSRF test")
 
     if not check_cancelled(logger):
         for header in SSRF_HEADERS:
             rate_limiter.wait(domain)
+            current_proxy = proxy_router.get_proxy()
             try:
                 test_headers = {**HEADERS, header: f"http://{canary_domain}/header-ssrf"}
-                resp = SESSION.get(url, headers=test_headers, allow_redirects=False)
+                resp = SESSION.get(url, headers=test_headers, allow_redirects=False, proxies=current_proxy, timeout=4)
                 body = resp.text[:1000]
 
                 if canary_domain in body:
@@ -205,30 +182,28 @@ def scan_ssrf(url: str, canary_domain: str = "your-canary-domain.example") -> st
                         "evidence": "Canary domain ter-reflect di response body",
                     })
                 tested += 1
+            except (requests.exceptions.ProxyError, requests.exceptions.Timeout):
+                if current_proxy:
+                    proxy_router.remove_dead_proxy(current_proxy)
+                continue
             except Exception:
                 pass
 
-    # ── 3. Direct metadata access test ───────────────────────────────────────
     if logger:
         logger.add_log(tool_name, "PROCESSING", "Phase 3: Direct metadata endpoint test")
 
     if not check_cancelled(logger):
-        # Cek apakah server itu sendiri accessible ke metadata (kalau SSRF dapet)
         parsed = urlparse(url)
         base = f"{parsed.scheme}://{parsed.netloc}"
-
-        # Test path traversal ke internal
-        internal_paths = [
-            "/?url=http://localhost/",
-            "/?url=http://127.0.0.1/",
-            "/?file=///etc/passwd",
-        ]
+        internal_paths = ["/?url=http://localhost/", "/?url=http://127.0.0.1/", "/?file=///etc/passwd"]
+        
         for path in internal_paths:
             if check_cancelled(logger):
                 break
             rate_limiter.wait(domain)
+            current_proxy = proxy_router.get_proxy()
             try:
-                resp = SESSION.get(f"{base}{path}", headers=HEADERS)
+                resp = SESSION.get(f"{base}{path}", headers=HEADERS, proxies=current_proxy, timeout=4)
                 body = resp.text[:500]
                 if "root:" in body or "localhost" in body.lower():
                     findings.append({
@@ -238,6 +213,10 @@ def scan_ssrf(url: str, canary_domain: str = "your-canary-domain.example") -> st
                         "evidence": "Internal resource exposed via path parameter",
                     })
                 tested += 1
+            except (requests.exceptions.ProxyError, requests.exceptions.Timeout):
+                if current_proxy:
+                    proxy_router.remove_dead_proxy(current_proxy)
+                continue
             except Exception:
                 pass
 
@@ -255,11 +234,7 @@ def scan_ssrf(url: str, canary_domain: str = "your-canary-domain.example") -> st
     }
 
     if logger:
-        logger.add_log(
-            tool_name,
-            "WARNING" if findings else "SUCCESS",
-            f"SSRF scan selesai. {tested} tests, {len(findings)} findings."
-        )
+        logger.add_log(tool_name, "WARNING" if findings else "SUCCESS", f"SSRF scan selesai. {tested} tests, {len(findings)} findings.")
     return json.dumps(redact(result), indent=2)
 
 
@@ -311,21 +286,7 @@ def _generate_test_ids(original_id: str) -> list:
 @tool
 def scan_idor(url: str, cookies: str = "", auth_header: str = "") -> str:
     """
-    Test target untuk Insecure Direct Object Reference (IDOR) vulnerability.
-
-    Strategy:
-    1. Extract semua ID/resource identifier dari URL (numeric, UUID, query param)
-    2. Generate test IDs berdasarkan format yang ditemukan (sequential, common)
-    3. Bandingkan response antar ID — perbedaan status code, body length, atau
-       konten yang keliatan sensitif = potential IDOR
-    4. Test privilege escalation: akses resource dengan ID berbeda
-
-    Args:
-        url: Target URL yang mau dites (bisa punya ID di path atau query)
-        cookies: Optional cookie header buat authenticated test (format: "key=val; key2=val2")
-        auth_header: Optional Authorization header (format: "Bearer <token>")
-    Returns:
-        JSON berisi ID yang ditemukan, test results, dan potential findings
+    Test target untuk Insecure Direct Object Reference (IDOR) vulnerability dengan proteksi rotasi proxy.
     """
     logger = _logger()
     tool_name = "IDOR Scanner"
@@ -346,14 +307,12 @@ def scan_idor(url: str, cookies: str = "", auth_header: str = "") -> str:
     findings = []
     all_tests = []
 
-    # Build headers
     test_headers = {**HEADERS}
     if cookies:
         test_headers["Cookie"] = cookies
     if auth_header:
         test_headers["Authorization"] = auth_header
 
-    # ── 1. Extract IDs dari URL ───────────────────────────────────────────────
     extracted_ids = []
     for pattern in ID_PATTERNS:
         matches = pattern.findall(url)
@@ -374,17 +333,22 @@ def scan_idor(url: str, cookies: str = "", auth_header: str = "") -> str:
     if logger:
         logger.add_log(tool_name, "PROCESSING", f"Ditemukan {len(extracted_ids)} ID di URL: {[i['original'] for i in extracted_ids]}")
 
-    # ── 2. Baseline request ───────────────────────────────────────────────────
+    # Baseline Request dengan Proxy
     rate_limiter.wait(domain)
+    current_proxy = proxy_router.get_proxy()
     try:
-        baseline = SESSION.get(url, headers=test_headers, allow_redirects=True)
+        baseline = SESSION.get(url, headers=test_headers, allow_redirects=True, proxies=current_proxy, timeout=5)
         baseline_status = baseline.status_code
         baseline_length = len(baseline.text)
         baseline_body = baseline.text[:500]
+    except (requests.exceptions.ProxyError, requests.exceptions.Timeout):
+        if current_proxy:
+            proxy_router.remove_dead_proxy(current_proxy)
+        return json.dumps({"error": "Gagal request baseline karena kendala proxy.", "status": "error"})
     except Exception as e:
         return json.dumps({"error": f"Gagal request baseline: {str(e)}", "status": "error"})
 
-    # ── 3. Test tiap ID yang ditemukan ────────────────────────────────────────
+    # Fuzzing Variant ID dengan Proxy
     for id_info in extracted_ids:
         original_id = id_info["original"]
         test_ids = _generate_test_ids(original_id)
@@ -392,18 +356,18 @@ def scan_idor(url: str, cookies: str = "", auth_header: str = "") -> str:
         if logger:
             logger.add_log(tool_name, "PROCESSING", f"Testing ID '{original_id}' dengan {len(test_ids)} variants")
 
-        for test_id in test_ids[:8]:  # Max 8 per original ID
+        for test_id in test_ids[:8]:
             if check_cancelled(logger):
                 break
 
-            # Ganti ID di URL
             test_url = url.replace(original_id, test_id, 1)
             if test_url == url:
                 continue
 
             rate_limiter.wait(domain)
+            current_proxy = proxy_router.get_proxy()
             try:
-                resp = SESSION.get(test_url, headers=test_headers, allow_redirects=True)
+                resp = SESSION.get(test_url, headers=test_headers, allow_redirects=True, proxies=current_proxy, timeout=4)
                 resp_length = len(resp.text)
                 resp_body = resp.text[:500]
 
@@ -415,36 +379,26 @@ def scan_idor(url: str, cookies: str = "", auth_header: str = "") -> str:
                     "response_length": resp_length,
                 }
 
-                # Analisa perbedaan response
                 is_interesting = False
                 evidence = []
 
-                # Status 200 buat ID yang berbeda = potential IDOR
                 if resp.status_code == 200 and baseline_status == 200:
-                    # Cek apakah konten berbeda (bukan caching)
                     length_diff = abs(resp_length - baseline_length)
                     if length_diff > 50 and resp_length > 100:
                         is_interesting = True
                         evidence.append(f"Response length berbeda: {baseline_length} vs {resp_length}")
 
-                    # Cek PII indicators di response
-                    pii_patterns = [
-                        r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',  # email
-                        r'"(?:email|phone|address|ssn|dob|name|username)":\s*"[^"]{3,}"',  # JSON fields
-                        r'\b\d{3}-\d{2}-\d{4}\b',  # SSN pattern
-                    ]
+                    pii_patterns = [r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', r'"(?:email|phone|address|ssn|dob|name|username)":\s*"[^"]{3,}"']
                     for pii_pattern in pii_patterns:
                         if re.search(pii_pattern, resp_body, re.I) and not re.search(pii_pattern, baseline_body, re.I):
                             is_interesting = True
                             evidence.append("PII pattern detected di response yang tidak ada di baseline")
                             break
 
-                # 403 → 200 setelah manipulasi ID = bypass access control
                 if baseline_status == 403 and resp.status_code == 200:
                     is_interesting = True
                     evidence.append("Access control bypass: 403 → 200 setelah ID manipulation")
 
-                # 401 → 200 = auth bypass
                 if baseline_status == 401 and resp.status_code == 200:
                     is_interesting = True
                     evidence.append("Auth bypass: 401 → 200 setelah ID manipulation")
@@ -465,11 +419,15 @@ def scan_idor(url: str, cookies: str = "", auth_header: str = "") -> str:
                 test_result["interesting"] = is_interesting
                 all_tests.append(test_result)
 
+            except (requests.exceptions.ProxyError, requests.exceptions.Timeout):
+                if current_proxy:
+                    proxy_router.remove_dead_proxy(current_proxy)
+                continue
             except Exception as e:
                 if logger:
                     logger.add_log(tool_name, "WARNING", f"Error test ID {test_id}: {str(e)[:100]}")
 
-    # ── 4. IDOR via query parameter ───────────────────────────────────────────
+    # Query Param ID Fuzzing dengan Proxy
     if not check_cancelled(logger):
         common_id_params = ["id", "user_id", "account_id", "record_id", "uid", "userid"]
         for param in common_id_params:
@@ -480,8 +438,9 @@ def scan_idor(url: str, cookies: str = "", auth_header: str = "") -> str:
                     sep = "&" if "?" in url else "?"
                     test_url = f"{url}{sep}{param}={test_val}"
                     rate_limiter.wait(domain)
+                    current_proxy = proxy_router.get_proxy()
                     try:
-                        resp = SESSION.get(test_url, headers=test_headers)
+                        resp = SESSION.get(test_url, headers=test_headers, proxies=current_proxy, timeout=4)
                         if resp.status_code == 200 and len(resp.text) > 100:
                             body = resp.text[:300]
                             if any(k in body.lower() for k in ["email", "username", "profile", "account"]):
@@ -493,6 +452,10 @@ def scan_idor(url: str, cookies: str = "", auth_header: str = "") -> str:
                                     "evidence": "Resource accessible via injected ID parameter",
                                     "response_preview": redact(body),
                                 })
+                    except (requests.exceptions.ProxyError, requests.exceptions.Timeout):
+                        if current_proxy:
+                            proxy_router.remove_dead_proxy(current_proxy)
+                        continue
                     except Exception:
                         pass
 
@@ -506,14 +469,10 @@ def scan_idor(url: str, cookies: str = "", auth_header: str = "") -> str:
             "high": len([f for f in findings if f.get("severity") == "HIGH"]),
             "medium": len([f for f in findings if f.get("severity") == "MEDIUM"]),
         },
-        "all_test_results": all_tests[:20],  # Limit buat log
+        "all_test_results": all_tests[:20],
         "status": "success" if not check_cancelled(logger) else "cancelled"
     }
 
     if logger:
-        logger.add_log(
-            tool_name,
-            "WARNING" if findings else "SUCCESS",
-            f"IDOR scan selesai. {len(all_tests)} tests, {len(findings)} findings."
-        )
+        logger.add_log(tool_name, "WARNING" if findings else "SUCCESS", f"IDOR scan selesai. {len(all_tests)} tests, {len(findings)} findings.")
     return json.dumps(redact(result), indent=2)

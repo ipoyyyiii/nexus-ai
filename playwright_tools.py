@@ -5,9 +5,8 @@ import re
 import time
 from typing import Optional
 from urllib.parse import urljoin, urlparse
-
+from proxy_router import proxy_router
 from crewai.tools import tool
-
 from cancellation import check_cancelled
 from rate_limiter import rate_limiter
 from redact import redact
@@ -48,6 +47,20 @@ async def _get_browser():
 
 async def _new_page(browser, timeout_ms: int = 15000):
     """Buat page baru dengan stealth settings dasar."""
+    proxy_dict = proxy_router.get_proxy()
+    proxy_server = proxy_dict["http"] if proxy_dict else None
+
+    context_args = {
+        "proxy": {"server": proxy_server},
+        "user_agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "viewport": {"width": 1280, "height": 800},
+        "ignore_https_errors": True,
+    }
+    
     ctx = await browser.new_context(
         user_agent=(
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -57,6 +70,10 @@ async def _new_page(browser, timeout_ms: int = 15000):
         viewport={"width": 1280, "height": 800},
         ignore_https_errors=True,
     )
+    if proxy_server:
+        context_args["proxy"] = {"server": proxy_server}
+
+    ctx = await browser.new_context(**context_args)
     page = await ctx.new_page()
     page.set_default_timeout(timeout_ms)
 
