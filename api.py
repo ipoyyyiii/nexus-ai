@@ -45,12 +45,34 @@ from custom_tools import report_new_endpoint
 
 load_dotenv()
 
+if os.environ.get("OPENROUTER_API_KEY"):
+    os.environ["OPENAI_API_KEY"] = os.environ.get("OPENROUTER_API_KEY")
+    os.environ["OPENAI_API_BASE"] = "https://openrouter.ai/api/v1"
+    os.environ["OPENAI_BASE_URL"] = "https://openrouter.ai/api/v1"
+
 url: str = os.environ.get("SUPABASE_URL")
 key: str = os.environ.get("SUPABASE_KEY")
 supabase: Client = create_client(url, key)
 memory = SessionMemory(supabase)
 
 app = FastAPI(title="Nexus AI Pentest API", version="6.1 - Hardened Edition")
+
+def langchain_to_crewai(lc_tool):
+    from crewai.tools import BaseTool
+    
+    class CrewAIWrappedTool(BaseTool):
+        name: str = lc_tool.name
+        description: str = lc_tool.description
+        
+        def _run(self, **kwargs) -> str:
+            # Panggil fungsi asli tool langchain lewat .invoke()
+            return lc_tool.invoke(kwargs)
+            
+    # Jika tool asli punya skema argumen, kita wariskan biar AI-nya pinter
+    if hasattr(lc_tool, 'args_schema') and lc_tool.args_schema:
+        CrewAIWrappedTool.args_schema = lc_tool.args_schema
+        
+    return CrewAIWrappedTool()
 
 # ============================================================
 # API KEY AUTH
@@ -80,17 +102,16 @@ async def require_api_key(x_api_key: Optional[str] = Header(default=None)):
 
 # ============================================================
 # CORS
-# Gak ada lagi wildcard "*". Set NEXUS_ALLOWED_ORIGINS di .env,
-# comma-separated, contoh: http://localhost:3000,https://app.lo-domain.com
+# Gak ada lagi wildcard "*". Set NEXUS_ALLOWED_ORIGINS di .env
 # ============================================================
-allowed_origins_env = os.environ.get("NEXUS_ALLOWED_ORIGINS", "http://localhost:3000")
+allowed_origins_env = os.environ.get("NEXUS_ALLOWED_ORIGINS", "http://48.193.45.254:3000")
 allowed_origins = [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST"],
+    allow_methods=["*"],
     allow_headers=["Content-Type", "X-API-Key"],
 )
 
@@ -256,7 +277,7 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
                             + (f"\n{memory_context}" if memory_context else "")
                         ),
                         llm=llm_recon,
-                        tools=[
+                        tools=[langchain_to_crewai(t) for t in [
                             recon_target, enumerate_dns_subdomains, analyze_ssl_tls,
                             browser_screenshot, browser_extract_surface,
                             browser_intercept_requests, browser_check_security_headers,
@@ -264,7 +285,7 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
                             param_discovery_get, param_discovery_headers,
                             detect_subdomain_takeover,
                             report_new_endpoint
-                        ],
+                        ]],
                         verbose=True
                     )
 
@@ -273,14 +294,14 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
                         goal="Rancang payload presisi berdasarkan intel recon. Manfaatkan hasil browser-based recon buat temuin attack vector yang lebih dalam.",
                         backstory="Mastermind eksploitasi. Payload-nya surgical, WAF-aware. Bisa analisa JS bundle, form behavior, dan hidden API endpoint.",
                         llm=llm_analis,
-                        tools=[
+                        tools=[langchain_to_crewai(t) for t in [
                             baca_log_burp, scan_sql_injection, detect_xss_csrf,
                             scan_lfi_rfi, test_header_injection,
                             browser_simulate_form, browser_find_open_redirect,
                             param_discovery_post,
                             run_nuclei_scan,
                             report_new_endpoint
-                        ],
+                        ]],
                         verbose=True
                     )
 
@@ -289,13 +310,13 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
                         goal="Eksekusi payload, test API, SSRF, IDOR, analisis password.",
                         backstory="Eksekutor berdarah dingin. Expert di SSRF dan IDOR yang sering jadi goldmine di H1.",
                         llm=llm_eksekutor,
-                        tools=[
+                        tools=[langchain_to_crewai(t) for t in [
                             tembak_payload, test_api_security, analyze_password_strength,
                             scan_ssrf, scan_idor,
                             test_jwt_weakness,
                             test_auth_rate_limiting,
                             report_new_endpoint
-                        ],
+                        ]],
                         verbose=True
                     )
 

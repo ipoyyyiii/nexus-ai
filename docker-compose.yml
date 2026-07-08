@@ -1,15 +1,22 @@
-version: '3.8'
-
 services:
+  # --- Backend Service (Yang Udah Jalan) ---
   pentest-ai-backend:
-    build: .
     container_name: nexus_pentest_api
-    restart: always
+    build: .
     ports:
       - "8000:8000"
-    volumes:
-      - .:/app
-    environment:
-      - ENV=production
     env_file:
       - .env
+    restart: always
+
+  # --- Frontend Service (Tambahan Baru) ---
+  nexus-frontend:
+    container_name: nexus_nextjs_ui
+    build:
+      context: ./frontend-pentest # <-- Arahkan ke nama folder frontend Next.js lo
+      args:
+        - NEXT_PUBLIC_API_URL=http://48.193.45.254:8000
+        - NEXT_PUBLIC_NEXUS_API_KEY=882de194f469afb00b7eeeefdd299a8820a2315d7260ea193373bef7a46dd9b4
+    ports:
+      - "3000:3000"
+    restart: always
