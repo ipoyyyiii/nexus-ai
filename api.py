@@ -42,8 +42,15 @@ from nuclei_tool import run_nuclei_scan
 from subdomain_takeover import detect_subdomain_takeover
 from auth_testing import test_jwt_weakness, test_auth_rate_limiting
 from custom_tools import report_new_endpoint
+from wayback_tool import wayback_scraper
+from github_dork import github_dorking
+from oauth_tester import oauth_flow_tester
+from graphql_tester import graphql_tester
 
 load_dotenv()
+
+import litellm
+litellm._turn_on_debug()
 
 if os.environ.get("OPENROUTER_API_KEY"):
     os.environ["OPENAI_API_KEY"] = os.environ.get("OPENROUTER_API_KEY")
@@ -59,19 +66,30 @@ app = FastAPI(title="Nexus AI Pentest API", version="6.1 - Hardened Edition")
 
 def langchain_to_crewai(lc_tool):
     from crewai.tools import BaseTool
-    
+    from pydantic import create_model
+    import inspect
+
+    # Bangun schema dari args_schema tool asli
+    if hasattr(lc_tool, 'args_schema') and lc_tool.args_schema:
+        schema = lc_tool.args_schema
+    else:
+        # Fallback: bikin schema dinamis dari signature fungsi
+        sig = inspect.signature(lc_tool.func)
+        fields = {
+            k: (str, ...) 
+            for k, v in sig.parameters.items() 
+            if k != 'self'
+        }
+        schema = create_model(f"{lc_tool.name}Input", **fields) if fields else None
+
     class CrewAIWrappedTool(BaseTool):
         name: str = lc_tool.name
         description: str = lc_tool.description
-        
+        args_schema: type = schema if schema else type('EmptySchema', (), {})
+
         def _run(self, **kwargs) -> str:
-            # Panggil fungsi asli tool langchain lewat .invoke()
             return lc_tool.invoke(kwargs)
-            
-    # Jika tool asli punya skema argumen, kita wariskan biar AI-nya pinter
-    if hasattr(lc_tool, 'args_schema') and lc_tool.args_schema:
-        CrewAIWrappedTool.args_schema = lc_tool.args_schema
-        
+
     return CrewAIWrappedTool()
 
 # ============================================================
@@ -284,7 +302,7 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
                             browser_extract_js_secrets, analyze_js_deep,
                             param_discovery_get, param_discovery_headers,
                             detect_subdomain_takeover,
-                            report_new_endpoint
+                            report_new_endpoint, wayback_scraper,github_dorking,
                         ]],
                         verbose=True
                     )
@@ -300,7 +318,7 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
                             browser_simulate_form, browser_find_open_redirect,
                             param_discovery_post,
                             run_nuclei_scan,
-                            report_new_endpoint
+                            report_new_endpoint,graphql_tester,
                         ]],
                         verbose=True
                     )
@@ -315,7 +333,7 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
                             scan_ssrf, scan_idor,
                             test_jwt_weakness,
                             test_auth_rate_limiting,
-                            report_new_endpoint
+                            report_new_endpoint,oauth_flow_tester,
                         ]],
                         verbose=True
                     )
@@ -838,22 +856,30 @@ class InjectTargetRequest(BaseModel):
     source: str
 
 @app.post("/api/v1/job/{job_id}/inject-target")
-async def inject_new_target(job_id: str, req: InjectTargetRequest, _: bool = Depends(require_api_key)):
-    """
-    Endpoint tempat tool `report_new_endpoint` menyuntikkan target/path baru 
-    secara real-time ke dalam antrean yang sedang berjalan.
-    """
-    if job_id not in ACTIVE_QUEUE_SESSIONS:
+@app.post("/api/v1/session/{session_id}/inject-target")
+async def inject_new_target(
+    req: InjectTargetRequest,
+    job_id: str = None,
+    session_id: str = None,
+    _: bool = Depends(require_api_key)
+):
+    # Resolve job_id dari session_id kalau agent cuma tau session_id
+    if not job_id and session_id:
+        job_id = next(
+            (jid for jid, j in jobs.items() if j.get("session_id") == session_id),
+            None
+        )
+
+    if not job_id or job_id not in ACTIVE_QUEUE_SESSIONS:
         raise HTTPException(status_code=404, detail="Job queue tidak aktif atau sudah selesai.")
-        
+
     state = ACTIVE_QUEUE_SESSIONS[job_id]
     new_url = req.url.strip()
-    
+
     if new_url in state.visited_targets:
         return {"status": "ignored", "message": "Target sudah masuk antrean atau sudah discan."}
-        
-    # Inject secara asinkron ke dalam queue yang lagi jalan
+
     asyncio.run_coroutine_threadsafe(state.queue.put(new_url), asyncio.get_event_loop())
-    update_job(job_id, message=f"📥 Menambahkan target baru dari {req.source}: {new_url}")
-    
+    update_job(job_id, message=f"Menambahkan target baru dari {req.source}: {new_url}")
+
     return {"status": "success", "message": f"Target {new_url} berhasil ditambahkan ke antrean pool."}

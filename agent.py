@@ -23,6 +23,10 @@ from nuclei_tool import run_nuclei_scan
 from subdomain_takeover import detect_subdomain_takeover
 from auth_testing import test_jwt_weakness, test_auth_rate_limiting
 from custom_tools import report_new_endpoint
+from wayback_tool import wayback_scraper
+from github_dork import github_dorking
+from oauth_tester import oauth_flow_tester
+from graphql_tester import graphql_tester
 
 # ==========================================
 # 1. LOAD ENV
@@ -133,7 +137,7 @@ if __name__ == "__main__":
             browser_intercept_requests, browser_check_security_headers,
             browser_extract_js_secrets, analyze_js_deep,
             param_discovery_get, param_discovery_headers,detect_subdomain_takeover,
-            report_new_endpoint,
+            report_new_endpoint,wayback_scraper,github_dorking,
         ],
         verbose=True
     )
@@ -148,6 +152,7 @@ if __name__ == "__main__":
             scan_lfi_rfi, test_header_injection,
             browser_simulate_form, browser_find_open_redirect,
             param_discovery_post,run_nuclei_scan,report_new_endpoint,
+            graphql_tester,
         ],
         verbose=True
     )
@@ -160,7 +165,7 @@ if __name__ == "__main__":
         tools=[
             tembak_payload, test_api_security, analyze_password_strength,
             scan_ssrf, scan_idor,test_jwt_weakness,test_auth_rate_limiting,
-            report_new_endpoint,
+            report_new_endpoint,oauth_flow_tester,
         ],
         verbose=True
     )

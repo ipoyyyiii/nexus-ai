@@ -2,6 +2,8 @@ import subprocess
 import json
 import os
 from langchain.tools import tool
+from cancellation import check_cancelled
+from custom_tools import exec_logger
 
 @tool("run_nuclei_scan")
 def run_nuclei_scan(url: str) -> str:
@@ -10,14 +12,11 @@ def run_nuclei_scan(url: str) -> str:
     (cve, misconfig, exposure, takeover). Sangat efektif untuk mendeteksi CVE terbaru 
     dan kesalahan konfigurasi server secara cepat.
     """
-    # Bersihin input URL agar aman dijalankan di shell
+    if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
+
     target = url.strip()
-    
-    # File temporary buat nampung output JSON
     output_file = f"nuclei_res_{os.getpid()}.json"
     
-    # Command nuclei: pake target, format jsonl, batasi tag, dan set rate limit biar ramah target
-    # -rl 20 (rate limit 20 req/sec), -bs 5 (bulk size 5) supaya gak terlalu agresif
     cmd = [
         "nuclei",
         "-u", target,
@@ -31,20 +30,18 @@ def run_nuclei_scan(url: str) -> str:
     ]
     
     try:
-        # Jalankan command nuclei
         result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=600)
         
         if not os.path.exists(output_file):
             return f"Nuclei scan selesai untuk {target}, namun tidak ditemukan kerentanan yang cocok."
             
-        # Parse hasil scan dari file JSONL
         findings = []
         with open(output_file, "r") as f:
             for line in f:
                 if line.strip():
                     data = json.loads(line)
                     info = data.get("info", {})
-                    finding = {
+                    findings.append({
                         "template_id": data.get("template-id"),
                         "name": info.get("name"),
                         "severity": info.get("severity"),
@@ -52,16 +49,13 @@ def run_nuclei_scan(url: str) -> str:
                         "matched_at": data.get("matched-at"),
                         "description": info.get("description", ""),
                         "extracted_results": data.get("extracted-results", [])
-                    }
-                    findings.append(finding)
+                    })
                     
-        # Hapus file temporary setelah selesai
         os.remove(output_file)
         
         if not findings:
             return f"Nuclei scan selesai. Target {target} bersih dari signature template yang ditesting."
             
-        # Format output biar gampang dibaca Tim Analis
         output = f"=== NUCLEI SCAN RESULTS FOR {target} ===\n"
         for f in findings:
             output += f"\n[-] [{f['severity'].upper()}] {f['name']} ({f['template_id']})\n"
