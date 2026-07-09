@@ -46,6 +46,9 @@ from wayback_tool import wayback_scraper
 from github_dork import github_dorking
 from oauth_tester import oauth_flow_tester
 from graphql_tester import graphql_tester
+from cors_tester import cors_tester
+from ssti_tester import ssti_tester
+from xxe_tester import xxe_tester
 
 load_dotenv()
 
@@ -318,7 +321,8 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
                             browser_simulate_form, browser_find_open_redirect,
                             param_discovery_post,
                             run_nuclei_scan,
-                            report_new_endpoint,graphql_tester,
+                            report_new_endpoint,graphql_tester,cors_tester,
+                            ssti_tester,
                         ]],
                         verbose=True
                     )
@@ -334,6 +338,7 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
                             test_jwt_weakness,
                             test_auth_rate_limiting,
                             report_new_endpoint,oauth_flow_tester,
+                            xxe_tester,
                         ]],
                         verbose=True
                     )
