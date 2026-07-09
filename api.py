@@ -3,10 +3,8 @@ import uuid
 import asyncio
 import json
 import secrets
-import asyncio
 from datetime import datetime
 from typing import Optional, Dict, Any
-from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Header
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -37,7 +35,6 @@ from scope import validate_target
 from checkpoint import checkpoint_store, current_job_id
 from model_registry import build_llm, list_available_models, chain_summary
 from cancellation import cancellation_store, current_job_id as cancel_job_id
-from model_registry import build_llm, list_available_models, chain_summary
 from nuclei_tool import run_nuclei_scan
 from subdomain_takeover import detect_subdomain_takeover
 from auth_testing import test_jwt_weakness, test_auth_rate_limiting

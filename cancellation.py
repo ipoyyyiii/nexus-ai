@@ -2,8 +2,6 @@ import threading
 from typing import Optional, Dict
 from contextvars import ContextVar
 
-# ContextVar buat tau "gue lagi di job mana" dari dalam tool,
-# mirip pattern yang udah dipake di checkpoint.py
 current_job_id: ContextVar[Optional[str]] = ContextVar("cancel_job_id", default=None)
 
 

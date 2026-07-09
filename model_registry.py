@@ -21,7 +21,6 @@ def _or(model_slug: str, temperature: float = 0.2) -> ChatOpenAI:
 
 # ============================================================
 # DAFTAR MODEL
-# Urutan di sini = urutan di dropdown frontend + urutan fallback default
 # ============================================================
 MODEL_REGISTRY = [
     # ── PAID ──────────────────────────────────────────────────
@@ -80,6 +79,14 @@ MODEL_REGISTRY = [
         "tier": "paid",
         "slug": "openrouter/qwen/qwen3.7-max",
         "description": "The Agent Frontier. Flagship model terbaik untuk multi-step long workflow, rajanya terminal execution dan anti-hallucination.",
+    },
+    {
+        "id": "tokenhub-glm-5v-turbo",
+        "label": "GLM 5V Turbo (TokenHub)",
+        "provider": "Tencent-TokenHub",
+        "tier": "paid",
+        "slug": "glm-5v-turbo",
+        "description": "1M Free Tokens. Model coding multimodal dari Zhipu via Tencent Cloud. Anti rate-limit!",
     },
 
     # ── FREE ──────────────────────────────────────────────────
@@ -151,10 +158,6 @@ MODEL_REGISTRY = [
 
 
 def list_available_models() -> List[dict]:
-    """
-    Return semua model kalau OPENROUTER_API_KEY ke-set.
-    Kalau key gak ada, return empty list (frontend bakal nampilin error).
-    """
     if not os.environ.get("OPENROUTER_API_KEY"):
         return []
     return [
@@ -174,17 +177,6 @@ def _find(model_id: str) -> Optional[dict]:
 
 
 def build_llm(preferred_model_id: Optional[str] = None):
-    """
-    Return LangChain Runnable dengan fallback chain otomatis.
-
-    Urutan chain:
-    1. Model pilihan user (preferred_model_id) — kalau ada & valid
-    2. Sisa paid model
-    3. Semua free model (dari yang paling capable ke paling ringan)
-
-    .with_fallbacks() otomatis nyoba next model di chain kalau yang
-    sebelumnya throw exception (termasuk quota habis, 402, 429).
-    """
     if not os.environ.get("OPENROUTER_API_KEY"):
         raise RuntimeError("OPENROUTER_API_KEY belum di-set di .env backend.")
 
@@ -213,7 +205,22 @@ def build_llm(preferred_model_id: Optional[str] = None):
             final_chain.append(m)
             seen.add(m["id"])
 
-    instances = [_or(m["slug"]) for m in final_chain]
+    # ── ROUTING ENGINE CUSTOM (TOKENHUB VS OPENROUTER) ──
+    instances = []
+    for m in final_chain:
+        if m["id"] == "tokenhub-glm-5v-turbo":
+            # Jika giliran model Tencent, bypass langsung ke API Tencent TokenHub
+            instances.append(
+                ChatOpenAI(
+                    model=m["slug"], # "glm-5v-turbo"
+                    api_key=os.getenv("TOKENHUB_API_KEY"),
+                    base_url=os.getenv("TOKENHUB_API_BASE"), # https://tokenhub-intl.tencentcloudmaas.com/v1
+                    temperature=0.2,
+                )
+            )
+        else:
+            # Selain model itu, balikin ke jalur standard OpenRouter lo
+            instances.append(_or(m["slug"]))
 
     if len(instances) == 1:
         return instances[0]

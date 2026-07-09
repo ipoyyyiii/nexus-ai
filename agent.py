@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 from crewai import Agent, Task, Crew
+from langchain_openai import ChatOpenAI
 from custom_tools import (
     baca_log_burp, tembak_payload, recon_target,
     scan_sql_injection, detect_xss_csrf, analyze_ssl_tls,
