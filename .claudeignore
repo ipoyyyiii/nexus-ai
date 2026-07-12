@@ -1,0 +1,15 @@
+*execution_logs*
+
+*.log
+
+*.json
+
+*report.md
+
+__pycache__/
+
+*.pyc
+
+.git/
+
+node_modules/

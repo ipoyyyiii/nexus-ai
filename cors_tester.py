@@ -4,6 +4,7 @@ from cancellation import check_cancelled
 from checkpoint import require_approval
 from custom_tools import exec_logger
 from rate_limiter import rate_limiter
+from auth_store import get_auth_kwargs
 
 try:
     import urllib3
@@ -47,6 +48,7 @@ def cors_tester(target_url: str) -> str:
     exec_logger.add_log("CORS Tester", "START", f"Memulai CORS testing pada {target_url}")
 
     domain = _domain_of(target_url)
+    auth_kwargs = get_auth_kwargs(domain)
 
     # Payload origins yang akan ditest
     test_origins = [

@@ -1,5 +1,5 @@
 services:
-  # --- Backend Service (Yang Udah Jalan) ---
+  # --- Backend Service  ---
   pentest-ai-backend:
     container_name: nexus_pentest_api
     build: .
@@ -9,11 +9,11 @@ services:
       - .env
     restart: always
 
-  # --- Frontend Service (Tambahan Baru) ---
+  # --- Frontend Service  ---
   nexus-frontend:
     container_name: nexus_nextjs_ui
     build:
-      context: ./frontend-pentest # <-- Arahkan ke nama folder frontend Next.js lo
+      context: ./frontend-pentest 
       args:
         - NEXT_PUBLIC_API_URL=http://48.193.45.254:8000
         - NEXT_PUBLIC_NEXUS_API_KEY=882de194f469afb00b7eeeefdd299a8820a2315d7260ea193373bef7a46dd9b4

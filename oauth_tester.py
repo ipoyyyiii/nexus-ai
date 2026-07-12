@@ -7,6 +7,7 @@ from cancellation import check_cancelled
 from checkpoint import require_approval
 from custom_tools import exec_logger
 from rate_limiter import rate_limiter
+from auth_store import get_auth_kwargs
 
 urllib3_imported = False
 try:
@@ -34,12 +35,15 @@ def _detect_oauth_endpoints(base_url: str) -> list:
         "/.well-known/openid-configuration",  # OIDC discovery
     ]
 
+    domain = _domain_of(base_url)
+    auth_kw = get_auth_kwargs(domain)
     found = []
     for path in common_oauth_paths:
         try:
             rate_limiter.wait(_domain_of(base_url))
             resp = requests.get(
                 f"{base_url.rstrip('/')}{path}",
+                **auth_kw,
                 timeout=5,
                 verify=False,
                 allow_redirects=False,

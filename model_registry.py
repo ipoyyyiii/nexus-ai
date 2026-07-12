@@ -1,6 +1,7 @@
 import os
 from typing import List, Optional
 from langchain_openai import ChatOpenAI
+from crewai import LLM
 
 OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 OPENROUTER_HEADERS = {
@@ -85,7 +86,7 @@ MODEL_REGISTRY = [
         "label": "GLM 5V Turbo (TokenHub)",
         "provider": "Tencent-TokenHub",
         "tier": "paid",
-        "slug": "glm-5v-turbo",
+        "slug": "openai/glm-5v-turbo",  # litellm butuh prefix openai/ buat OpenAI-compatible API
         "description": "1M Free Tokens. Model coding multimodal dari Zhipu via Tencent Cloud. Anti rate-limit!",
     },
 
@@ -177,6 +178,12 @@ def _find(model_id: str) -> Optional[dict]:
 
 
 def build_llm(preferred_model_id: Optional[str] = None):
+    """
+    Return CrewAI LLM instance dengan fallback chain.
+
+    CrewAI's LLM class properly passes api_key & base_url ke litellm,
+    solving the issue where ChatOpenAI's credentials were ignored.
+    """
     if not os.environ.get("OPENROUTER_API_KEY"):
         raise RuntimeError("OPENROUTER_API_KEY belum di-set di .env backend.")
 
@@ -205,28 +212,38 @@ def build_llm(preferred_model_id: Optional[str] = None):
             final_chain.append(m)
             seen.add(m["id"])
 
-    # ── ROUTING ENGINE CUSTOM (TOKENHUB VS OPENROUTER) ──
-    instances = []
+    # ── ROUTING ENGINE: CREWAI LLM CLASS ──
+
+    # JIKA pilih TokenHub: return langsung TANPA fallback
+    # (fallback ke OpenRouter akan gagal karena credentials berbeda)
+    if final_chain[0]["id"] == "tokenhub-glm-5v-turbo":
+        return LLM(
+            model=final_chain[0]["slug"],  # "openai/glm-5v-turbo"
+            api_key=os.getenv("TOKENHUB_API_KEY"),
+            base_url=os.getenv("TOKENHUB_API_BASE"),
+            temperature=0.2,
+        )
+
+    # Untuk OpenRouter: bisa pake fallback antar OpenRouter models
+    instances: List[LLM] = []
     for m in final_chain:
-        if m["id"] == "tokenhub-glm-5v-turbo":
-            # Jika giliran model Tencent, bypass langsung ke API Tencent TokenHub
-            instances.append(
-                ChatOpenAI(
-                    model=m["slug"], # "glm-5v-turbo"
-                    api_key=os.getenv("TOKENHUB_API_KEY"),
-                    base_url=os.getenv("TOKENHUB_API_BASE"), # https://tokenhub-intl.tencentcloudmaas.com/v1
-                    temperature=0.2,
-                )
+        instances.append(
+            LLM(
+                model=m["slug"],
+                temperature=0.2,
             )
-        else:
-            # Selain model itu, balikin ke jalur standard OpenRouter lo
-            instances.append(_or(m["slug"]))
+        )
 
     if len(instances) == 1:
         return instances[0]
 
-    primary, *fallbacks = instances
-    return primary.with_fallbacks(fallbacks)
+    # Fallback antar OpenRouter models
+    primary, *fallbacks_list = instances
+    return LLM(
+        model=primary.model,
+        temperature=0.2,
+        fallbacks=fallbacks_list,
+    )
 
 
 def chain_summary(preferred_model_id: Optional[str] = None) -> List[str]:

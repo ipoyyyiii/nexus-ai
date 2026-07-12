@@ -5,6 +5,7 @@ from langchain.tools import tool
 from cancellation import check_cancelled
 from custom_tools import exec_logger
 from redact import redact
+from auth_store import get_auth_kwargs
 
 DORK_QUERIES = [
     'password',

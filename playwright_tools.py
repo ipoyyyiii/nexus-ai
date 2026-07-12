@@ -181,6 +181,331 @@ def browser_screenshot(url: str) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# TOOL 8 — Automated Login (Authenticated Scanning)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@tool("login_automator")
+def login_automator(
+    url: str,
+    username: str,
+    password: str,
+    username_selector: str = "",
+    password_selector: str = "",
+    submit_selector: str = "",
+    success_indicator: str = "",
+) -> str:
+    """
+    Automated login menggunakan Playwright. Login ke target, capture session
+    cookies, dan simpen ke auth_store buat dipake tools lain.
+
+    Flow:
+    1. Buka login page
+    2. Isi username & password
+    3. Submit form
+    4. Verifikasi login berhasil (cek redirect atau success indicator)
+    5. Capture cookies → simpen ke auth_store
+
+    Args:
+        url: Login page URL (e.g., https://target.com/login)
+        username: Username/email untuk login
+        password: Password untuk login
+        username_selector: CSS selector untuk input username (auto-detect kalau kosong)
+        password_selector: CSS selector untuk input password (auto-detect kalau kosong)
+        submit_selector: CSS selector untuk tombol submit (auto-detect kalau kosong)
+        success_indicator: Text/URL yang muncul kalau login berhasil (opsional)
+    Returns:
+        JSON berisi status login, cookies yang didapat, dan session info
+    """
+    logger = _logger()
+    tool_name = "Login Automator"
+
+    from auth_store import auth_store, AuthSession
+    from cancellation import check_cancelled
+
+    if check_cancelled(logger):
+        return "DIBATALKAN: job di-cancel oleh user."
+
+    # HITL approval sebelum login
+    from checkpoint import require_approval
+    approved = require_approval(
+        action=f"Automated login ke {url}",
+        context=f"Username: {username[:3]}***. Login ke {url} untuk authenticated scanning.",
+        risk="medium",
+        exec_logger=logger,
+    )
+    if not approved:
+        return "DIBATALKAN: approval ditolak atau timeout."
+
+    domain = _domain_of(url)
+    logger.add_log(tool_name, "START", f"Memulai automated login ke {url}")
+
+    async def _run():
+        browser = await _get_browser()
+        page, ctx = await _new_page(browser)
+        try:
+            # ── 1. Buka login page ────────────────────────────────────────────
+            logger.add_log(tool_name, "PROCESSING", f"Membuka {url}")
+            await page.goto(url, wait_until="domcontentloaded")
+            await page.wait_for_timeout(2000)
+
+            # ── 2. Detect & isi username field ────────────────────────────────
+            logger.add_log(tool_name, "PROCESSING", "Mencari input fields")
+
+            # Auto-detect selectors kalau gak di-specify
+            if not username_selector:
+                # Coba common selectors
+                for sel in [
+                    'input[type="email"]',
+                    'input[name="email"]',
+                    'input[name="username"]',
+                    'input[name="user"]',
+                    'input[name="login"]',
+                    'input[id*="email"]',
+                    'input[id*="user"]',
+                    'input[placeholder*="email" i]',
+                    'input[placeholder*="user" i]',
+                    'input[type="text"]:first-of-type',
+                ]:
+                    try:
+                        if await page.locator(sel).count() > 0:
+                            username_selector = sel
+                            break
+                    except Exception:
+                        continue
+
+            if not password_selector:
+                for sel in [
+                    'input[type="password"]',
+                    'input[name="password"]',
+                    'input[name="pass"]',
+                    'input[name="pwd"]',
+                ]:
+                    try:
+                        if await page.locator(sel).count() > 0:
+                            password_selector = sel
+                            break
+                    except Exception:
+                        continue
+
+            if not submit_selector:
+                for sel in [
+                    'button[type="submit"]',
+                    'input[type="submit"]',
+                    'button:has-text("Login")',
+                    'button:has-text("Sign in")',
+                    'button:has-text("Log in")',
+                    'button:has-text("Submit")',
+                ]:
+                    try:
+                        if await page.locator(sel).count() > 0:
+                            submit_selector = sel
+                            break
+                    except Exception:
+                        continue
+
+            if not username_selector or not password_selector:
+                return json.dumps({
+                    "status": "FAILED",
+                    "error": "Gagal auto-detect login form fields",
+                    "hint": "Coba specify username_selector dan password_selector manual",
+                    "page_title": await page.title(),
+                    "page_url": page.url,
+                })
+
+            # ── 3. Isi credentials ───────────────────────────────────────────
+            logger.add_log(tool_name, "PROCESSING", f"Filling form: {username_selector}, {password_selector}")
+
+            await page.fill(username_selector, username)
+            await page.wait_for_timeout(500)
+            await page.fill(password_selector, password)
+            await page.wait_for_timeout(500)
+
+            # ── 4. Submit ─────────────────────────────────────────────────────
+            logger.add_log(tool_name, "PROCESSING", "Submitting login form")
+
+            if submit_selector:
+                await page.click(submit_selector)
+            else:
+                # Fallback: tekan Enter di password field
+                await page.press(password_selector, "Enter")
+
+            # Tunggu navigasi
+            await page.wait_for_timeout(3000)
+
+            # ── 5. Verifikasi login berhasil ──────────────────────────────────
+            final_url = page.url
+            page_title = await page.title()
+            body_text = await page.evaluate("() => document.body?.innerText?.slice(0, 2000) ?? ''")
+
+            # Cek indikator login berhasil
+            login_success = False
+
+            if success_indicator:
+                # User specify success indicator
+                login_success = success_indicator.lower() in body_text.lower() or success_indicator.lower() in final_url.lower()
+            else:
+                # Auto-detect: cek apakah masih di login page
+                login_indicators = ["login", "signin", "sign-in", "auth"]
+                still_on_login = any(ind in final_url.lower() for ind in login_indicators)
+
+                # Cek apakah ada error message
+                error_indicators = [
+                    "invalid credentials",
+                    "wrong password",
+                    "incorrect password",
+                    "login failed",
+                    "authentication failed",
+                    "user not found",
+                    "account not found",
+                ]
+                has_error = any(err in body_text.lower() for err in error_indicators)
+
+                # Cek apakah ada dashboard/protected content indicators
+                success_indicators = [
+                    "dashboard",
+                    "welcome",
+                    "logout",
+                    "sign out",
+                    "profile",
+                    "settings",
+                    "account",
+                ]
+                has_success_content = any(ind in body_text.lower() for ind in success_indicators)
+
+                login_success = (not still_on_login and not has_error) or has_success_content
+
+            # ── 6. Capture cookies ────────────────────────────────────────────
+            cookies = await page.context.cookies()
+            cookie_dict = {c["name"]: c["value"] for c in cookies if c.get("domain", "").endswith(domain.replace(".", ""))}
+
+            # Juga capture dari semua cookies (fallback)
+            if not cookie_dict:
+                cookie_dict = {c["name"]: c["value"] for c in cookies}
+
+            # ── 7. Simpen ke auth_store ───────────────────────────────────────
+            if login_success and cookie_dict:
+                auth_session = AuthSession(
+                    domain=domain,
+                    cookies=cookie_dict,
+                    source="auto_login",
+                    login_url=url,
+                    credentials={"username": username},
+                )
+                auth_store.save_session(domain, auth_session)
+                logger.add_log(tool_name, "SUCCESS",
+                    f"Login berhasil! Cookies disimpan: {len(cookie_dict)} cookies")
+            elif not login_success:
+                logger.add_log(tool_name, "WARNING",
+                    "Login gagal — tidak ada success indicator yang terdeteksi")
+
+            result = {
+                "status": "SUCCESS" if login_success else "FAILED",
+                "final_url": final_url,
+                "page_title": page_title,
+                "cookies_captured": len(cookie_dict),
+                "cookie_names": list(cookie_dict.keys())[:10],
+                "session_stored": login_success and bool(cookie_dict),
+                "body_preview": body_text[:500],
+            }
+
+            return json.dumps(redact(result), indent=2)
+
+        except Exception as e:
+            logger.add_log(tool_name, "ERROR", str(e))
+            return json.dumps({"status": "ERROR", "error": str(e)})
+        finally:
+            await ctx.close()
+
+    return _run_async(_run())
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TOOL 9 — Inject Session (Manual Cookie Injection)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@tool("inject_session")
+def inject_session(url: str, cookies: str, headers: str = "") -> str:
+    """
+    Inject session cookies/headers ke auth_store. Dipakai ketika user kasih
+    session manual (misal setelah login manual + MFA).
+
+    Flow:
+    1. User login manual di browser
+    2. User copy cookies dari DevTools/Burp
+    3. User paste ke tool ini
+    4. Cookies disimpan ke auth_store → tools lain bisa pake
+
+    Args:
+        url: Target URL (buat extract domain)
+        cookies: Raw cookie string (e.g., "session=abc123; token=xyz; csrftoken=123")
+                 ATAU JSON string: {"session": "abc123", "token": "xyz"}
+        headers: Optional JSON string of headers (e.g., '{"Authorization": "Bearer xyz"}')
+    Returns:
+        JSON berisi status dan info session yang disimpan
+    """
+    logger = _logger()
+    tool_name = "Session Injector"
+
+    from auth_store import auth_store, AuthSession
+
+    if check_cancelled(logger):
+        return "DIBATALKAN: job di-cancel oleh user."
+
+    domain = _domain_of(url)
+    logger.add_log(tool_name, "START", f"Injecting session untuk {domain}")
+
+    # Parse cookies
+    cookie_dict = {}
+    try:
+        # Coba JSON dulu
+        cookie_dict = json.loads(cookies)
+    except (json.JSONDecodeError, TypeError):
+        # Parse sebagai raw cookie string: "key1=val1; key2=val2"
+        for part in cookies.split(";"):
+            part = part.strip()
+            if "=" in part:
+                k, v = part.split("=", 1)
+                cookie_dict[k.strip()] = v.strip()
+
+    if not cookie_dict:
+        return json.dumps({
+            "status": "FAILED",
+            "error": "Gagal parse cookies. Format: 'session=abc123; token=xyz' atau JSON",
+        })
+
+    # Parse headers
+    header_dict = {}
+    if headers:
+        try:
+            header_dict = json.loads(headers)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    # Simpen ke auth_store
+    auth_session = AuthSession(
+        domain=domain,
+        cookies=cookie_dict,
+        headers=header_dict,
+        source="user",
+    )
+    auth_store.save_session(domain, auth_session)
+
+    logger.add_log(tool_name, "SUCCESS",
+        f"Session disimpan untuk {domain}: {len(cookie_dict)} cookies, {len(header_dict)} headers")
+
+    result = {
+        "status": "SUCCESS",
+        "domain": domain,
+        "cookies_stored": len(cookie_dict),
+        "headers_stored": len(header_dict),
+        "cookie_names": list(cookie_dict.keys()),
+        "source": "user_manual",
+    }
+
+    return json.dumps(redact(result), indent=2)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # TOOL 2 — Extract attack surface
 # ═══════════════════════════════════════════════════════════════════════════════
 

@@ -6,6 +6,7 @@ from cancellation import check_cancelled
 from checkpoint import require_approval
 from custom_tools import exec_logger
 from rate_limiter import rate_limiter
+from auth_store import get_auth_kwargs
 
 try:
     import urllib3
@@ -59,6 +60,8 @@ INTROSPECTION_QUERY = """
 def _detect_graphql(base_url: str) -> list:
     """Auto-detect GraphQL endpoints."""
     found = []
+    domain = _domain_of(base_url)
+    auth_kw = get_auth_kwargs(domain)
     for path in GRAPHQL_PATHS:
         try:
             rate_limiter.wait(_domain_of(base_url))
@@ -69,6 +72,7 @@ def _detect_graphql(base_url: str) -> list:
                 url,
                 json={"query": "{ __typename }"},
                 headers={"Content-Type": "application/json"},
+                **auth_kw,
                 timeout=5,
                 verify=False,
             )
@@ -327,6 +331,11 @@ def graphql_tester(target_url: str) -> str:
         return "TEST DIBATALKAN: human-in-the-loop approval ditolak atau timeout."
 
     exec_logger.add_log("GraphQL Tester", "START", f"Memulai GraphQL testing pada {target_url}")
+
+    # Inject auth session jika ada
+    from urllib.parse import urlparse
+    domain = urlparse(target_url).netloc.split(":")[0].lower()
+    auth_kwargs = get_auth_kwargs(domain)
 
     # Step 1: Detect endpoint
     exec_logger.add_log("GraphQL Tester", "PROCESSING", "Detecting GraphQL endpoints")

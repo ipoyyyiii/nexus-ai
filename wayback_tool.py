@@ -4,6 +4,7 @@ from urllib.parse import urlparse
 from langchain.tools import tool
 from cancellation import check_cancelled
 from custom_tools import exec_logger
+from auth_store import get_auth_kwargs
 
 INTERESTING_EXTENSIONS = {
     "sensitive_files": [".env", ".config", ".json", ".xml", ".yaml", ".yml", ".bak", ".backup", ".sql", ".db"],

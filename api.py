@@ -46,6 +46,22 @@ from graphql_tester import graphql_tester
 from cors_tester import cors_tester
 from ssti_tester import ssti_tester
 from xxe_tester import xxe_tester
+from misconfiguration_scanner import misconfiguration_scanner
+from command_injection import command_injection_scanner, log_injection_scanner, csv_injection_scanner
+from xss_advanced import stored_xss_scanner, dom_xss_scanner, jsonp_injection_scanner
+from auth_session_advanced import session_management_scanner, password_reset_tester
+from injection_advanced import blind_sqli_scanner, nosql_injection_scanner, ldap_injection_scanner, xpath_injection_scanner
+from access_control_advanced import access_control_scanner
+from client_side_advanced import client_side_security_scanner, prototype_pollution_scanner
+from advanced_web_attacks import host_header_injection_scanner, race_condition_scanner, file_upload_scanner, http_request_smuggling_scanner, websocket_security_scanner
+from recon_advanced import recon_advanced, email_header_injection_scanner
+from deserialization_cache_tools import insecure_deserialization_scanner, web_cache_poisoning_scanner, cache_deception_scanner, ssrf_advanced_scanner
+from auth_recon_tools import twofa_bypass_scanner, credential_stuffing_scanner, mixed_content_scanner, idor_uuid_scanner, postmessage_vulnerability_scanner, asn_ip_mapper
+from shodan_censys_tools import shodan_scanner, censys_scanner
+from playwright_tools import login_automator, inject_session
+from auth_store import auth_store, AuthSession
+from auth_detection import detect_login_wall, needs_auth
+from auth_checkpoint import auth_checkpoint_store, current_job_id as auth_job_id
 
 load_dotenv()
 
@@ -173,6 +189,28 @@ checkpoint_store.on_wait_end = _on_checkpoint_wait_end
 
 
 # ============================================================
+# HUMAN-IN-THE-LOOP: AUTH CHECKPOINT
+# ============================================================
+def _on_auth_request(job_id: str, url: str, domain: str):
+    update_job(
+        job_id,
+        status="waiting_auth",
+        message=f"Login wall terdeteksi di {domain}. Menunggu credentials/session dari user.",
+        auth_request={
+            "url": url,
+            "domain": domain,
+            "requested_at": datetime.now().isoformat()
+        }
+    )
+
+def _on_auth_response(job_id: str):
+    update_job(job_id, status="running", auth_request=None)
+
+auth_checkpoint_store.on_auth_request = _on_auth_request
+auth_checkpoint_store.on_auth_response = _on_auth_response
+
+
+# ============================================================
 # MODELS
 # ============================================================
 class PentestRequest(BaseModel):
@@ -183,6 +221,10 @@ class PentestRequest(BaseModel):
     # Value: model_id dari model_registry.py (mis. "claude-sonnet", "glm-4.5-air-free"), atau
     # None/gak diisi -> default fallback chain (paid dulu, baru free kalau gagal).
     agent_models: Optional[Dict[str, Optional[str]]] = None
+    # Auth credentials (opsional). Kalau diisi, auto-login sebelum scan dimulai.
+    # Mode "credentials": {"mode": "credentials", "username": "...", "password": "...", "login_url": "..."}
+    # Mode "session": {"mode": "session", "cookies": "session=abc; token=xyz", "headers": {"Authorization": "Bearer ..."}}
+    credentials: Optional[Dict[str, Any]] = None
 
 class ImageRequest(BaseModel):
     image_data: str
@@ -191,6 +233,19 @@ class ImageRequest(BaseModel):
 class CheckpointResponse(BaseModel):
     job_id: str
     approved: bool
+
+
+class AuthResponse(BaseModel):
+    job_id: str
+    # Mode: "credentials" atau "session"
+    mode: str
+    # Untuk mode "credentials"
+    username: Optional[str] = None
+    password: Optional[str] = None
+    login_url: Optional[str] = None
+    # Untuk mode "session"
+    cookies: Optional[str] = None
+    headers: Optional[Dict[str, str]] = None
 
 
 # ============================================================
@@ -216,7 +271,7 @@ def update_job(job_id: str, **kwargs):
 # BACKGROUND PENTEST RUNNER
 # Ini yang dulu blocking sekarang jalan di background thread.
 # ============================================================
-def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_models: Optional[Dict[str, Optional[str]]] = None):
+def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_models: Optional[Dict[str, Optional[str]]] = None, credentials: Optional[Dict[str, Any]] = None):
     """
     Dijalankan di background thread oleh FastAPI BackgroundTasks.
     Kini mendukung multi-target paralel (Async Worker Pool) tanpa merusak WAF.
@@ -225,6 +280,7 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
     try:
         current_job_id.set(job_id)
         cancel_job_id.set(job_id)
+        auth_job_id.set(job_id)
         cancellation_store.register(job_id)
 
         update_job(job_id, status="running", message="Validasi scope target...")
@@ -236,6 +292,39 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
 
         update_job(job_id, status="running", message="Inisialisasi agents & model chain...")
         clear_execution_logs()
+
+        # ── Pre-provided credentials: auto-login atau inject session ────────────
+        if credentials:
+            domain = _domain_of(target)
+            mode = credentials.get("mode", "")
+
+            if mode == "credentials":
+                # Auto-login pakai Playwright
+                update_job(job_id, status="running", message=f"🔐 Auto-login ke {domain}...")
+                try:
+                    from playwright_tools import login_automator
+                    login_result = login_automator.invoke({
+                        "url": credentials.get("login_url", target),
+                        "username": credentials.get("username", ""),
+                        "password": credentials.get("password", ""),
+                    })
+                    update_job(job_id, message=f"🔐 Login result: {login_result[:200]}")
+                except Exception as login_err:
+                    update_job(job_id, message=f"⚠️ Auto-login gagal: {login_err}. Lanjut tanpa auth.")
+
+            elif mode == "session":
+                # Inject session cookies langsung
+                update_job(job_id, status="running", message=f"🍪 Injecting session untuk {domain}...")
+                try:
+                    from playwright_tools import inject_session
+                    inject_result = inject_session.invoke({
+                        "url": target,
+                        "cookies": credentials.get("cookies", ""),
+                        "headers": json.dumps(credentials.get("headers", {})),
+                    })
+                    update_job(job_id, message=f"🍪 Session injected: {inject_result[:200]}")
+                except Exception as inject_err:
+                    update_job(job_id, message=f"⚠️ Session injection gagal: {inject_err}. Lanjut tanpa auth.")
 
         # Load intelligence lama dari target utama
         memory_context = memory.build_context(target)
@@ -302,7 +391,12 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
                             browser_extract_js_secrets, analyze_js_deep,
                             param_discovery_get, param_discovery_headers,
                             detect_subdomain_takeover,
-                            report_new_endpoint, wayback_scraper,github_dorking,
+                            report_new_endpoint, wayback_scraper, github_dorking,
+                            recon_advanced, misconfiguration_scanner,
+                            client_side_security_scanner,
+                            mixed_content_scanner, asn_ip_mapper,
+                            postmessage_vulnerability_scanner,
+                            shodan_scanner, censys_scanner,
                         ]],
                         verbose=True
                     )
@@ -318,8 +412,16 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
                             browser_simulate_form, browser_find_open_redirect,
                             param_discovery_post,
                             run_nuclei_scan,
-                            report_new_endpoint,graphql_tester,cors_tester,
+                            report_new_endpoint, graphql_tester, cors_tester,
                             ssti_tester,
+                            blind_sqli_scanner, nosql_injection_scanner,
+                            ldap_injection_scanner, xpath_injection_scanner,
+                            stored_xss_scanner, dom_xss_scanner, jsonp_injection_scanner,
+                            access_control_scanner,
+                            command_injection_scanner, log_injection_scanner, csv_injection_scanner,
+                            prototype_pollution_scanner,
+                            web_cache_poisoning_scanner, cache_deception_scanner,
+                            idor_uuid_scanner,
                         ]],
                         verbose=True
                     )
@@ -334,8 +436,15 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
                             scan_ssrf, scan_idor,
                             test_jwt_weakness,
                             test_auth_rate_limiting,
-                            report_new_endpoint,oauth_flow_tester,
+                            report_new_endpoint, oauth_flow_tester,
                             xxe_tester,
+                            session_management_scanner, password_reset_tester,
+                            host_header_injection_scanner, race_condition_scanner,
+                            file_upload_scanner, http_request_smuggling_scanner,
+                            websocket_security_scanner,
+                            email_header_injection_scanner,
+                            insecure_deserialization_scanner, ssrf_advanced_scanner,
+                            twofa_bypass_scanner, credential_stuffing_scanner,
                         ]],
                         verbose=True
                     )
@@ -454,6 +563,7 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
 
     finally:
         cancellation_store.cleanup(job_id)
+        auth_store.clear_all()  # Cleanup semua session auth
         if job_id in ACTIVE_QUEUE_SESSIONS:
             del ACTIVE_QUEUE_SESSIONS[job_id]
 
@@ -585,7 +695,7 @@ async def start_pentest(req: PentestRequest, background_tasks: BackgroundTasks, 
     }
 
     background_tasks.add_task(
-        run_pentest_job, job_id, req.target, req.goal, session_id, req.agent_models
+        run_pentest_job, job_id, req.target, req.goal, session_id, req.agent_models, req.credentials
     )
 
     return {"job_id": job_id, "session_id": session_id, "status": "queued", "stream_token": stream_token}
@@ -706,6 +816,42 @@ async def respond_checkpoint(data: CheckpointResponse, _: bool = Depends(require
     if not ok:
         raise HTTPException(status_code=404, detail="Tidak ada checkpoint aktif untuk job_id ini")
     return {"ok": True, "approved": data.approved}
+
+
+@app.post("/auth/respond")
+async def respond_auth(data: AuthResponse, _: bool = Depends(require_api_key)):
+    """
+    Frontend kirim credentials atau session cookies ke sini.
+    Ini langsung set threading.Event yang lagi di-`wait()` oleh worker thread.
+    """
+    # Build auth_data dict
+    auth_data = {
+        "mode": data.mode,
+    }
+
+    if data.mode == "credentials":
+        auth_data["username"] = data.username
+        auth_data["password"] = data.password
+        auth_data["login_url"] = data.login_url
+    elif data.mode == "session":
+        auth_data["cookies"] = data.cookies
+        auth_data["headers"] = data.headers or {}
+    else:
+        raise HTTPException(status_code=400, detail="mode harus 'credentials' atau 'session'")
+
+    ok = auth_checkpoint_store.respond(data.job_id, auth_data)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Tidak ada auth request aktif untuk job_id ini")
+    return {"ok": True, "mode": data.mode}
+
+
+@app.get("/auth/pending/{job_id}")
+async def get_pending_auth(job_id: str, _: bool = Depends(require_api_key)):
+    """Frontend poll ini buat cek apakah ada auth request yang pending."""
+    pending = auth_checkpoint_store.get_pending(job_id)
+    if not pending:
+        return {"waiting": False}
+    return {"waiting": True, **{k: v for k, v in pending.items() if k != "event"}}
 
 
 # ============================================================

@@ -11,6 +11,7 @@ from cancellation import check_cancelled
 from checkpoint import require_approval
 from rate_limiter import rate_limiter
 from redact import redact
+from auth_store import inject_into_session
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -95,6 +96,9 @@ def scan_ssrf(url: str, canary_domain: str = "your-canary-domain.example") -> st
     domain = _domain_of(url)
     findings = []
     tested = 0
+
+    # Inject auth session jika ada
+    inject_into_session(SESSION, domain)
 
     if logger:
         logger.add_log(tool_name, "PROCESSING", "Phase 1: Parameter-based SSRF test")

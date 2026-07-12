@@ -11,6 +11,7 @@ from rate_limiter import rate_limiter
 from redact import redact
 # 1. Taruh import proxy router di paling atas file men
 from proxy_router import proxy_router
+from auth_store import inject_into_session
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -81,6 +82,9 @@ def analyze_js_deep(url: str) -> str:
     domain = _domain_of(url)
     parsed = urlparse(url)
     base = f"{parsed.scheme}://{parsed.netloc}"
+
+    # Inject auth session jika ada
+    inject_into_session(SESSION, domain)
 
     if logger:
         logger.add_log(tool_name, "START", f"Deep JS analysis untuk {url}")

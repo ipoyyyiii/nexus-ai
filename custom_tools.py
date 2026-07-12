@@ -134,9 +134,17 @@ def recon_target(url: str) -> str:
         
         exec_logger.add_log(tool_name, "SUCCESS", f"Port scan selesai: {len(open_ports)} port terbuka", {"open_ports": open_ports})
 
-        # 3. HTTP Request untuk Headers & Body Analysis
+        # 3. HTTP Request untuk Headers & Body Analysis (with auth support)
         exec_logger.add_log(tool_name, "PROCESSING", "Menganalisis HTTP response headers dan body")
-        response = requests.get(url, timeout=10, verify=False)
+        from auth_store import authenticated_request
+        response, login_wall = authenticated_request(
+            url=url,
+            method="GET",
+            exec_logger=exec_logger,
+        )
+        if response is None:
+            exec_logger.add_log(tool_name, "ERROR", "Gagal melakukan request ke target")
+            return json.dumps({"error": "Gagal melakukan request ke target"})
         headers = response.headers
         body = response.text.lower()
 

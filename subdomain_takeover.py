@@ -1,6 +1,7 @@
 import dns.resolver
 import requests
 from langchain.tools import tool
+from auth_store import get_auth_kwargs
 
 # Fingerprints populer untuk Subdomain Takeover
 FINGERPRINTS = {
@@ -41,7 +42,8 @@ def detect_subdomain_takeover(subdomain: str) -> str:
     try:
         # Kirim request ke HTTP dan HTTPS dengan timeout cepat
         url = f"http://{subdomain}"
-        response = requests.get(url, timeout=5, headers={"User-Agent": "Mozilla/5.0"})
+        auth_kw = get_auth_kwargs(subdomain)
+        response = requests.get(url, timeout=5, headers={"User-Agent": "Mozilla/5.0"}, **auth_kw)
         response_text = response.text
         
         expected_fingerprint = FINGERPRINTS[matched_provider]

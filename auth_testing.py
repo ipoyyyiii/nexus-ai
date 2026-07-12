@@ -6,6 +6,7 @@ from langchain.tools import tool
 from checkpoint import require_approval
 from cancellation import check_cancelled
 from custom_tools import exec_logger
+from auth_store import get_auth_kwargs
 
 @tool("test_jwt_weakness")
 def test_jwt_weakness(jwt_token: str) -> str:

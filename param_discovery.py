@@ -13,6 +13,7 @@ from rate_limiter import rate_limiter
 from redact import redact
 # 1. Taruh import proxy router di sini men
 from proxy_router import proxy_router
+from auth_store import inject_into_session
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -116,6 +117,9 @@ def param_discovery_get(url: str, tech_stack: str = "") -> str:
         return "DIBATALKAN: approval ditolak atau timeout."
 
     domain = _domain_of(url)
+
+    # Inject auth session jika ada
+    inject_into_session(SESSION, domain)
 
     wordlist = list(COMMON_GET_PARAMS)
     if tech_stack and tech_stack.lower() in TECH_SPECIFIC:

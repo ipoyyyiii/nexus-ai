@@ -4,6 +4,7 @@ from cancellation import check_cancelled
 from checkpoint import require_approval
 from custom_tools import exec_logger
 from rate_limiter import rate_limiter
+from auth_store import get_auth_kwargs
 
 try:
     import urllib3
@@ -118,6 +119,7 @@ def _test_xxe_on_endpoint(url: str) -> list:
     """Test XXE pada satu endpoint."""
     findings = []
     domain = _domain_of(url)
+    auth_kwargs = get_auth_kwargs(domain)
 
     xml_headers = {
         "Content-Type": "application/xml",

