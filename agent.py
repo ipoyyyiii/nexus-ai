@@ -2,63 +2,64 @@ import os
 from dotenv import load_dotenv
 from crewai import Agent, Task, Crew
 from langchain_openai import ChatOpenAI
-from custom_tools import (
+from tools.custom_tools import (
     baca_log_burp, tembak_payload, recon_target,
     scan_sql_injection, detect_xss_csrf, analyze_ssl_tls,
     enumerate_dns_subdomains, analyze_password_strength,
     test_api_security, scan_lfi_rfi, test_header_injection,
     get_execution_logs, clear_execution_logs
 )
-from playwright_tools import (
+from tools.playwright_tools import (
     browser_screenshot, browser_extract_surface,
     browser_intercept_requests, browser_extract_js_secrets,
     browser_check_security_headers, browser_simulate_form,
     browser_find_open_redirect,
 )
-from ssrf_idor_tools import scan_ssrf, scan_idor
-from param_discovery import param_discovery_get, param_discovery_post, param_discovery_headers
-from js_analysis import analyze_js_deep
-from model_registry import build_llm, chain_summary
-from scope import validate_target
-from nuclei_tool import run_nuclei_scan
-from subdomain_takeover import detect_subdomain_takeover
-from auth_testing import test_jwt_weakness, test_auth_rate_limiting
-from custom_tools import report_new_endpoint
-from wayback_tool import wayback_scraper
-from github_dork import github_dorking
-from oauth_tester import oauth_flow_tester
-from graphql_tester import graphql_tester
-from cors_tester import cors_tester
-from ssti_tester import ssti_tester
-from xxe_tester import xxe_tester
+from tools.ssrf_idor_tools import scan_ssrf, scan_idor
+from tools.param_discovery import param_discovery_get, param_discovery_post, param_discovery_headers
+from tools.js_analysis import analyze_js_deep
+from core.model_registry import build_llm, chain_summary
+from core.scope import validate_target
+from tools.nuclei_tool import run_nuclei_scan
+from tools.subdomain_takeover import detect_subdomain_takeover
+from tools.auth_testing import test_jwt_weakness, test_auth_rate_limiting
+from tools.custom_tools import report_new_endpoint
+from tools.wayback_tool import wayback_scraper
+from tools.github_dork import github_dorking
+from tools.oauth_tester import oauth_flow_tester
+from tools.graphql_tester import graphql_tester
+from tools.cors_tester import cors_tester
+from tools.ssti_tester import ssti_tester
+from tools.xxe_tester import xxe_tester
 
 # ── New tools (Phase 2-4) ─────────────────────────────────────────────────────
-from misconfiguration_scanner import misconfiguration_scanner
-from command_injection import command_injection_scanner, log_injection_scanner, csv_injection_scanner
-from xss_advanced import stored_xss_scanner, dom_xss_scanner, jsonp_injection_scanner
-from auth_session_advanced import session_management_scanner, password_reset_tester
-from injection_advanced import (
+from tools.misconfiguration_scanner import misconfiguration_scanner
+from tools.command_injection import command_injection_scanner, log_injection_scanner, csv_injection_scanner
+from tools.xss_advanced import stored_xss_scanner, dom_xss_scanner, jsonp_injection_scanner
+from tools.auth_session_advanced import session_management_scanner, password_reset_tester
+from tools.injection_advanced import (
     blind_sqli_scanner, nosql_injection_scanner,
     ldap_injection_scanner, xpath_injection_scanner
 )
-from access_control_advanced import access_control_scanner
-from client_side_advanced import client_side_security_scanner, prototype_pollution_scanner
-from advanced_web_attacks import (
+from tools.access_control_advanced import access_control_scanner
+from tools.access_control_scanners import csrf_exploit_scanner, mass_assignment_scanner, http_method_tampering_scanner
+from tools.client_side_advanced import client_side_security_scanner, prototype_pollution_scanner
+from tools.advanced_web_attacks import (
     host_header_injection_scanner, race_condition_scanner,
     file_upload_scanner, http_request_smuggling_scanner,
     websocket_security_scanner
 )
-from recon_advanced import recon_advanced, email_header_injection_scanner
-from deserialization_cache_tools import (
+from tools.recon_advanced import recon_advanced, email_header_injection_scanner
+from tools.deserialization_cache_tools import (
     insecure_deserialization_scanner, web_cache_poisoning_scanner,
     cache_deception_scanner, ssrf_advanced_scanner
 )
-from auth_recon_tools import (
+from tools.auth_recon_tools import (
     twofa_bypass_scanner, credential_stuffing_scanner,
     mixed_content_scanner, idor_uuid_scanner,
     postmessage_vulnerability_scanner, asn_ip_mapper
 )
-from shodan_censys_tools import shodan_scanner, censys_scanner
+from tools.shodan_censys_tools import shodan_scanner, censys_scanner
 
 # ==========================================
 # 1. LOAD ENV
@@ -72,7 +73,7 @@ def check_scope_cli(url: str) -> bool:
     supabase_url = os.environ.get("SUPABASE_URL")
     supabase_key = os.environ.get("SUPABASE_KEY")
     if not supabase_url or not supabase_key:
-        print("⚠️  SUPABASE tidak di-set. Scope validation dilewati (CLI mode).")
+        print("⚠️  SUPABASE not di-set. Scope validation dilewati (CLI mode).")
         print("   Pastikan lo punya izin untuk test target ini!\n")
         return True
     try:
@@ -84,7 +85,7 @@ def check_scope_cli(url: str) -> bool:
             print("   Tambah scope rule dulu via frontend atau Supabase SQL editor.")
         return allowed
     except Exception as e:
-        print(f"⚠️  Gagal cek scope: {e}. Lanjut tanpa validasi.")
+        print(f"⚠️  Failed cek scope: {e}. Lanjut tanpa validasi.")
         return True
 
 
@@ -115,10 +116,10 @@ if __name__ == "__main__":
 
     # ── Model selection ───────────────────────────────────────────────────────
     print("\n📋 Model yang tersedia:")
-    from model_registry import list_available_models, MODEL_REGISTRY
+    from core.model_registry import list_available_models, MODEL_REGISTRY
     available = list_available_models()
     if not available:
-        print("❌ Tidak ada model tersedia. Pastikan OPENROUTER_API_KEY di-set di .env")
+        print("❌ Not ada model tersedia. Pastikan OPENROUTER_API_KEY di-set di .env")
         exit(1)
 
     for i, m in enumerate(available):
@@ -139,7 +140,7 @@ if __name__ == "__main__":
                 return chosen
         except ValueError:
             pass
-        print("    → Input tidak valid, pakai auto.")
+        print("    → Input not valid, pakai auto.")
         return None
 
     model_recon     = pick_model("Recon")
@@ -239,11 +240,14 @@ if __name__ == "__main__":
             stored_xss_scanner, dom_xss_scanner, jsonp_injection_scanner,
             # Access control
             access_control_scanner,
+            csrf_exploit_scanner, mass_assignment_scanner, http_method_tampering_scanner,
             # Client-side
             prototype_pollution_scanner,
             # Cache attacks
             web_cache_poisoning_scanner, cache_deception_scanner,
             idor_uuid_scanner,
+            # New scanners (2026 Benchmark)
+            html_injection_scanner, ssi_injection_scanner, hpp_scanner,
         ]],
         verbose=True
     )
@@ -252,7 +256,7 @@ if __name__ == "__main__":
         role='Active Exploit Executor & API Security Tester',
         goal='Eksekusi payload, test auth flows, session management, file upload, advanced web attacks.',
         backstory=(
-            'Eksekutor berdarah dingin. Expert di auth bypass (JWT, OAuth, 2FA, session), '
+            'Eksekutor terbaik. Expert di auth bypass (JWT, OAuth, 2FA, session), '
             'file upload RCE, deserialization, race conditions, dan HTTP-level attacks. '
             'Selalu cari goldmine di endpoint yang tampak innocuous.'
         ),
@@ -269,6 +273,8 @@ if __name__ == "__main__":
             # Auth advanced
             session_management_scanner, password_reset_tester,
             twofa_bypass_scanner, credential_stuffing_scanner,
+            # New scanners (2026 Benchmark)
+            password_storage_analyzer, credential_reuse_scanner,
             # Advanced web attacks
             host_header_injection_scanner, race_condition_scanner,
             file_upload_scanner, http_request_smuggling_scanner,
@@ -301,7 +307,7 @@ if __name__ == "__main__":
             "cloud assets, JS secrets, exposed files (.git, .env, backup), "
             "certificate transparency logs, ASN/IP ranges."
         ),
-        expected_output="Laporan intelijen infrastruktur lengkap beserta semua attack surface yang ditemukan.",
+        expected_output="Laporan intelijen infrastruktur lengkap beserta semua attack surface yang found.",
         agent=tim_recon
     )
 
@@ -315,11 +321,11 @@ if __name__ == "__main__":
             "- NoSQL, LDAP, XPath Injection\n"
             "- Access Control (forced browsing, mass assignment, path traversal)\n"
             "- Cache attacks (poisoning, deception)\n"
-            "Sesuaikan payload dengan tech-stack yang ditemukan recon."
+            "Sesuaikan payload dengan tech-stack yang found recon."
         ),
-        expected_output="Daftar vulnerabilities yang ditemukan beserta payload, parameter, dan evidence.",
+        expected_output="Daftar vulnerabilities yang found beserta payload, parameter, dan evidence.",
         agent=tim_analis,
-        human_input=True   # HITL: pause untuk review sebelum eksekusi
+        human_input=True   # HITL: pause untuk review senot yet eksekusi
     )
 
     tugas_eksekusi = Task(
@@ -349,9 +355,14 @@ if __name__ == "__main__":
             "4. Risk rating (Critical/High/Medium/Low/Info)\n"
             "5. Saran mitigasi yang actionable\n"
             "6. PoC atau evidence jika ada\n"
-            "7. Prioritas remediation"
+            "7. Prioritas remediation\n\n"
+            "FORMAT OUTPUT: Gunakan Github Flavored Markdown (GFM) standar. "
+            "Jangan gunakan ASCII art atau border manual (||===||). "
+            "Gunakan H1/H2/H3, tabel markdown, bullet points, dan blockquote (>). "
+            "Setiap vulnerability harus punya section terpisah dengan metadata lengkap "
+            "(CWE-ID, CVSS vector, severity, steps to reproduce, PoC)."
         ),
-        expected_output="Laporan eksekutif risk assessment lengkap siap untuk C-level dan dev team.",
+        expected_output="Laporan eksekutif risk assessment dalam format GFM markdown yang rapi.",
         agent=tim_assessor
     )
 
@@ -363,7 +374,7 @@ if __name__ == "__main__":
         verbose=True
     )
 
-    print("\n🚀 Memulai Eksekusi Red Team...\n")
+    print("\n🚀 Starting Eksekusi Red Team...\n")
     hasil_akhir = crew.kickoff()
 
     logs_data = get_execution_logs()
