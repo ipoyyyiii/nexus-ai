@@ -599,6 +599,17 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
             except Exception as mem_err:
                 print(f"[MEMORY] Auto-save failed (non-critical): {mem_err}")
 
+            # ── Save report to persistent file storage ──────────────────────────
+            try:
+                report_dir = "/app/reports"
+                os.makedirs(report_dir, exist_ok=True)
+                report_file = os.path.join(report_dir, f"{session_id}_{job_id[:8]}.md")
+                with open(report_file, "w", encoding="utf-8") as f:
+                    f.write(report)
+                print(f"[REPORT] Saved to {report_file}")
+            except Exception as file_err:
+                print(f"[REPORT] File save failed (non-critical): {file_err}")
+
     except Exception as e:
         err = str(e)
         save_message(session_id, "agent", f"ERROR: {err}")

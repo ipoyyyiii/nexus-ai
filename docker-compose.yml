@@ -8,6 +8,9 @@ services:
     env_file:
       - .env
     restart: always
+    volumes:
+      - ./stored_reports:/app/reports
+      - nexus_data:/app/data
 
   # --- Frontend Service  ---
   nexus-frontend:
@@ -20,3 +23,6 @@ services:
     ports:
       - "3000:3000"
     restart: always
+
+volumes:
+  nexus_data:
