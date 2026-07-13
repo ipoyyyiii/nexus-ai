@@ -6,7 +6,6 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-green?logo=fastapi)
 ![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)
 ![CrewAI](https://img.shields.io/badge/CrewAI-0.28+-orange)
-![License](https://img.shields.io/badge/License-MIT-yellow)
 
 ---
 
