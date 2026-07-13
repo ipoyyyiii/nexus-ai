@@ -86,8 +86,32 @@ MODEL_REGISTRY = [
         "label": "GLM 5V Turbo (TokenHub)",
         "provider": "Tencent-TokenHub",
         "tier": "paid",
-        "slug": "openai/glm-5v-turbo",  # litellm butuh prefix openai/ buat OpenAI-compatible API
+        "slug": "openai/glm-5v-turbo",  
         "description": "1M Free Tokens. Model coding multimodal dari Zhipu via Tencent Cloud. Anti rate-limit!",
+    },
+    {
+        "id": "tokenhub-glm-5.2",
+        "label": "GLM 5.2 (TokenHub)",
+        "provider": "Tencent-TokenHub",
+        "tier": "paid",
+        "slug": "openai/glm-5.2", 
+        "description": "1M context. Versi TokenHub via Tencent Cloud. Sangat efisien untuk Agent workflows.",
+    },
+    {
+        "id": "tokenhub-deepseek-v4-pro",
+        "label": "DeepSeek V4 Pro (TokenHub)",
+        "provider": "Tencent-TokenHub",
+        "tier": "paid",
+        "slug": "openai/deepseek-v4-pro-202606",  
+        "description": "Raja reasoning dan coding versi TokenHub. Sangat tajam untuk analisis vulnerability dan patuh parameter tool-calling.",
+    },
+    {
+        "id": "tokenhub-minimax-m3",
+        "label": "MiniMax M3 (TokenHub)",
+        "provider": "Tencent-TokenHub",
+        "tier": "paid",
+        "slug": "openai/minimax-m3",  
+        "description": "Super cepat dan responsif versi TokenHub. Bagus untuk live-streaming chat interface di dashboard.",
     },
 
     # ── FREE ──────────────────────────────────────────────────
@@ -214,14 +238,18 @@ def build_llm(preferred_model_id: Optional[str] = None):
 
     # ── ROUTING ENGINE: CREWAI LLM CLASS ──
 
-    # JIKA pilih TokenHub: return langsung TANPA fallback
-    # (fallback ke OpenRouter akan failed karena credentials berbeda)
-    if final_chain[0]["id"] == "tokenhub-glm-5v-turbo":
+    # Cek apakah model pertama adalah TokenHub
+    is_tokenhub = final_chain[0]["id"].startswith("tokenhub-")
+
+    if is_tokenhub:
+        # TokenHub: return langsung TANPA fallback ke OpenRouter
+        # (credentials berbeda, gak bisa fallback)
         return LLM(
-            model=final_chain[0]["slug"],  # "openai/glm-5v-turbo"
+            model=final_chain[0]["slug"],
             api_key=os.getenv("TOKENHUB_API_KEY"),
             base_url=os.getenv("TOKENHUB_API_BASE"),
             temperature=0.2,
+            max_tokens=4096,
         )
 
     # Untuk OpenRouter: bisa pake fallback antar OpenRouter models
@@ -230,19 +258,26 @@ def build_llm(preferred_model_id: Optional[str] = None):
         instances.append(
             LLM(
                 model=m["slug"],
+                api_key=os.environ.get("OPENROUTER_API_KEY"),
+                base_url="https://openrouter.ai/api/v1",
                 temperature=0.2,
+                max_tokens=4096,
             )
         )
 
     if len(instances) == 1:
         return instances[0]
 
-    # Fallback antar OpenRouter models
-    primary, *fallbacks_list = instances
+    # Fallback antar OpenRouter models — pass model names, not LLM objects
+    primary = instances[0]
+    fallback_names = [m["slug"] for m in final_chain[1:]]
     return LLM(
         model=primary.model,
+        api_key=os.environ.get("OPENROUTER_API_KEY"),
+        base_url="https://openrouter.ai/api/v1",
         temperature=0.2,
-        fallbacks=fallbacks_list,
+        max_tokens=4096,
+        fallbacks=fallback_names,
     )
 
 

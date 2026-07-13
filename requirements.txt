@@ -113,7 +113,8 @@ pdfminer.six==20260107
 pdfplumber==0.11.10
 pillow==12.3.0
 platformdirs==4.10.0
-playwright==1.61.0
+playwright
+fpdf2
 portalocker==2.7.0
 postgrest==2.30.0
 posthog==5.4.0
