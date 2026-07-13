@@ -9,6 +9,12 @@
 
 ---
 
+## Disclaimer
+
+This tool is for authorized security testing only. Always obtain proper authorization before testing any target. The authors are not responsible for any misuse of this software.
+
+---
+
 ## Features
 
 - **88+ Security Tools** — SQLi, XSS, SSRF, IDOR, SSTI, XXE, Command Injection, and more
@@ -258,9 +264,3 @@ nexus-ai-pentest/
 | `DELETE` | `/sessions/{id}` | Delete session |
 | `GET` | `/scope-rules` | List scope rules |
 | `POST` | `/scope-rules` | Add scope rule |
-
----
-
-## Disclaimer
-
-This tool is for authorized security testing only. Always obtain proper authorization before testing any target. The authors are not responsible for any misuse of this software.
