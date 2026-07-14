@@ -3,6 +3,7 @@
 
 A fast web fuzzer written in Go.
 
+<<<<<<< HEAD
 - [Installation](https://github.com/ffuf/ffuf#installation)
 - [Example usage](https://github.com/ffuf/ffuf#example-usage)
     - [Content discovery](https://github.com/ffuf/ffuf#typical-directory-discovery)
@@ -13,6 +14,18 @@ A fast web fuzzer written in Go.
     - [Configuration files](https://github.com/ffuf/ffuf#configuration-files)
 - [Help](https://github.com/ffuf/ffuf#usage)
     - [Interactive mode](https://github.com/ffuf/ffuf#interactive-mode)
+=======
+![Python](https://img.shields.io/badge/Python-3.11+-blue?logo=python)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-green?logo=fastapi)
+![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)
+![CrewAI](https://img.shields.io/badge/CrewAI-0.28+-orange)
+
+---
+
+## Disclaimer
+
+This tool is for authorized security testing only. Always obtain proper authorization before testing any target. The authors are not responsible for any misuse of this software.
+>>>>>>> 65510da62d51f06aebcdfdce575a5af81000653c
 
 
 ## Installation
@@ -105,6 +118,7 @@ It is also possible to combine both flags limiting the per job maximum execution
 
 For this example, we'll fuzz JSON data that's sent over POST. [Radamsa](https://gitlab.com/akihe/radamsa) is used as the mutator.
 
+<<<<<<< HEAD
 When `--input-cmd` is used, ffuf will display matches as their position. This same position value will be available for the callee as an environment variable `$FFUF_NUM`. We'll use this position value as the seed for the mutator. Files example1.txt and example2.txt contain valid JSON payloads. We are matching all the responses, but filtering out response code `400 - Bad request`:
 
 ```
@@ -303,3 +317,18 @@ job from the beginning.
 ## License
 
 ffuf is released under MIT license. See [LICENSE](https://github.com/ffuf/ffuf/blob/master/LICENSE).
+=======
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/pentest` | Start new scan |
+| `GET` | `/job/{id}` | Poll job status |
+| `GET` | `/job/{id}/stream` | SSE stream |
+| `POST` | `/job/{id}/cancel` | Cancel job |
+| `POST` | `/job/{id}/continue` | Continue to next phase |
+| `GET` | `/job/{id}/export?format=md\|pdf\|docx` | Export report |
+| `POST` | `/checkpoint/respond` | Approve/reject HITL |
+| `POST` | `/auth/respond` | Submit credentials |
+| `DELETE` | `/sessions/{id}` | Delete session |
+| `GET` | `/scope-rules` | List scope rules |
+| `POST` | `/scope-rules` | Add scope rule |
+>>>>>>> 65510da62d51f06aebcdfdce575a5af81000653c
