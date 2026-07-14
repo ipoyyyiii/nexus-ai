@@ -28,11 +28,17 @@ class ReportExporter:
         self.author = author
         self.generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
 
-    def to_markdown(self, report_data: Dict) -> str:
-        """Generate Markdown report."""
+    def to_markdown(self, report_data: Dict, filter_severity: str = "", filter_cwe: str = "") -> str:
+        """Generate Markdown report with optional filtering."""
         target = report_data.get("target", "Unknown")
         findings = report_data.get("findings", [])
         phases = report_data.get("phases", {})
+
+        # ── Apply filters ─────────────────────────────────────────────────────
+        if filter_severity:
+            findings = [f for f in findings if f.get("severity", "").lower() == filter_severity.lower()]
+        if filter_cwe:
+            findings = [f for f in findings if filter_cwe.lower() in str(f.get("cwe", "")).lower()]
 
         lines = []
         lines.append(f"# Penetration Test Report")
@@ -42,6 +48,10 @@ class ReportExporter:
         lines.append(f"**Date:** {self.generated_at}")
         lines.append(f"**Assessor:** {self.author}")
         lines.append(f"**Total Findings:** {len(findings)}")
+        if filter_severity:
+            lines.append(f"**Filter:** Severity = {filter_severity}")
+        if filter_cwe:
+            lines.append(f"**Filter:** CWE = {filter_cwe}")
         lines.append("")
 
         # Executive Summary
@@ -53,11 +63,18 @@ class ReportExporter:
             sev = f.get("severity", "Info")
             severity_count[sev] = severity_count.get(sev, 0) + 1
 
-        lines.append("| Severity | Count |")
-        lines.append("|----------|-------|")
+        lines.append("| Severity | Count | Impact |")
+        lines.append("|----------|-------|--------|")
         for sev, count in severity_count.items():
             if count > 0:
-                lines.append(f"| {sev} | {count} |")
+                impact = {
+                    "Critical": "Immediate action required",
+                    "High": "Significant security risk",
+                    "Medium": "Should be addressed soon",
+                    "Low": "Address when convenient",
+                    "Info": "No immediate risk"
+                }.get(sev, "")
+                lines.append(f"| {sev} | {count} | {impact} |")
         lines.append("")
 
         # Overall risk

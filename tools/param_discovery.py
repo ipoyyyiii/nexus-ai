@@ -92,6 +92,78 @@ TECH_SPECIFIC = {
 }
 
 
+def _run_arjun_discovery(url: str, logger) -> list:
+    """Run arjun for parameter discovery."""
+    import subprocess
+    import tempfile
+    import os
+
+    tool_name = "Arjun Parameter Discovery"
+    
+    try:
+        # Create temp output file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            output_file = f.name
+
+        # Run arjun
+        cmd = [
+            "arjun",
+            "-u", url,
+            "-o", output_file,
+            "-q",  # Quiet mode
+            "--timeout", "10",
+            "--threads", "5",
+        ]
+
+        # Apply stealth mode
+        if os.environ.get("STEALTH_MODE", "0") == "1":
+            cmd.extend(["--delay", "1"])
+
+        result = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=180,  # 3 minute timeout
+        )
+
+        # Parse arjun output
+        params = []
+        if os.path.exists(output_file):
+            try:
+                import json
+                with open(output_file, 'r') as f:
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        params = data
+                    elif isinstance(data, dict) and "params" in data:
+                        params = data["params"]
+            except Exception:
+                pass
+            finally:
+                try:
+                    os.unlink(output_file)
+                except:
+                    pass
+
+        if params:
+            logger.add_log(tool_name, "SUCCESS", f"Arjun found {len(params)} parameters")
+        
+        return params
+
+    except subprocess.TimeoutExpired:
+        if os.path.exists(output_file):
+            os.unlink(output_file)
+        logger.add_log(tool_name, "WARNING", "Arjun timed out")
+        return []
+    except FileNotFoundError:
+        logger.add_log(tool_name, "WARNING", "Arjun not found")
+        return []
+    except Exception as e:
+        logger.add_log(tool_name, "WARNING", f"Arjun error: {str(e)[:100]}")
+        return []
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # TOOL 1 — GET Parameter Discovery
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -238,6 +310,27 @@ def param_discovery_get(url: str, tech_stack: str = "") -> str:
 
     if logger:
         logger.add_log(tool_name, "SUCCESS" if discovered else "INFO", f"Discovery selesai. {tested} params tested, {len(discovered)} discovered.")
+
+    # ── ARJUN CONFIRMATION STEP ───────────────────────────────────────────────
+    if logger:
+        logger.add_log(tool_name, "PROCESSING", "Running arjun for additional parameter discovery")
+    
+    arjun_result = _run_arjun_discovery(url, logger)
+    if arjun_result:
+        # Merge arjun findings
+        existing_params = {d["parameter"] for d in discovered}
+        for param in arjun_result:
+            if param not in existing_params:
+                discovered.append({
+                    "parameter": param,
+                    "evidence": ["Discovered by arjun"],
+                    "source": "arjun",
+                })
+        
+        result["discovered_params"] = discovered
+        result["total_discovered"] = len(discovered)
+        result["arjun_discovered"] = len(arjun_result)
+
     return json.dumps(redact(result), indent=2)
 
 

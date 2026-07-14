@@ -74,6 +74,66 @@ def recon_advanced(domain: str) -> str:
         findings["certificate_transparency"]["error"] = str(e)
         logger.add_log(tool_name, "WARNING", f"crt.sh query failed: {e}")
 
+    # ── 1b. Subfinder Subdomain Enumeration ───────────────────────────────────
+    if not check_cancelled(logger):
+        logger.add_log(tool_name, "PROCESSING", "Running subfinder for subdomain enumeration")
+        try:
+            import subprocess
+            import tempfile
+            import os
+
+            # Create temp output file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+                subfinder_output = f.name
+
+            # Run subfinder
+            cmd = [
+                "subfinder",
+                "-d", domain,
+                "-o", subfinder_output,
+                "-silent",
+                "-timeout", "30",
+            ]
+
+            # Apply stealth mode
+            if os.environ.get("STEALTH_MODE", "0") == "1":
+                cmd.extend(["-timeout", "60", "-delay", "1"])
+
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=120,
+            )
+
+            # Parse subfinder output
+            subfinder_subdomains = []
+            if os.path.exists(subfinder_output):
+                with open(subfinder_output, 'r') as f:
+                    for line in f:
+                        sub = line.strip()
+                        if sub and sub.endswith(f".{domain}"):
+                            subfinder_subdomains.append(sub)
+                os.unlink(subfinder_output)
+
+            # Merge with CT findings
+            existing = set(findings["certificate_transparency"]["subdomains"])
+            new_subs = [s for s in subfinder_subdomains if s not in existing]
+            findings["certificate_transparency"]["subdomains"].extend(new_subs)
+            findings["certificate_transparency"]["subdomains"].sort()
+
+            if new_subs:
+                logger.add_log(tool_name, "SUCCESS",
+                    f"Subfinder found {len(new_subs)} additional subdomains")
+
+        except subprocess.TimeoutExpired:
+            logger.add_log(tool_name, "WARNING", "Subfinder timed out")
+        except FileNotFoundError:
+            logger.add_log(tool_name, "WARNING", "Subfinder not found")
+        except Exception as e:
+            logger.add_log(tool_name, "WARNING", f"Subfinder error: {str(e)[:100]}")
+
     # ── 2. Cloud Asset Discovery ──────────────────────────────────────────────
     logger.add_log(tool_name, "PROCESSING", "Checking cloud storage assets")
     # Common permutations used for bucket names
@@ -189,6 +249,101 @@ def recon_advanced(domain: str) -> str:
     total_cloud = len([c for c in findings["cloud_assets"] if c["publicly_accessible"]])
     logger.add_log(tool_name, "SUCCESS",
         f"Advanced recon complete. CT subdomains: {total_subdomains}, Public cloud: {total_cloud}")
+
+    # ── 6. NMAP Port Scan ─────────────────────────────────────────────────────
+    if not check_cancelled(logger):
+        logger.add_log(tool_name, "PROCESSING", "Running nmap port scan")
+        try:
+            import subprocess
+            import tempfile
+            import os
+
+            # Create temp output file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.xml', delete=False) as f:
+                nmap_output = f.name
+
+            # Run nmap
+            cmd = [
+                "nmap",
+                "-sV",  # Service version detection
+                "-sC",  # Default scripts
+                "--top-ports", "1000",  # Top 1000 ports
+                "-oX", nmap_output,
+                "--open",  # Only show open ports
+                "-T4",  # Aggressive timing
+                domain,
+            ]
+
+            # Apply stealth mode if enabled
+            if os.environ.get("STEALTH_MODE", "0") == "1":
+                cmd = [
+                    "nmap",
+                    "-sV",
+                    "--top-ports", "100",
+                    "-oX", nmap_output,
+                    "--open",
+                    "-T2",  # Sneaky timing
+                    "--randomize-hosts",
+                    domain,
+                ]
+
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=300,  # 5 minute timeout
+            )
+
+            # Parse nmap XML output
+            import xml.etree.ElementTree as ET
+            try:
+                tree = ET.parse(nmap_output)
+                root = tree.getroot()
+
+                open_ports = []
+                for host in root.findall('.//host'):
+                    for port in host.findall('.//port'):
+                        state = port.find('state')
+                        if state is not None and state.get('state') == 'open':
+                            service = port.find('service')
+                            port_info = {
+                                "port": port.get('portid'),
+                                "protocol": port.get('protocol'),
+                                "service": service.get('name') if service is not None else 'unknown',
+                                "version": service.get('version', '') if service is not None else '',
+                                "product": service.get('product', '') if service is not None else '',
+                            }
+                            open_ports.append(port_info)
+
+                findings["nmap_scan"] = {
+                    "open_ports": open_ports,
+                    "total_ports": len(open_ports),
+                    "scan_type": "stealth" if os.environ.get("STEALTH_MODE", "0") == "1" else "normal",
+                }
+
+                if open_ports:
+                    logger.add_log(tool_name, "WARNING",
+                        f"Nmap found {len(open_ports)} open ports: {[p['port'] for p in open_ports]}")
+                else:
+                    logger.add_log(tool_name, "SUCCESS", "Nmap: no open ports found")
+
+            except ET.ParseError:
+                logger.add_log(tool_name, "WARNING", "Failed to parse nmap XML output")
+
+            # Cleanup
+            try:
+                os.unlink(nmap_output)
+            except:
+                pass
+
+        except subprocess.TimeoutExpired:
+            logger.add_log(tool_name, "WARNING", "Nmap scan timed out after 5 minutes")
+        except FileNotFoundError:
+            logger.add_log(tool_name, "WARNING", "Nmap not found - skipping port scan")
+        except Exception as e:
+            logger.add_log(tool_name, "WARNING", f"Nmap error: {str(e)[:100]}")
+
     return json.dumps(findings, indent=2)
 
 

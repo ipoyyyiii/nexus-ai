@@ -9,13 +9,20 @@ Features:
 - Randomized request timing (jitter)
 - Randomized parameter order
 - Browser-like header normalization
+- Stealth mode (aggressive anti-detection)
 """
 
+import os
 import random
 import time
 import threading
 from typing import Dict, Optional, List, Any
 from urllib.parse import urlparse
+
+
+def is_stealth_mode() -> bool:
+    """Check if stealth mode is enabled."""
+    return os.environ.get("STEALTH_MODE", "0") == "1"
 
 
 # ── Real Browser User-Agents ─────────────────────────────────────────────────
@@ -109,7 +116,13 @@ class StealthEngine:
         """
         Add random delay biar gak keliatan automated.
         Base delay + random jitter antara 0 dan max_jitter detik.
+        Stealth mode: delay lebih agresif.
         """
+        if is_stealth_mode():
+            # Stealth mode: delay 2-5x lebih lama
+            base_delay *= 3
+            max_jitter *= 4
+        
         jitter = random.uniform(0, max_jitter)
         total_delay = base_delay + jitter
         time.sleep(total_delay)

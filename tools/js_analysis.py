@@ -43,6 +43,17 @@ API_URL_PATTERNS = [
     re.compile(r'["\']/(api|v\d+|rest|graphql)/[a-zA-Z0-9_/\-]+["\']'),
     re.compile(r'axios\.create\(\{[^}]*baseURL[:\s]+["\']([^"\']+)["\']', re.I),
     re.compile(r'fetch\(["\']([^"\']+)["\']', re.I),
+    # ── NEW API PATTERNS ──────────────────────────────────────────────────────
+    re.compile(r'["\']https?://[^"\']*api[^"\']*["\']', re.I),
+    re.compile(r'["\']https?://[^"\']*/v\d+/[^"\']*["\']', re.I),
+    re.compile(r'["\']https?://[^"\']*/graphql["\']', re.I),
+    re.compile(r'["\']https?://[^"\']*/rest/[^"\']*["\']', re.I),
+    re.compile(r'["\']https?://[^"\']*/webhook[^"\']*["\']', re.I),
+    re.compile(r'["\']https?://[^"\']*/callback[^"\']*["\']', re.I),
+    re.compile(r'["\']https?://[^"\']*/oauth[^"\']*["\']', re.I),
+    re.compile(r'["\']https?://[^"\']*/auth[^"\']*["\']', re.I),
+    re.compile(r'["\']https?://[^"\']*/token[^"\']*["\']', re.I),
+    re.compile(r'["\']https?://[^"\']*/login[^"\']*["\']', re.I),
 ]
 
 ENV_LEAK_PATTERNS = {
@@ -51,6 +62,19 @@ ENV_LEAK_PATTERNS = {
     "VUE_APP vars": re.compile(r'VUE_APP_[A-Z_]+["\s:=]+["\']?([^\s"\'`,]{5,})', re.I),
     "process.env leak": re.compile(r'process\.env\.([A-Z_]{5,})["\s:=]+["\']?([^\s"\'`,]{5,})'),
     "NODE_ENV": re.compile(r'NODE_ENV["\s:=]+["\']?(development|staging|test)["\']', re.I),
+    # ── NEW ENV PATTERNS ──────────────────────────────────────────────────────
+    "AWS keys": re.compile(r'(?:AKIA|ASIA)[A-Z0-9]{16}', re.I),
+    "API keys": re.compile(r'(?:api[_-]?key|apikey)["\s:=]+["\']([A-Za-z0-9_\-]{20,})["\']', re.I),
+    "Secret keys": re.compile(r'(?:secret|secret[_-]?key)["\s:=]+["\']([A-Za-z0-9_\-]{20,})["\']', re.I),
+    "Access tokens": re.compile(r'(?:access[_-]?token|auth[_-]?token)["\s:=]+["\']([A-Za-z0-9_\-]{20,})["\']', re.I),
+    "Private keys": re.compile(r'(?:private[_-]?key|priv[_-]?key)["\s:=]+["\']([A-Za-z0-9_\-]{20,})["\']', re.I),
+    "Database URLs": re.compile(r'(?:database[_-]?url|db[_-]?url|mysql://|postgres://|mongodb://)', re.I),
+    "JWT secrets": re.compile(r'(?:jwt[_-]?secret|token[_-]?secret)["\s:=]+["\']([A-Za-z0-9_\-]{20,})["\']', re.I),
+    "OAuth secrets": re.compile(r'(?:client[_-]?secret|oauth[_-]?secret)["\s:=]+["\']([A-Za-z0-9_\-]{20,})["\']', re.I),
+    "Stripe keys": re.compile(r'(?:sk_live_|pk_live_|sk_test_|pk_test_)[A-Za-z0-9]+', re.I),
+    "GitHub tokens": re.compile(r'(?:ghp_|gho_|github_pat_)[A-Za-z0-9]+', re.I),
+    "Slack tokens": re.compile(r'(?:xox[baprs]-)[A-Za-z0-9\-]+', re.I),
+    "Heroku API keys": re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', re.I),
 }
 
 GRAPHQL_PATTERNS = [
@@ -66,6 +90,31 @@ WEBPACK_ROUTE_PATTERN = re.compile(
 )
 
 SOURCE_MAP_PATTERN = re.compile(r'//# sourceMappingURL=(.+\.map)')
+
+# ── NEW: Secrets Detection Patterns ──────────────────────────────────────────
+SECRETS_PATTERNS = {
+    "AWS Access Key": re.compile(r'(?:AKIA|ASIA)[A-Z0-9]{16}'),
+    "AWS Secret Key": re.compile(r'(?i)aws[_\-]?secret[_\-]?access[_\-]?key["\s:=]+["\']?([A-Za-z0-9/+=]{40})'),
+    "GitHub Token": re.compile(r'(?:ghp_|gho_|github_pat_)[A-Za-z0-9]+'),
+    "GitLab Token": re.compile(r'glpat-[A-Za-z0-9\-_]{20,}'),
+    "Slack Token": re.compile(r'xox[baprs]-[A-Za-z0-9\-]+'),
+    "Slack Webhook": re.compile(r'https://hooks\.slack\.com/services/[A-Za-z0-9/]+'),
+    "Stripe Key": re.compile(r'(?:sk|pk)_(?:live|test)_[A-Za-z0-9]+'),
+    "Twilio Account SID": re.compile(r'AC[a-f0-9]{32}'),
+    "Twilio Auth Token": re.compile(r'[a-f0-9]{32}'),
+    "SendGrid API Key": re.compile(r'SG\.[A-Za-z0-9\-_]{22,}\.[A-Za-z0-9\-_]{43,}'),
+    "Mailgun API Key": re.compile(r'key-[A-Za-z0-9]{32}'),
+    "Heroku API Key": re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'),
+    "Google API Key": re.compile(r'AIza[A-Za-z0-9_\-]{35}'),
+    "Google OAuth ID": re.compile(r'[0-9]+-[A-Za-z0-9_]{32}\.apps\.googleusercontent\.com'),
+    "Firebase Key": re.compile(r'AIza[A-Za-z0-9_\-]{35}'),
+    "Heroku API Key": re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'),
+    "JWT Token": re.compile(r'eyJ[A-Za-z0-9\-_]+\.eyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+'),
+    "Bearer Token": re.compile(r'[Bb]earer\s+[A-Za-z0-9\-_\.]+'),
+    "Basic Auth": re.compile(r'[Bb]asic\s+[A-Za-z0-9+/=]+'),
+    "Password in URL": re.compile(r'(?i)password["\s:=]+["\']([^\s"\']+)["\']'),
+    "Connection String": re.compile(r'(?i)(?:mysql|postgres|mongodb|redis)://[^\s"\']+'),
+}
 
 
 @tool

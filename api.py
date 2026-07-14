@@ -68,6 +68,11 @@ from tools.ssi_injection_scanner import ssi_injection_scanner
 from tools.hpp_scanner import hpp_scanner
 from tools.password_storage_analyzer import password_storage_analyzer
 from tools.credential_reuse_scanner import credential_reuse_scanner
+from tools.open_redirect_scanner import open_redirect_scanner
+from tools.dir_bruteforce import dir_bruteforce_scanner
+from tools.ssl_scanner import ssl_scanner
+from tools.wp_scanner import wp_scanner
+from tools.web_crawler import web_crawler
 from core.scan_history import scan_history
 from core.auth_store import auth_store, AuthSession
 from core.auth_detection import detect_login_wall, needs_auth
@@ -326,6 +331,14 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
     agent_models = agent_models or {}
     scan_config = scan_config or {}
     auto_pilot = scan_config.get("auto_pilot", False)
+    stealth_mode = scan_config.get("stealth_mode", False)
+    
+    # Apply stealth mode globally if enabled
+    if stealth_mode:
+        os.environ["STEALTH_MODE"] = "1"
+    else:
+        os.environ["STEALTH_MODE"] = "0"
+    
     try:
         current_job_id.set(job_id)
         cancel_job_id.set(job_id)

@@ -221,11 +221,18 @@ class ReportGenerator:
 
         report.append("## Executive Summary")
         report.append("")
-        report.append("| Severity | Count |")
-        report.append("|----------|-------|")
+        report.append("| Severity | Count | Impact |")
+        report.append("|----------|-------|--------|")
         for sev, count in severity_count.items():
             if count > 0:
-                report.append(f"| {sev} | {count} |")
+                impact = {
+                    "Critical": "Immediate action required — system compromise likely",
+                    "High": "High impact — significant security risk",
+                    "Medium": "Moderate impact — should be addressed soon",
+                    "Low": "Limited impact — address when convenient",
+                    "Info": "Informational — no immediate risk"
+                }.get(sev, "")
+                report.append(f"| {sev} | {count} | {impact} |")
         report.append("")
 
         # Risk assessment
@@ -235,8 +242,55 @@ class ReportGenerator:
                 max_sev = sev
                 break
 
+        risk_rating = {
+            "Critical": "CRITICAL — Immediate remediation required. System is at high risk of compromise.",
+            "High": "HIGH — Significant vulnerabilities found. Remediation should be prioritized.",
+            "Medium": "MEDIUM — Moderate security issues. Plan remediation within sprint.",
+            "Low": "LOW — Minor issues found. Address during regular maintenance.",
+            "Info": "INFO — No significant vulnerabilities found. Good security posture."
+        }.get(max_sev, "UNKNOWN")
+
         report.append(f"**Overall Risk Rating:** {max_sev}")
+        report.append(f"**Risk Assessment:** {risk_rating}")
         report.append("")
+
+        # Statistics
+        report.append("## Statistics")
+        report.append("")
+        report.append(f"- **Total Findings:** {len(findings)}")
+        report.append(f"- **Critical:** {severity_count.get('Critical', 0)}")
+        report.append(f"- **High:** {severity_count.get('High', 0)}")
+        report.append(f"- **Medium:** {severity_count.get('Medium', 0)}")
+        report.append(f"- **Low:** {severity_count.get('Low', 0)}")
+        report.append(f"- **Informational:** {severity_count.get('Info', 0)}")
+        report.append("")
+
+        # CWE/OWASP breakdown
+        cwe_count = {}
+        owasp_count = {}
+        for f in findings:
+            vuln_type = f.get("vuln_type", "")
+            if vuln_type in VULN_REFERENCES:
+                cwe = VULN_REFERENCES[vuln_type].get("cwe", "")
+                owasp = VULN_REFERENCES[vuln_type].get("owasp", "")
+                if cwe:
+                    cwe_count[cwe] = cwe_count.get(cwe, 0) + 1
+                if owasp:
+                    owasp_count[owasp] = owasp_count.get(owasp, 0) + 1
+
+        if cwe_count:
+            report.append("### CWE Breakdown")
+            report.append("")
+            for cwe, count in sorted(cwe_count.items(), key=lambda x: -x[1])[:10]:
+                report.append(f"- **{cwe}:** {count} finding(s)")
+            report.append("")
+
+        if owasp_count:
+            report.append("### OWASP Top 10 Breakdown")
+            report.append("")
+            for owasp, count in sorted(owasp_count.items(), key=lambda x: -x[1])[:10]:
+                report.append(f"- **{owasp}:** {count} finding(s)")
+            report.append("")
 
         # Detailed findings
         report.append("## Detailed Findings")

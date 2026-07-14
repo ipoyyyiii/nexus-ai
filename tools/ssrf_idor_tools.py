@@ -31,6 +31,50 @@ def _domain_of(url: str) -> str:
     except Exception:
         return url
 
+def _validate_params_exist(url: str, params: list, logger=None) -> list:
+    """
+    Validasi parameter mana yang benar-benar diterima endpoint.
+    Kirim benign value (angka 1) ke setiap parameter.
+    Parameter yang bikin response beda dari baseline = ada, sisanya skip.
+    """
+    tool_name = "SSRF Param Validator"
+    valid_params = []
+
+    try:
+        # Capture baseline
+        baseline_resp = SESSION.get(url, timeout=5, allow_redirects=False)
+        baseline_body = baseline_resp.text
+        baseline_status = baseline_resp.status_code
+    except Exception:
+        # Kalau baseline gagal, return semua parameter (fallback)
+        return params
+
+    for param in params:
+        try:
+            test_url = f"{url}{'&' if '?' in url else '?'}{param}=1"
+            rate_limiter.wait(_domain_of(url))
+            resp = SESSION.get(test_url, timeout=5, allow_redirects=False)
+
+            # Parameter dianggap ada kalau:
+            # 1. Status code berubah (misal 400 → 200), atau
+            # 2. Body length berubah signifikan (>50 bytes), atau
+            # 3. Body content berubah (bukan cuma timestamp)
+            status_changed = resp.status_code != baseline_status
+            length_diff = abs(len(resp.text) - len(baseline_body))
+            body_changed = resp.text != baseline_body
+
+            if status_changed or length_diff > 50 or body_changed:
+                valid_params.append(param)
+        except Exception:
+            continue
+
+    if logger and valid_params:
+        logger.add_log(tool_name, "INFO", f"Valid params found: {valid_params}")
+    elif logger:
+        logger.add_log(tool_name, "INFO", "No valid params found — skipping parameter-based SSRF")
+
+    return valid_params
+
 def _logger():
     try:
         from tools.custom_tools import exec_logger
@@ -110,12 +154,19 @@ def scan_ssrf(url: str, canary_domain: str = "") -> str:
     if logger:
         logger.add_log(tool_name, "PROCESSING", "Phase 1: Parameter-based SSRF test")
 
+    # Validasi parameter sebelum test — skip param yang gak ada di endpoint
+    valid_params = _validate_params_exist(url, SSRF_PARAMS, logger)
+    if not valid_params:
+        if logger:
+            logger.add_log(tool_name, "INFO", "No valid SSRF params found — skipping Phase 1")
+        valid_params = []  # Skip phase 1
+
     ssrf_payloads = [
         f"http://{canary_domain}/ssrf-test",
         f"https://{canary_domain}/ssrf-test",
     ] + CLOUD_METADATA_URLS
 
-    for param in SSRF_PARAMS:
+    for param in valid_params:
         if check_cancelled(logger):
             break
 
@@ -135,32 +186,44 @@ def scan_ssrf(url: str, canary_domain: str = "") -> str:
                 tested += 1
 
                 body = resp.text[:2000]
-                metadata_indicators = ["ami-id", "instance-id", "local-ipv4", "computeMetadata", "serviceAccounts", "droplet_id", "interfaces"]
-                metadata_hit = any(ind in body for ind in metadata_indicators)
-                canary_hit = canary_domain in body
-                error_indicators = ["connection refused", "ECONNREFUSED", "getaddrinfo", "Name or service not known", "failed to connect", "connection timeout"]
-                error_hit = any(e.lower() in body.lower() for e in error_indicators)
 
-                if metadata_hit or canary_hit:
+                # ── OOB VERIFICATION MANDATORY ─────────────────────────────
+                # Jangan flag SSRF cuma berdasarkan HTTP response.
+                # Harus ada callback ke OOB server dulu.
+                oob_verified = False
+                oob_evidence = ""
+
+                # Cek OOB server untuk callback yang masuk
+                try:
+                    from engines.oob_engine import oob_engine
+                    # Poll OOB server selama 5 detik
+                    time.sleep(3)
+                    oob_result = oob_engine.poll_interactions(canary_domain)
+                    if oob_result and oob_result.get("found"):
+                        oob_verified = True
+                        oob_evidence = f"OOB callback confirmed: {oob_result.get('protocol', 'unknown')} from {oob_result.get('source', 'unknown')}"
+                except Exception:
+                    pass
+
+                if oob_verified:
+                    # OOB confirmed = TRUE SSRF
                     findings.append({
                         "type": "SSRF",
                         "severity": "CRITICAL",
                         "parameter": param,
                         "payload": payload,
                         "test_url": test_url,
-                        "evidence": "Response berisi konten internal/metadata",
+                        "evidence": oob_evidence,
                         "response_preview": redact(body[:300]),
+                        "oob_verified": True,
                     })
-                elif error_hit and "169.254" in payload:
-                    findings.append({
-                        "type": "SSRF (Potential Blind)",
-                        "severity": "HIGH",
-                        "parameter": param,
-                        "payload": payload,
-                        "test_url": test_url,
-                        "evidence": "Error response mengindikasikan koneksi ke internal host dicoba",
-                        "response_preview": redact(body[:200]),
-                    })
+                    exec_logger.add_log(tool_name, "WARNING", f"CONFIRMED SSRF via OOB: {param}")
+                else:
+                    # No OOB callback = kemungkinan FP, jangan flag
+                    exec_logger.add_log(
+                        tool_name, "INFO",
+                        f"SSRF test {param} — no OOB callback, skipping (potential FP)"
+                    )
 
             except (requests.exceptions.ProxyError, requests.exceptions.Timeout):
                 # Bersihkan proxy sampah dari pool memori jika RTO/Error
@@ -186,14 +249,35 @@ def scan_ssrf(url: str, canary_domain: str = "") -> str:
                 resp = SESSION.get(url, headers=test_headers, allow_redirects=False, proxies=current_proxy, timeout=4)
                 body = resp.text[:1000]
 
-                if canary_domain in body:
+                # ── OOB VERIFICATION MANDATORY ─────────────────────────────
+                oob_verified = False
+                oob_evidence = ""
+
+                try:
+                    from engines.oob_engine import oob_engine
+                    time.sleep(3)
+                    oob_result = oob_engine.poll_interactions(canary_domain)
+                    if oob_result and oob_result.get("found"):
+                        oob_verified = True
+                        oob_evidence = f"OOB callback via header {header}"
+                except Exception:
+                    pass
+
+                if oob_verified:
                     findings.append({
                         "type": "SSRF via Header",
                         "severity": "HIGH",
                         "header": header,
                         "payload": f"http://{canary_domain}",
-                        "evidence": "Canary domain ter-reflect di response body",
+                        "evidence": oob_evidence,
+                        "oob_verified": True,
                     })
+                    exec_logger.add_log(tool_name, "WARNING", f"CONFIRMED SSRF via header: {header}")
+                else:
+                    exec_logger.add_log(
+                        tool_name, "INFO",
+                        f"Header SSRF test {header} — no OOB callback, skipping"
+                    )
                 tested += 1
             except (requests.exceptions.ProxyError, requests.exceptions.Timeout):
                 if current_proxy:

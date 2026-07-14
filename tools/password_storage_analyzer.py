@@ -88,7 +88,56 @@ def password_storage_analyzer(url: str, login_url: str = "") -> str:
 
     logger.add_log(tool_name, "PROCESSING", f"Login endpoint: {login_url}")
 
-    # ── 1. Response pattern analysis ──────────────────────────────────────────
+    # ── 1. Hash Detection Patterns ────────────────────────────────────────────
+    logger.add_log(tool_name, "PROCESSING", "Detecting password hash patterns in responses")
+
+    # Common hash patterns that might appear in responses
+    hash_patterns = {
+        "MD5": r'[a-f0-9]{32}',
+        "SHA1": r'[a-f0-9]{40}',
+        "SHA256": r'[a-f0-9]{64}',
+        "SHA512": r'[a-f0-9]{128}',
+        "bcrypt": r'\$2[aby]?\$\d{1,2}\$[./A-Za-z0-9]{53}',
+        "scrypt": r'\$scrypt\$',
+        "argon2": r'\$argon2(id|i|d)\$',
+        "MD5_crypt": r'\$1\$[A-Za-z0-9./]{8}\$[A-Za-z0-9./]{22}',
+        "SHA256_crypt": r'\$5\$[A-Za-z0-9./]{8}\$[A-Za-z0-9./]{43}',
+        "SHA512_crypt": r'\$6\$[A-Za-z0-9./]{8}\$[A-Za-z0-9./]{86}',
+    }
+
+    # Check login page and responses for hash patterns
+    try:
+        rate_limiter.wait(domain)
+        r = requests.get(login_url, timeout=5, verify=False, **auth_kwargs)
+        response_text = r.text + str(dict(r.headers))
+
+        for hash_type, pattern in hash_patterns.items():
+            matches = re.findall(pattern, response_text)
+            if matches:
+                # Filter out common false positives
+                false_positives = {
+                    "MD5": ["00000000000000000000000000000000", "ffffffffffffffffffffffffffffffff"],
+                    "SHA1": ["0000000000000000000000000000000000000000"],
+                    "SHA256": ["0000000000000000000000000000000000000000000000000000000000000000"],
+                }
+
+                valid_matches = [m for m in matches if m not in false_positives.get(hash_type, [])]
+                if valid_matches:
+                    severity = "High" if hash_type in ["MD5", "SHA1"] else "Medium"
+                    findings.append({
+                        "type": f"Potential {hash_type} Hash Detected",
+                        "severity": severity,
+                        "detail": f"Response contains pattern matching {hash_type} hash format",
+                        "evidence": f"Found {len(valid_matches)} potential {hash_type} hash(es)",
+                        "hash_preview": valid_matches[0][:20] + "..." if len(valid_matches[0]) > 20 else valid_matches[0],
+                        "recommendation": f"Verify if {hash_type} is used for password storage — migrate to bcrypt/argon2 if so",
+                    })
+                    logger.add_log(tool_name, "WARNING", f"{hash_type} hash detected in response")
+
+    except Exception as e:
+        logger.add_log(tool_name, "WARNING", f"Hash detection error: {str(e)[:100]}")
+
+    # ── 2. Response pattern analysis ──────────────────────────────────────────
     logger.add_log(tool_name, "PROCESSING", "Analyzing response patterns for storage hints")
 
     # Test with known weak password to see error message differences

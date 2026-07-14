@@ -380,6 +380,203 @@ def misconfiguration_scanner(url: str) -> str:
     except Exception as e:
         logger.add_log(tool_name, "WARNING", f"DNS rebinding check failed: {e}")
 
+    # ── 14. Framework-Specific Misconfigurations ──────────────────────────────
+    logger.add_log(tool_name, "PROCESSING", "Checking framework-specific misconfigs")
+
+    # Spring Boot Actuator endpoints
+    spring_actuator_paths = [
+        "/actuator", "/actuator/env", "/actuator/beans", "/actuator/configprops",
+        "/actuator/mappings", "/actuator/health", "/actuator/info", "/actuator/metrics",
+        "/actuator/trace", "/actuator/httptrace", "/actuator/threaddump",
+        "/actuator/heapdump", "/actuator/loggers", "/actuator/conditions",
+    ]
+
+    # Elasticsearch
+    elasticsearch_paths = [
+        "/_cat/indices", "/_cat/shards", "/_cat/nodes",
+        "/_cluster/health", "/_cluster/state", "/_nodes",
+        "/_search", "/_mapping",
+    ]
+
+    # Kibana
+    kibana_paths = [
+        "/app/kibana", "/app/kibana/#/discover", "/api/status",
+        "/app/kibana/api/status",
+    ]
+
+    # Jenkins
+    jenkins_paths = [
+        "/jenkins", "/jenkins/", "/jenkins/login",
+        "/jenkins/script", "/jenkins/manage",
+    ]
+
+    # Grafana
+    grafana_paths = [
+        "/grafana", "/grafana/login", "/api/dashboards",
+        "/api/snapshots", "/metrics",
+    ]
+
+    # Prometheus
+    prometheus_paths = [
+        "/prometheus", "/prometheus/", "/metrics",
+    ]
+
+    # Consul
+    consul_paths = [
+        "/consul", "/consul/", "/v1/catalog/services",
+        "/v1/catalog/nodes", "/ui/",
+    ]
+
+    # etcd
+    etcd_paths = [
+        "/v2/keys", "/v2/stats", "/health",
+    ]
+
+    # Kubernetes
+    kubernetes_paths = [
+        "/api/v1", "/apis", "/version", "/healthz",
+    ]
+
+    # MinIO
+    minio_paths = [
+        "/minio/login", "/minio/health/live",
+    ]
+
+    # RabbitMQ
+    rabbitmq_paths = [
+        "/api/", "/rabbitmq",
+    ]
+
+    # Redis
+    redis_paths = [
+        "/info", "/command",
+    ]
+
+    # MySQL
+    mysql_paths = [
+        "/phpmyadmin", "/phpMyAdmin", "/pma",
+    ]
+
+    all_framework_paths = {
+        "Spring Boot Actuator": spring_actuator_paths,
+        "Elasticsearch": elasticsearch_paths,
+        "Kibana": kibana_paths,
+        "Jenkins": jenkins_paths,
+        "Grafana": grafana_paths,
+        "Prometheus": prometheus_paths,
+        "Consul": consul_paths,
+        "etcd": etcd_paths,
+        "Kubernetes": kubernetes_paths,
+        "MinIO": minio_paths,
+        "RabbitMQ": rabbitmq_paths,
+        "MySQL/phpMyAdmin": mysql_paths,
+    }
+
+    for framework, paths in all_framework_paths.items():
+        if check_cancelled(logger): break
+        for path in paths[:3]:  # Limit to 3 paths per framework
+            try:
+                rate_limiter.wait(domain)
+                r = requests.get(f"{base}{path}", timeout=5, verify=False, allow_redirects=False)
+                if r.status_code == 200 and len(r.content) > 100:
+                    findings["high"].append({
+                        "type": f"Exposed {framework} Endpoint",
+                        "url": f"{base}{path}",
+                        "detail": f"{framework} endpoint accessible at {path}",
+                        "severity": "High"
+                    })
+                    logger.add_log(tool_name, "WARNING", f"{framework} exposed: {path}")
+                    break  # One finding per framework
+            except Exception:
+                pass
+
+    # ── 15. Sensitive Files Check ─────────────────────────────────────────────
+    logger.add_log(tool_name, "PROCESSING", "Checking sensitive files")
+    sensitive_files = [
+        "/.git/config", "/.gitignore", "/.git/COMMIT_EDITMSG",
+        "/composer.json", "/package.json", "/Gemfile", "/requirements.txt",
+        "/Dockerfile", "/docker-compose.yml", "/.dockerignore",
+        "/.editorconfig", "/.env.example", "/.env.sample",
+        "/wp-config.php", "/config.php", "/settings.php",
+        "/web.config", "/app.config", "/application.properties",
+        "/.htpasswd", "/.htaccess", "/.ssh/authorized_keys",
+        "/server.key", "/server.pem", "/private.key",
+        "/debug.log", "/error.log", "/access.log",
+        "/phpinfo.php", "/info.php", "/test.php",
+    ]
+
+    for sf in sensitive_files:
+        if check_cancelled(logger): break
+        try:
+            rate_limiter.wait(domain)
+            r = requests.get(f"{base}{sf}", timeout=5, verify=False)
+            if r.status_code == 200 and len(r.content) > 50:
+                # Filter out common false positives
+                if not any(fp in r.text.lower() for fp in ["404", "not found", "page not found"]):
+                    severity = "Critical" if any(kw in sf for kw in ["private.key", "server.key", ".ssh", ".env"]) else "High"
+                    findings["high" if severity == "High" else "critical"].append({
+                        "type": "Sensitive File Exposed",
+                        "url": f"{base}{sf}",
+                        "detail": f"Sensitive file accessible: {sf}",
+                        "severity": severity
+                    })
+                    logger.add_log(tool_name, "WARNING", f"Sensitive file exposed: {sf}")
+        except Exception:
+            pass
+
+    # ── 16. CORS Misconfiguration Check ───────────────────────────────────────
+    logger.add_log(tool_name, "PROCESSING", "Checking CORS misconfiguration")
+    try:
+        rate_limiter.wait(domain)
+        r = requests.get(
+            base,
+            headers={"Origin": "https://evil.com"},
+            timeout=5, verify=False
+        )
+        acao = r.headers.get("Access-Control-Allow-Origin", "")
+        if acao == "https://evil.com" or acao == "*":
+            findings["high"].append({
+                "type": "CORS Misconfiguration",
+                "detail": f"Access-Control-Allow-Origin: {acao} — allows arbitrary origin",
+                "severity": "High"
+            })
+            logger.add_log(tool_name, "WARNING", f"CORS misconfig: {acao}")
+    except Exception:
+        pass
+
+    # ── 17. Security Headers Check ────────────────────────────────────────────
+    logger.add_log(tool_name, "PROCESSING", "Checking security headers")
+    try:
+        rate_limiter.wait(domain)
+        r = requests.get(base, timeout=5, verify=False)
+
+        security_headers = {
+            "X-Content-Type-Options": ("nosniff", "High"),
+            "X-Frame-Options": (None, "Medium"),  # Any value is ok
+            "Strict-Transport-Security": ("max-age=", "High"),
+            "Content-Security-Policy": ("default-src", "High"),
+            "X-XSS-Protection": (None, "Low"),
+            "Referrer-Policy": (None, "Low"),
+            "Permissions-Policy": (None, "Low"),
+        }
+
+        for header, (expected, severity) in security_headers.items():
+            header_value = r.headers.get(header, "")
+            if not header_value:
+                findings["medium" if severity in ["Medium", "Low"] else "high"].append({
+                    "type": f"Missing Security Header: {header}",
+                    "detail": f"Header '{header}' not present — {severity} security risk",
+                    "severity": severity
+                })
+            elif expected and expected not in header_value:
+                findings["medium"].append({
+                    "type": f"Weak Security Header: {header}",
+                    "detail": f"Header '{header}' present but not properly configured: {header_value[:100]}",
+                    "severity": "Medium"
+                })
+    except Exception:
+        pass
+
     # ── Summary ───────────────────────────────────────────────────────────────
     total = sum(len(v) for v in [findings["critical"], findings["high"], findings["medium"], findings["info"]])
     logger.add_log(tool_name, "SUCCESS", f"Misconfiguration scan complete. Found {total} issues.")

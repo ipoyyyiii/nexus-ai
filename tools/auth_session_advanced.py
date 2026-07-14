@@ -69,44 +69,150 @@ def session_management_scanner(url: str, login_url: str = "", username: str = ""
             issues = []
             cookie_str = str(cookie)
 
+            # ── HttpOnly Check ────────────────────────────────────────────────
             if not cookie.has_nonstandard_attr("HttpOnly") and "httponly" not in cookie_str.lower():
                 issues.append("Missing HttpOnly flag — cookie accessible via JavaScript (XSS risk)")
+
+            # ── Secure Check ──────────────────────────────────────────────────
             if not cookie.secure:
                 issues.append("Missing Secure flag — cookie transmitted over HTTP")
 
-            # Check SameSite from raw headers
+            # ── SameSite Check ────────────────────────────────────────────────
             samesite_found = any("samesite" in h.lower() for h in set_cookie_headers if cookie.name.lower() in h.lower())
             if not samesite_found:
                 issues.append("Missing SameSite flag — vulnerable to CSRF")
+
+            # ── Path Check ────────────────────────────────────────────────────
+            if not cookie.path or cookie.path == "/":
+                issues.append("Cookie path too broad — consider restricting to specific path")
+
+            # ── Domain Check ──────────────────────────────────────────────────
+            if cookie.domain and cookie.domain.startswith("."):
+                issues.append("Cookie set for all subdomains — potential subdomain cookie theft")
+
+            # ── Expiry Check ──────────────────────────────────────────────────
+            if cookie.expires and cookie.expires > 0:
+                import time
+                years_until_expiry = (cookie.expires - time.time()) / (365 * 24 * 3600)
+                if years_until_expiry > 1:
+                    issues.append(f"Cookie expiry too long ({years_until_expiry:.1f} years) — consider shorter session lifetime")
+
+            # ── Session Cookie in URL Check ───────────────────────────────────
+            if "session" in cookie.name.lower() or "sid" in cookie.name.lower():
+                if "path" not in cookie_str.lower():
+                    issues.append("Session cookie without explicit path — potential scope issues")
 
             if issues:
                 findings["cookie_issues"].append({
                     "cookie_name": cookie.name,
                     "issues": issues,
-                    "severity": "High"
+                    "severity": "High" if any("HttpOnly" in i or "Secure" in i for i in issues) else "Medium"
                 })
                 logger.add_log(tool_name, "WARNING", f"Cookie issue: {cookie.name} — {issues}")
 
-        # Check session ID entropy (length & randomness)
+        # ── Session ID Entropy Analysis ────────────────────────────────────────
+        logger.add_log(tool_name, "PROCESSING", "Analyzing session ID entropy")
         session_cookies = [c for c in cookies if any(
-            kw in c.name.lower() for kw in ["session", "sess", "sid", "token", "auth"]
+            kw in c.name.lower() for kw in ["session", "sess", "sid", "token", "auth", "jwt"]
         )]
+
         for sc in session_cookies:
+            # Length check
             if len(sc.value) < 16:
                 findings["session_entropy"].append({
                     "cookie": sc.name,
                     "issue": f"Short session ID ({len(sc.value)} chars) — potentially predictable",
-                    "severity": "High"
+                    "severity": "High",
+                    "recommendation": "Use at least 32 characters for session IDs"
                 })
-            elif not re.search(r'[a-zA-Z]', sc.value) or not re.search(r'[0-9]', sc.value):
+            elif len(sc.value) < 32:
                 findings["session_entropy"].append({
                     "cookie": sc.name,
-                    "issue": "Session ID lacks character diversity — may be predictable",
-                    "severity": "Medium"
+                    "issue": f"Medium length session ID ({len(sc.value)} chars) — consider increasing entropy",
+                    "severity": "Medium",
+                    "recommendation": "Use at least 32 characters for session IDs"
+                })
+
+            # Character diversity check
+            has_upper = bool(re.search(r'[A-Z]', sc.value))
+            has_lower = bool(re.search(r'[a-z]', sc.value))
+            has_digit = bool(re.search(r'[0-9]', sc.value))
+            has_special = bool(re.search(r'[^A-Za-z0-9]', sc.value))
+
+            diversity_score = sum([has_upper, has_lower, has_digit, has_special])
+            if diversity_score < 3:
+                findings["session_entropy"].append({
+                    "cookie": sc.name,
+                    "issue": f"Session ID lacks character diversity ({diversity_score}/4 types) — may be predictable",
+                    "severity": "Medium",
+                    "recommendation": "Session ID should contain uppercase, lowercase, digits, and special characters"
+                })
+
+            # Sequential pattern check
+            if re.search(r'(012|123|234|345|456|567|678|789|890|abc|bcd|cde|def)', sc.value.lower()):
+                findings["session_entropy"].append({
+                    "cookie": sc.name,
+                    "issue": "Session ID contains sequential characters — weak entropy",
+                    "severity": "High",
+                    "recommendation": "Session ID should not contain sequential patterns"
+                })
+
+            # Repeated character check
+            if re.search(r'(.)\1{3,}', sc.value):
+                findings["session_entropy"].append({
+                    "cookie": sc.name,
+                    "issue": "Session ID contains repeated characters (4+) — weak entropy",
+                    "severity": "High",
+                    "recommendation": "Session ID should not contain repeated characters"
+                })
+
+            # Base64/Hex pattern check (might be predictable)
+            if re.match(r'^[0-9a-f]+$', sc.value.lower()):
+                findings["session_entropy"].append({
+                    "cookie": sc.name,
+                    "issue": "Session ID is pure hex — may be predictable if based on timestamp",
+                    "severity": "Medium",
+                    "recommendation": "Use cryptographically random session IDs"
+                })
+
+            # JWT detection
+            if sc.value.count(".") == 2 and len(sc.value) > 50:
+                findings["session_entropy"].append({
+                    "cookie": sc.name,
+                    "issue": "JWT token detected — check for weak algorithm (none/HS256 with weak secret)",
+                    "severity": "Medium",
+                    "recommendation": "Verify JWT uses RS256/ES256 and strong secret"
                 })
 
     except Exception as e:
         logger.add_log(tool_name, "WARNING", f"Cookie analysis error: {e}")
+
+    # ── 1b. Token/Session Security Headers Check ──────────────────────────────
+    logger.add_log(tool_name, "PROCESSING", "Checking session security headers")
+    try:
+        rate_limiter.wait(domain)
+        r = requests.get(base, timeout=5, verify=False)
+
+        # Check for session-related security headers
+        security_headers = {
+            "X-Content-Type-Options": "nosniff",
+            "X-Frame-Options": "DENY",
+            "Strict-Transport-Security": "max-age=",
+            "Content-Security-Policy": "default-src",
+            "X-XSS-Protection": "1; mode=block",
+        }
+
+        for header, expected in security_headers.items():
+            header_value = r.headers.get(header, "")
+            if not header_value or expected not in header_value:
+                findings["summary"].append({
+                    "type": f"Missing Security Header: {header}",
+                    "detail": f"Header '{header}' missing or not properly configured",
+                    "severity": "Medium" if header in ["Strict-Transport-Security", "Content-Security-Policy"] else "Low"
+                })
+
+    except Exception as e:
+        logger.add_log(tool_name, "WARNING", f"Header check error: {str(e)[:100]}")
 
     # ── 2. Session Fixation Check ─────────────────────────────────────────────
     logger.add_log(tool_name, "PROCESSING", "Checking session fixation")

