@@ -7,6 +7,10 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      - STEALTH_MODE=${STEALTH_MODE:-0}
+      - AUTO_PILOT=${AUTO_PILOT:-0}
+      - PYTHONUNBUFFERED=1
     restart: always
     volumes:
       - ./stored_reports:/app/reports

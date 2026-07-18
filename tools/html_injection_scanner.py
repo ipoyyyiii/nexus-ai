@@ -14,6 +14,7 @@ import re
 from urllib.parse import quote, urlparse
 from langchain.tools import tool
 from core.rate_limiter import rate_limiter
+from core.auth_store import auth_get, auth_post
 from core.cancellation import check_cancelled
 from core.checkpoint import require_approval
 from core.auth_store import get_auth_kwargs
@@ -147,7 +148,7 @@ def html_injection_scanner(url: str, params: str = "") -> str:
     # Capture baseline
     try:
         rate_limiter.wait(domain)
-        baseline = requests.get(url, timeout=8, verify=False, **auth_kwargs)
+        baseline = auth_get(url, timeout=8, verify=False, **auth_kwargs)
         baseline_len = len(baseline.text)
     except Exception:
         baseline_len = 0
@@ -164,7 +165,7 @@ def html_injection_scanner(url: str, params: str = "") -> str:
                 test_url = f"{url}{'&' if '?' in url else '?'}{param}={quote(payload)}"
 
                 stealth_headers = stealth.get_browser_headers(test_url)
-                resp = requests.get(
+                resp = auth_get(
                     test_url,
                     headers=stealth_headers,
                     timeout=5,
@@ -207,7 +208,7 @@ def html_injection_scanner(url: str, params: str = "") -> str:
             try:
                 rate_limiter.wait(domain)
                 stealth_headers = stealth.get_browser_headers(url)
-                resp = requests.post(
+                resp = auth_post(
                     url,
                     data={param: payload},
                     headers={**stealth_headers, "Content-Type": "application/x-www-form-urlencoded"},
@@ -240,7 +241,7 @@ def html_injection_scanner(url: str, params: str = "") -> str:
         try:
             rate_limiter.wait(domain)
             stealth_headers = stealth.get_browser_headers(url)
-            resp = requests.post(
+            resp = auth_post(
                 url,
                 json={param: HTML_PAYLOADS[0][0]},  # First payload
                 headers={**stealth_headers, "Content-Type": "application/json"},

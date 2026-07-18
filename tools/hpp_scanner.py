@@ -13,6 +13,7 @@ import re
 from urllib.parse import quote, urlparse, urlencode, parse_qs
 from langchain.tools import tool
 from core.rate_limiter import rate_limiter
+from core.auth_store import auth_get, auth_post
 from core.cancellation import check_cancelled
 from core.checkpoint import require_approval
 from core.auth_store import get_auth_kwargs
@@ -80,7 +81,7 @@ def hpp_scanner(url: str, params: str = "") -> str:
     try:
         rate_limiter.wait(domain)
         stealth_headers = stealth.get_browser_headers(url)
-        baseline = requests.get(url, headers=stealth_headers, timeout=8, verify=False, **auth_kwargs)
+        baseline = auth_get(url, headers=stealth_headers, timeout=8, verify=False, **auth_kwargs)
         baseline_len = len(baseline.text)
         baseline_status = baseline.status_code
     except Exception:
@@ -96,7 +97,7 @@ def hpp_scanner(url: str, params: str = "") -> str:
             # ?param=value1&param=value2
             test_url = f"{url}{'&' if '?' in url else '?'}{param}=value1&{param}=value2"
             stealth_headers = stealth.get_browser_headers(test_url)
-            resp = requests.get(test_url, headers=stealth_headers, timeout=5, verify=False, **auth_kwargs)
+            resp = auth_get(test_url, headers=stealth_headers, timeout=5, verify=False, **auth_kwargs)
             tested += 1
 
             diff = differ.compare(
@@ -129,7 +130,7 @@ def hpp_scanner(url: str, params: str = "") -> str:
             # ?param[]=value1&param[]=value2
             test_url = f"{url}{'&' if '?' in url else '?'}{param}[]=value1&{param}[]=value2"
             stealth_headers = stealth.get_browser_headers(test_url)
-            resp = requests.get(test_url, headers=stealth_headers, timeout=5, verify=False, **auth_kwargs)
+            resp = auth_get(test_url, headers=stealth_headers, timeout=5, verify=False, **auth_kwargs)
             tested += 1
 
             if resp.status_code == 200 and "array" in resp.text.lower():
@@ -152,7 +153,7 @@ def hpp_scanner(url: str, params: str = "") -> str:
             # ?param=value1&Param=value2 (case-sensitive)
             test_url = f"{url}{'&' if '?' in url else '?'}{param}=value1&{param.title()}=value2"
             stealth_headers = stealth.get_browser_headers(test_url)
-            resp = requests.get(test_url, headers=stealth_headers, timeout=5, verify=False, **auth_kwargs)
+            resp = auth_get(test_url, headers=stealth_headers, timeout=5, verify=False, **auth_kwargs)
             tested += 1
 
             if resp.status_code == 200:
@@ -173,7 +174,7 @@ def hpp_scanner(url: str, params: str = "") -> str:
             # ?param=value1#param=value2
             test_url = f"{url}{'&' if '?' in url else '?'}{param}=clean#{param}=polluted"
             stealth_headers = stealth.get_browser_headers(test_url)
-            resp = requests.get(test_url, headers=stealth_headers, timeout=5, verify=False, **auth_kwargs)
+            resp = auth_get(test_url, headers=stealth_headers, timeout=5, verify=False, **auth_kwargs)
             tested += 1
 
             if "polluted" in resp.text:
@@ -196,7 +197,7 @@ def hpp_scanner(url: str, params: str = "") -> str:
             # Send same param in URL query AND POST body
             test_url = f"{url}{'&' if '?' in url else '?'}{param}=url_value"
             stealth_headers = stealth.get_browser_headers(test_url)
-            resp = requests.post(
+            resp = auth_post(
                 test_url,
                 data={param: "body_value"},
                 headers=stealth_headers,
@@ -233,7 +234,7 @@ def hpp_scanner(url: str, params: str = "") -> str:
             # Send duplicate param in JSON body
             json_payload = {param: ["value1", "value2"]}
             stealth_headers = stealth.get_browser_headers(url)
-            resp = requests.post(
+            resp = auth_post(
                 url,
                 json=json_payload,
                 headers={**stealth_headers, "Content-Type": "application/json"},
@@ -270,7 +271,7 @@ def hpp_scanner(url: str, params: str = "") -> str:
             # Send same param as header
             stealth_headers = stealth.get_browser_headers(url)
             stealth_headers[param] = "header_value"
-            resp = requests.get(url, headers=stealth_headers, timeout=5, verify=False, **auth_kwargs)
+            resp = auth_get(url, headers=stealth_headers, timeout=5, verify=False, **auth_kwargs)
             tested += 1
 
             # Check if header value was processed
@@ -292,7 +293,7 @@ def hpp_scanner(url: str, params: str = "") -> str:
             # Test path traversal via parameter
             stealth_headers = stealth.get_browser_headers(url)
             test_url = f"{url}/{param}/../../etc/passwd"
-            resp = requests.get(test_url, headers=stealth_headers, timeout=5, verify=False, **auth_kwargs)
+            resp = auth_get(test_url, headers=stealth_headers, timeout=5, verify=False, **auth_kwargs)
             tested += 1
 
             if any(sig in resp.text for sig in ["root:x:", "bin:x:"]):
@@ -314,7 +315,7 @@ def hpp_scanner(url: str, params: str = "") -> str:
             rate_limiter.wait(domain)
             # Send same param as cookie
             stealth_headers = stealth.get_browser_headers(url)
-            resp = requests.get(
+            resp = auth_get(
                 url,
                 headers=stealth_headers,
                 cookies={param: "cookie_value"},

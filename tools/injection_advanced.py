@@ -5,6 +5,7 @@ import urllib3
 from urllib.parse import quote, urlparse
 from langchain.tools import tool
 from core.rate_limiter import rate_limiter
+from core.auth_store import auth_get, auth_post
 from core.cancellation import check_cancelled
 from core.checkpoint import require_approval
 from core.auth_store import get_auth_kwargs
@@ -123,7 +124,7 @@ def blind_sqli_scanner(url: str, params: str = "") -> str:
                 for attempt in range(3):
                     rate_limiter.wait(domain)
                     start = time.monotonic()
-                    r = requests.get(
+                    r = auth_get(
                         f"{url}?{param}={quote(payload)}",
                         timeout=10, verify=False
                     )
@@ -179,7 +180,7 @@ def blind_sqli_scanner(url: str, params: str = "") -> str:
                 for _ in range(2):
                     try:
                         rate_limiter.wait(domain)
-                        requests.get(
+                        auth_get(
                             f"{url}?{param}={quote(payload)}",
                             timeout=10, verify=False
                         )
@@ -215,9 +216,9 @@ def blind_sqli_scanner(url: str, params: str = "") -> str:
         for true_payload, false_payload in boolean_payloads:
             try:
                 rate_limiter.wait(domain)
-                r_true = requests.get(f"{url}?{param}={quote(true_payload)}", timeout=5, verify=False)
+                r_true = auth_get(f"{url}?{param}={quote(true_payload)}", timeout=5, verify=False)
                 rate_limiter.wait(domain)
-                r_false = requests.get(f"{url}?{param}={quote(false_payload)}", timeout=5, verify=False)
+                r_false = auth_get(f"{url}?{param}={quote(false_payload)}", timeout=5, verify=False)
 
                 # Significant response difference between true and false condition
                 len_diff = abs(len(r_true.text) - len(r_false.text))
@@ -343,7 +344,7 @@ def nosql_injection_scanner(url: str, params: str = "") -> str:
                     # Send as array notation: param[$gt]=
                     for op, val in payload.items():
                         test_url = f"{url}?{param}[{op}]={quote(str(val))}"
-                        r = requests.get(test_url, timeout=5, verify=False)
+                        r = auth_get(test_url, timeout=5, verify=False)
                         if r.status_code == 200 and any(kw in r.text.lower() for kw in
                             ["dashboard", "welcome", "profile", "logout", "success"]):
                             vulnerabilities.append({
@@ -364,7 +365,7 @@ def nosql_injection_scanner(url: str, params: str = "") -> str:
         if check_cancelled(logger): break
         try:
             rate_limiter.wait(domain)
-            r = requests.post(
+            r = auth_post(
                 url,
                 data=jp,
                 headers={"Content-Type": "application/json"},
@@ -433,13 +434,13 @@ def ldap_injection_scanner(url: str, params: str = "") -> str:
             try:
                 rate_limiter.wait(domain)
                 # Test GET
-                r_get = requests.get(
+                r_get = auth_get(
                     f"{url}?{param}={quote(payload)}",
                     timeout=5, verify=False
                 )
                 # Test POST
                 rate_limiter.wait(domain)
-                r_post = requests.post(
+                r_post = auth_post(
                     url,
                     data={param: payload, "password": "anything"},
                     timeout=5, verify=False
@@ -539,7 +540,7 @@ def xpath_injection_scanner(url: str, params: str = "") -> str:
         for payload, description in xpath_payloads:
             try:
                 rate_limiter.wait(domain)
-                r = requests.get(
+                r = auth_get(
                     f"{url}?{param}={quote(payload)}",
                     timeout=5, verify=False
                 )
@@ -562,7 +563,7 @@ def xpath_injection_scanner(url: str, params: str = "") -> str:
                     ["dashboard", "welcome", "logout", "admin", "success"]):
                     rate_limiter.wait(domain)
                     # Verify by testing clearly wrong payload
-                    r_normal = requests.get(
+                    r_normal = auth_get(
                         f"{url}?{param}={quote('normalvalue_xyz')}",
                         timeout=5, verify=False
                     )

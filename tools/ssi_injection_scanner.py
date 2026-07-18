@@ -14,6 +14,7 @@ import time
 from urllib.parse import quote, urlparse
 from langchain.tools import tool
 from core.rate_limiter import rate_limiter
+from core.auth_store import auth_get, auth_post
 from core.cancellation import check_cancelled
 from core.checkpoint import require_approval
 from core.auth_store import get_auth_kwargs
@@ -144,7 +145,7 @@ def ssi_injection_scanner(url: str, params: str = "") -> str:
                 test_url = f"{url}{'&' if '?' in url else '?'}{param}={quote(payload)}"
 
                 stealth_headers = stealth.get_browser_headers(test_url)
-                resp = requests.get(
+                resp = auth_get(
                     test_url,
                     headers=stealth_headers,
                     timeout=5,

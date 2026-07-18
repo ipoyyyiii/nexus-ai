@@ -5,6 +5,7 @@ import urllib3
 from urllib.parse import urlparse
 from langchain.tools import tool
 from core.rate_limiter import rate_limiter
+from core.auth_store import auth_get, auth_post
 from core.cancellation import check_cancelled
 from core.auth_store import get_auth_kwargs
 
@@ -53,7 +54,7 @@ def misconfiguration_scanner(url: str) -> str:
     logger.add_log(tool_name, "PROCESSING", "Checking .git folder exposure")
     try:
         rate_limiter.wait(domain)
-        r = requests.get(f"{base}/.git/HEAD", timeout=5, verify=False)
+        r = auth_get(f"{base}/.git/HEAD", timeout=5, verify=False)
         if r.status_code == 200 and ("ref:" in r.text or "blob" in r.text.lower()):
             findings["critical"].append({
                 "type": ".git Folder Exposed",
@@ -70,7 +71,7 @@ def misconfiguration_scanner(url: str) -> str:
     for env_path in ["/.env", "/.env.local", "/.env.production", "/.env.backup"]:
         try:
             rate_limiter.wait(domain)
-            r = requests.get(f"{base}{env_path}", timeout=5, verify=False)
+            r = auth_get(f"{base}{env_path}", timeout=5, verify=False)
             if r.status_code == 200 and any(k in r.text for k in ["DB_", "APP_", "SECRET", "KEY=", "PASSWORD="]):
                 findings["critical"].append({
                     "type": ".env File Exposed",
@@ -94,7 +95,7 @@ def misconfiguration_scanner(url: str) -> str:
     for bf in backup_files:
         try:
             rate_limiter.wait(domain)
-            r = requests.get(f"{base}{bf}", timeout=5, verify=False)
+            r = auth_get(f"{base}{bf}", timeout=5, verify=False)
             if r.status_code == 200 and len(r.content) > 100:
                 findings["high"].append({
                     "type": "Backup File Exposed",
@@ -112,7 +113,7 @@ def misconfiguration_scanner(url: str) -> str:
     for dp in dir_paths:
         try:
             rate_limiter.wait(domain)
-            r = requests.get(f"{base}{dp}", timeout=5, verify=False)
+            r = auth_get(f"{base}{dp}", timeout=5, verify=False)
             if r.status_code == 200 and "Index of /" in r.text:
                 findings["medium"].append({
                     "type": "Directory Listing Enabled",
@@ -135,7 +136,7 @@ def misconfiguration_scanner(url: str) -> str:
     for ap in admin_paths:
         try:
             rate_limiter.wait(domain)
-            r = requests.get(f"{base}{ap}", timeout=5, verify=False, allow_redirects=True)
+            r = auth_get(f"{base}{ap}", timeout=5, verify=False, allow_redirects=True)
             if r.status_code == 200 and any(kw in r.text.lower() for kw in ["login", "password", "username", "admin"]):
                 findings["high"].append({
                     "type": "Exposed Admin Panel",
@@ -163,7 +164,7 @@ def misconfiguration_scanner(url: str) -> str:
     for dt in debug_triggers:
         try:
             rate_limiter.wait(domain)
-            r = requests.get(dt, timeout=5, verify=False)
+            r = auth_get(dt, timeout=5, verify=False)
             if any(sig in r.text.lower() for sig in debug_signatures):
                 findings["high"].append({
                     "type": "Debug Mode / Verbose Error",
@@ -180,7 +181,7 @@ def misconfiguration_scanner(url: str) -> str:
     logger.add_log(tool_name, "PROCESSING", "Checking server version disclosure")
     try:
         rate_limiter.wait(domain)
-        r = requests.get(base, timeout=5, verify=False)
+        r = auth_get(base, timeout=5, verify=False)
         server_header = r.headers.get("Server", "")
         xpowered = r.headers.get("X-Powered-By", "")
         version_pattern = re.compile(r"[\d]+\.[\d]+")
@@ -200,7 +201,7 @@ def misconfiguration_scanner(url: str) -> str:
         http_url = base.replace("https://", "http://", 1)
         try:
             rate_limiter.wait(domain)
-            r = requests.get(http_url, timeout=5, verify=False, allow_redirects=False)
+            r = auth_get(http_url, timeout=5, verify=False, allow_redirects=False)
             if r.status_code not in [301, 302, 307, 308]:
                 findings["medium"].append({
                     "type": "Missing HTTP→HTTPS Redirect",
@@ -216,7 +217,7 @@ def misconfiguration_scanner(url: str) -> str:
     logger.add_log(tool_name, "PROCESSING", "Checking internal IP disclosure")
     try:
         rate_limiter.wait(domain)
-        r = requests.get(base, timeout=5, verify=False)
+        r = auth_get(base, timeout=5, verify=False)
         private_ip_pattern = re.compile(
             r'\b(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|127\.\d{1,3}\.\d{1,3}\.\d{1,3})\b'
         )
@@ -242,7 +243,7 @@ def misconfiguration_scanner(url: str) -> str:
     for cp in cloud_patterns:
         try:
             rate_limiter.wait(domain)
-            r = requests.get(cp, timeout=5, verify=False)
+            r = auth_get(cp, timeout=5, verify=False)
             if r.status_code == 200 and any(kw in r.text for kw in ["ListBucketResult", "EnumerationResults", "Blob"]):
                 findings["critical"].append({
                     "type": "Public Cloud Storage Bucket",
@@ -265,13 +266,13 @@ def misconfiguration_scanner(url: str) -> str:
     for lp in login_paths[:3]:  # limit to top 3 to avoid too many requests
         try:
             rate_limiter.wait(domain)
-            r = requests.get(f"{base}{lp}", timeout=5, verify=False)
+            r = auth_get(f"{base}{lp}", timeout=5, verify=False)
             if r.status_code == 200 and any(kw in r.text.lower() for kw in ["username", "password", "login"]):
                 # Try default creds
                 for uname, passwd in default_creds[:4]:
                     try:
                         rate_limiter.wait(domain)
-                        resp = requests.post(
+                        resp = auth_post(
                             f"{base}{lp}",
                             data={"username": uname, "password": passwd, "email": uname},
                             timeout=5, verify=False, allow_redirects=True
@@ -361,7 +362,7 @@ def misconfiguration_scanner(url: str) -> str:
 
         # Check DNS-over-HTTPS / DNSSEC indicators
         try:
-            resp = requests.get(url, timeout=5, verify=False)
+            resp = auth_get(url, timeout=5, verify=False)
             # Check if server sends DNS rebinding protection headers
             dns_rebind_headers = [
                 "X-DNS-Validation",
@@ -477,7 +478,7 @@ def misconfiguration_scanner(url: str) -> str:
         for path in paths[:3]:  # Limit to 3 paths per framework
             try:
                 rate_limiter.wait(domain)
-                r = requests.get(f"{base}{path}", timeout=5, verify=False, allow_redirects=False)
+                r = auth_get(f"{base}{path}", timeout=5, verify=False, allow_redirects=False)
                 if r.status_code == 200 and len(r.content) > 100:
                     findings["high"].append({
                         "type": f"Exposed {framework} Endpoint",
@@ -509,7 +510,7 @@ def misconfiguration_scanner(url: str) -> str:
         if check_cancelled(logger): break
         try:
             rate_limiter.wait(domain)
-            r = requests.get(f"{base}{sf}", timeout=5, verify=False)
+            r = auth_get(f"{base}{sf}", timeout=5, verify=False)
             if r.status_code == 200 and len(r.content) > 50:
                 # Filter out common false positives
                 if not any(fp in r.text.lower() for fp in ["404", "not found", "page not found"]):
@@ -528,7 +529,7 @@ def misconfiguration_scanner(url: str) -> str:
     logger.add_log(tool_name, "PROCESSING", "Checking CORS misconfiguration")
     try:
         rate_limiter.wait(domain)
-        r = requests.get(
+        r = auth_get(
             base,
             headers={"Origin": "https://evil.com"},
             timeout=5, verify=False
@@ -548,7 +549,7 @@ def misconfiguration_scanner(url: str) -> str:
     logger.add_log(tool_name, "PROCESSING", "Checking security headers")
     try:
         rate_limiter.wait(domain)
-        r = requests.get(base, timeout=5, verify=False)
+        r = auth_get(base, timeout=5, verify=False)
 
         security_headers = {
             "X-Content-Type-Options": ("nosniff", "High"),

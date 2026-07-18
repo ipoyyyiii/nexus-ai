@@ -5,6 +5,7 @@ import urllib3
 from urllib.parse import urlparse, urljoin
 from langchain.tools import tool
 from core.rate_limiter import rate_limiter
+from core.auth_store import auth_get, auth_post
 from core.cancellation import check_cancelled
 from core.auth_store import get_auth_kwargs
 
@@ -52,7 +53,7 @@ def recon_advanced(domain: str) -> str:
     logger.add_log(tool_name, "PROCESSING", "Querying Certificate Transparency logs (crt.sh)")
     try:
         rate_limiter.wait("crt.sh")
-        r = requests.get(
+        r = auth_get(
             f"https://crt.sh/?q=%.{domain}&output=json",
             timeout=15, headers={"User-Agent": "Mozilla/5.0"}
         )
@@ -159,7 +160,7 @@ def recon_advanced(domain: str) -> str:
         if check_cancelled(logger): break
         try:
             rate_limiter.wait("cloud-check")
-            r = requests.get(cloud_url, timeout=5, verify=False)
+            r = auth_get(cloud_url, timeout=5, verify=False)
             if r.status_code == 200:
                 is_public = any(kw in r.text for kw in [
                     "ListBucketResult", "EnumerationResults",
@@ -197,7 +198,7 @@ def recon_advanced(domain: str) -> str:
     for stp in security_txt_paths:
         try:
             rate_limiter.wait(domain)
-            r = requests.get(stp, timeout=5, verify=False)
+            r = auth_get(stp, timeout=5, verify=False)
             if r.status_code == 200 and any(k in r.text for k in ["Contact:", "Policy:", "Encryption:"]):
                 findings["security_txt"] = {
                     "url": stp,
@@ -213,7 +214,7 @@ def recon_advanced(domain: str) -> str:
     logger.add_log(tool_name, "PROCESSING", "Analyzing robots.txt")
     try:
         rate_limiter.wait(domain)
-        r = requests.get(f"https://{domain}/robots.txt", timeout=5, verify=False)
+        r = auth_get(f"https://{domain}/robots.txt", timeout=5, verify=False)
         if r.status_code == 200:
             findings["robots_txt"]["found"] = True
             disallowed = re.findall(r"Disallow:\s*(.+)", r.text)
@@ -236,7 +237,7 @@ def recon_advanced(domain: str) -> str:
     logger.add_log(tool_name, "PROCESSING", "Checking email exposure in page source")
     try:
         rate_limiter.wait(domain)
-        r = requests.get(f"https://{domain}", timeout=8, verify=False)
+        r = auth_get(f"https://{domain}", timeout=8, verify=False)
         email_pattern = re.compile(r'[a-zA-Z0-9._%+-]+@' + re.escape(domain))
         emails = list(set(email_pattern.findall(r.text)))
         if emails:
@@ -386,7 +387,7 @@ def email_header_injection_scanner(url: str, params: str = "") -> str:
         for payload in injection_payloads:
             try:
                 rate_limiter.wait(domain)
-                r = requests.post(
+                r = auth_post(
                     url,
                     data={param: payload, "message": "test", "name": "test"},
                     timeout=5, verify=False

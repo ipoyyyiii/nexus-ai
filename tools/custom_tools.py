@@ -410,7 +410,8 @@ def scan_sql_injection(url: str, params: str = "") -> str:
                                     pair_confirmed = False
                                     exec_logger.add_log(tool_name, "INFO", f"Semantic pair failed for {param}: both responses identical")
                                     break
-                            except:
+                            except Exception as e:
+                                exec_logger.add_log(tool_name, "WARNING", f"Semantic test error: {str(e)[:100]}")
                                 continue
 
                         if not pair_confirmed:
@@ -455,8 +456,8 @@ def scan_sql_injection(url: str, params: str = "") -> str:
                         exec_logger.add_log(tool_name, "WARNING", f"Confirmed SQLi: {param} (score: {diff['vulnerability_score']:.2f})", 
                                           {"param": param, "payload": payload, "evidence": diff["diff_summary"]})
                         break  # One finding per param
-                except:
-                    pass
+                except Exception as e:
+                    exec_logger.add_log(tool_name, "WARNING", f"SQLi test error for {param}: {str(e)[:100]}")
 
             # ── Phase 2: Time-based payloads ──────────────────────────────────
             if param not in seen_params:
@@ -507,8 +508,8 @@ def scan_sql_injection(url: str, params: str = "") -> str:
                         seen_params.add(param)
                         exec_logger.add_log(tool_name, "WARNING", f"Time-based SQLi timeout: {param}, DB={db_type}")
                         break
-                    except:
-                        pass
+                    except Exception as e:
+                        exec_logger.add_log(tool_name, "WARNING", f"Time-based test error for {param}: {str(e)[:100]}")
         
         if vulnerabilities:
             exec_logger.add_log(tool_name, "SUCCESS", f"Found {len(vulnerabilities)} potential SQLi vulnerabilities")

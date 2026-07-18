@@ -1,8 +1,14 @@
+import os
 import threading
 from contextvars import ContextVar
 from typing import Dict, Optional, Callable
 
 current_job_id: ContextVar[Optional[str]] = ContextVar("current_job_id", default=None)
+
+
+def is_auto_pilot() -> bool:
+    """Check if auto-pilot mode is enabled."""
+    return os.environ.get("AUTO_PILOT", "0") == "1"
 
 
 class CheckpointStore:
@@ -19,6 +25,20 @@ class CheckpointStore:
         Blocking call (dipanggil dari worker thread tempat crew jalan).
         Return (approved: bool, reason: str)
         """
+        # Auto-pilot mode: auto-approve semua actions
+        if is_auto_pilot():
+            if self.on_wait_start:
+                try:
+                    self.on_wait_start(job_id, action, context)
+                except Exception:
+                    pass
+            if self.on_wait_end:
+                try:
+                    self.on_wait_end(job_id)
+                except Exception:
+                    pass
+            return True, "auto-pilot mode enabled"
+
         event = threading.Event()
         with self._lock:
             self._pending[job_id] = {
@@ -81,6 +101,15 @@ def require_approval(action: str, context: str, risk: str = "high", exec_logger=
     biar gak ada celah "lupa pasang context = bypass approval".
     """
     job_id = current_job_id.get()
+
+    # Auto-pilot mode: auto-approve semua actions
+    if is_auto_pilot():
+        if exec_logger:
+            exec_logger.add_log(
+                "HITL", "AUTO-APPROVED",
+                f"Auto-pilot mode: '{action}' auto-approved"
+            )
+        return True
 
     if not job_id:
         if exec_logger:

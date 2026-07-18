@@ -231,8 +231,9 @@ class WAFDetector:
         # ── 1. Passive detection (headers + body) ─────────────────────────────
         try:
             from core.rate_limiter import rate_limiter
+            from core.auth_store import auth_get, auth_post
             rate_limiter.wait(domain)
-            resp = requests.get(url, timeout=10, verify=False, allow_redirects=True)
+            resp = auth_get(url, timeout=10, verify=False, allow_redirects=True)
             headers_str = str(dict(resp.headers)).lower()
             body = resp.text.lower()
             status = resp.status_code
@@ -278,9 +279,10 @@ class WAFDetector:
         for probe_url, probe_type in WAF_PROBE_PAYLOADS[:3]:  # Limit to 3 probes
             try:
                 from core.rate_limiter import rate_limiter
+                from core.auth_store import auth_get, auth_post
                 rate_limiter.wait(domain)
                 test_url = f"{url}{probe_url}"
-                resp = requests.get(test_url, timeout=5, verify=False)
+                resp = auth_get(test_url, timeout=5, verify=False)
 
                 # If WAF blocked us (403, 406, etc.) = WAF detected
                 if resp.status_code in [403, 406, 429, 503]:

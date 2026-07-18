@@ -83,6 +83,11 @@ load_dotenv()
 import litellm
 litellm._turn_on_debug()
 
+# Suppress LiteLLM cost calculation warnings for unmapped models
+import logging
+litellm_logger = logging.getLogger("litellm")
+litellm_logger.setLevel(logging.ERROR)  # Only show errors, not warnings
+
 if os.environ.get("OPENROUTER_API_KEY"):
     os.environ["OPENAI_API_KEY"] = os.environ.get("OPENROUTER_API_KEY")
     os.environ["OPENAI_API_BASE"] = "https://openrouter.ai/api/v1"
@@ -334,10 +339,14 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
     stealth_mode = scan_config.get("stealth_mode", False)
     
     # Apply stealth mode globally if enabled
-    if stealth_mode:
-        os.environ["STEALTH_MODE"] = "1"
+    from core.rate_limiter import set_stealth_mode
+    set_stealth_mode(stealth_mode)
+    
+    # Apply auto-pilot mode globally if enabled
+    if auto_pilot:
+        os.environ["AUTO_PILOT"] = "1"
     else:
-        os.environ["STEALTH_MODE"] = "0"
+        os.environ["AUTO_PILOT"] = "0"
     
     try:
         current_job_id.set(job_id)

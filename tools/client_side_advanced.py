@@ -5,6 +5,7 @@ import urllib3
 from urllib.parse import quote, urlparse
 from langchain.tools import tool
 from core.rate_limiter import rate_limiter
+from core.auth_store import auth_get, auth_post
 from core.cancellation import check_cancelled
 from core.checkpoint import require_approval
 from core.auth_store import get_auth_kwargs
@@ -53,7 +54,7 @@ def client_side_security_scanner(url: str) -> str:
 
     try:
         rate_limiter.wait(domain)
-        r = requests.get(url, timeout=8, verify=False)
+        r = auth_get(url, timeout=8, verify=False)
         headers = r.headers
         body = r.text
 
@@ -252,7 +253,7 @@ def prototype_pollution_scanner(url: str, params: str = "") -> str:
         try:
             rate_limiter.wait(domain)
             full_url = f"{url}{'&' if '?' in url else '?'}{payload}"
-            r = requests.get(full_url, timeout=5, verify=False)
+            r = auth_get(full_url, timeout=5, verify=False)
             # Check if our marker appears in response (reflected prototype pollution)
             if "nexus_test" in r.text:
                 findings["vulnerabilities"].append({
@@ -279,7 +280,7 @@ def prototype_pollution_scanner(url: str, params: str = "") -> str:
         if check_cancelled(logger): break
         try:
             rate_limiter.wait(domain)
-            r = requests.post(
+            r = auth_post(
                 url, data=jp,
                 headers={"Content-Type": "application/json"},
                 timeout=5, verify=False

@@ -7,6 +7,7 @@ from core.cancellation import check_cancelled
 from core.checkpoint import require_approval
 from tools.custom_tools import exec_logger
 from core.rate_limiter import rate_limiter
+from core.auth_store import auth_get, auth_post
 from core.auth_store import get_auth_kwargs
 
 urllib3_imported = False
@@ -41,7 +42,7 @@ def _detect_oauth_endpoints(base_url: str) -> list:
     for path in common_oauth_paths:
         try:
             rate_limiter.wait(_domain_of(base_url))
-            resp = requests.get(
+            resp = auth_get(
                 f"{base_url.rstrip('/')}{path}",
                 **auth_kw,
                 timeout=5,
@@ -65,7 +66,7 @@ def _test_state_parameter(authorize_url: str, client_id: str) -> dict:
     # Test 1: Tanpa state sama sekali
     try:
         rate_limiter.wait(_domain_of(authorize_url))
-        resp = requests.get(
+        resp = auth_get(
             authorize_url,
             params={
                 "client_id": client_id,
@@ -87,7 +88,7 @@ def _test_state_parameter(authorize_url: str, client_id: str) -> dict:
     # Test 2: State predictable (angka kecil)
     try:
         rate_limiter.wait(_domain_of(authorize_url))
-        resp = requests.get(
+        resp = auth_get(
             authorize_url,
             params={
                 "client_id": client_id,
@@ -136,7 +137,7 @@ def _test_redirect_uri_bypass(authorize_url: str, client_id: str, legit_redirect
     for payload_url, bypass_type in bypass_payloads:
         try:
             rate_limiter.wait(_domain_of(authorize_url))
-            resp = requests.get(
+            resp = auth_get(
                 authorize_url,
                 params={
                     "client_id": client_id,
@@ -172,7 +173,7 @@ def _test_pkce_missing(authorize_url: str, client_id: str) -> list:
     try:
         rate_limiter.wait(_domain_of(authorize_url))
         # Request tanpa code_challenge (PKCE) — harusnya rejected kalau PKCE di-enforce
-        resp = requests.get(
+        resp = auth_get(
             authorize_url,
             params={
                 "client_id": client_id,
@@ -203,7 +204,7 @@ def _test_token_leakage(authorize_url: str) -> list:
 
     try:
         rate_limiter.wait(_domain_of(authorize_url))
-        resp = requests.get(
+        resp = auth_get(
             authorize_url,
             params={
                 "response_type": "token",  # Implicit flow — deprecated tapi masih sering diallow

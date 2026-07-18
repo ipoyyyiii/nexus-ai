@@ -18,6 +18,7 @@ Structure:
 
 import threading
 import time
+import requests
 from typing import Optional, Dict, Any
 from urllib.parse import urlparse
 from datetime import datetime, timedelta
@@ -355,6 +356,24 @@ def get_auth_kwargs(domain: str) -> Dict:
     if session.headers:
         kwargs["headers"] = session.headers
     return kwargs
+
+
+def auth_get(url: str, timeout: int = 10, exec_logger=None, **kwargs) -> requests.Response:
+    """
+    Drop-in replacement buat requests.get() dengan auth handling.
+    Automatic login wall detection + credential injection.
+    """
+    response, _ = authenticated_request(url, "GET", timeout=timeout, exec_logger=exec_logger, **kwargs)
+    return response
+
+
+def auth_post(url: str, data=None, json_data=None, timeout: int = 10, exec_logger=None, **kwargs) -> requests.Response:
+    """
+    Drop-in replacement buat requests.post() dengan auth handling.
+    Automatic login wall detection + credential injection.
+    """
+    response, _ = authenticated_request(url, "POST", data=data, json_data=json_data, timeout=timeout, exec_logger=exec_logger, **kwargs)
+    return response
 
 
 # Global instance

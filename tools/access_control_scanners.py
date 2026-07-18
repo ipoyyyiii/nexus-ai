@@ -15,6 +15,7 @@ import urllib3
 from urllib.parse import quote, urlparse
 from langchain.tools import tool
 from core.rate_limiter import rate_limiter
+from core.auth_store import auth_get, auth_post
 from core.cancellation import check_cancelled
 from core.checkpoint import require_approval
 
@@ -94,7 +95,7 @@ def csrf_exploit_scanner(url: str, method: str = "POST", body: str = "", params:
     try:
         rate_limiter.wait(domain)
         if method.upper() == "GET":
-            resp_baseline = requests.get(url, **auth_kw, timeout=8, verify=False)
+            resp_baseline = auth_get(url, **auth_kw, timeout=8, verify=False)
         else:
             resp_baseline = requests.request(
                 method.upper(), url,
@@ -120,7 +121,7 @@ def csrf_exploit_scanner(url: str, method: str = "POST", body: str = "", params:
             rate_limiter.wait(domain)
             if method.upper() == "GET":
                 test_url = f"{url}?{param}={fake_token}"
-                resp = requests.get(test_url, **auth_kw, timeout=8, verify=False)
+                resp = auth_get(test_url, **auth_kw, timeout=8, verify=False)
             else:
                 resp = requests.request(
                     method.upper(), url,
@@ -150,7 +151,7 @@ def csrf_exploit_scanner(url: str, method: str = "POST", body: str = "", params:
     try:
         rate_limiter.wait(domain)
         if method.upper() == "GET":
-            resp_no_token = requests.get(url, **auth_kw, timeout=8, verify=False)
+            resp_no_token = auth_get(url, **auth_kw, timeout=8, verify=False)
         else:
             # Kirim body TANPA token param
             clean_body = {k: v for k, v in body_dict.items() if k not in token_params}
@@ -177,7 +178,7 @@ def csrf_exploit_scanner(url: str, method: str = "POST", body: str = "", params:
     logger.add_log(tool_name, "PROCESSING", "Checking SameSite cookie attribute")
     try:
         rate_limiter.wait(domain)
-        resp = requests.get(url, **auth_kw, timeout=5, verify=False, allow_redirects=False)
+        resp = auth_get(url, **auth_kw, timeout=5, verify=False, allow_redirects=False)
         set_cookie_headers = resp.headers.get("Set-Cookie", "")
         if set_cookie_headers:
             if "SameSite" not in set_cookie_headers:
@@ -211,7 +212,7 @@ def csrf_exploit_scanner(url: str, method: str = "POST", body: str = "", params:
             rate_limiter.wait(domain)
             all_headers = {**auth_kw.get("headers", {}), **bypass_headers}
             if method.upper() == "GET":
-                resp = requests.get(url, headers=all_headers, cookies=auth_kw.get("cookies"), timeout=5, verify=False)
+                resp = auth_get(url, headers=all_headers, cookies=auth_kw.get("cookies"), timeout=5, verify=False)
             else:
                 resp = requests.request(
                     method.upper(), url,
@@ -344,7 +345,7 @@ def mass_assignment_scanner(url: str, body: str = "", params: str = "") -> str:
                 test_body = {**body_dict, field: value}
                 rate_limiter.wait(domain)
 
-                resp = requests.post(
+                resp = auth_post(
                     url,
                     json=test_body,
                     **auth_kw,
@@ -446,7 +447,7 @@ def http_method_tampering_scanner(url: str) -> str:
     baseline_get = None
     try:
         rate_limiter.wait(domain)
-        baseline_get = requests.get(url, **auth_kw, timeout=8, verify=False)
+        baseline_get = auth_get(url, **auth_kw, timeout=8, verify=False)
     except Exception:
         pass
 
@@ -527,7 +528,7 @@ def http_method_tampering_scanner(url: str) -> str:
             try:
                 rate_limiter.wait(domain)
                 # POST dengan _method=DELETE di body
-                resp = requests.post(
+                resp = auth_post(
                     url,
                     json={override_field: target_method},
                     **auth_kw,
@@ -561,7 +562,7 @@ def http_method_tampering_scanner(url: str) -> str:
         if check_cancelled(logger): break
         try:
             rate_limiter.wait(domain)
-            resp = requests.post(
+            resp = auth_post(
                 url,
                 headers=header_override,
                 **auth_kw,

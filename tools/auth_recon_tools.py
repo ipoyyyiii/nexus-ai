@@ -7,6 +7,7 @@ import urllib3
 from urllib.parse import quote, urlparse
 from langchain.tools import tool
 from core.rate_limiter import rate_limiter
+from core.auth_store import auth_get, auth_post
 from core.cancellation import check_cancelled
 from core.auth_store import get_auth_kwargs
 
@@ -61,7 +62,7 @@ def twofa_bypass_scanner(url: str, login_url: str = "", username: str = "", pass
     for path in twofa_paths:
         try:
             rate_limiter.wait(domain)
-            r = requests.get(f"{base}{path}", timeout=4, verify=False)
+            r = auth_get(f"{base}{path}", timeout=4, verify=False)
             if r.status_code in [200, 401, 403] and any(kw in r.text.lower() for kw in
                 ["otp", "verification", "code", "token", "2fa", "authenticator", "verify"]):
                 found_endpoints.append(f"{base}{path}")
@@ -79,7 +80,7 @@ def twofa_bypass_scanner(url: str, login_url: str = "", username: str = "", pass
         for i in range(10):
             try:
                 rate_limiter.wait(domain)
-                r = requests.post(
+                r = auth_post(
                     endpoint,
                     data={"otp": f"{i:06d}", "code": f"{i:06d}", "token": f"{i:06d}"},
                     timeout=4, verify=False
@@ -125,7 +126,7 @@ def twofa_bypass_scanner(url: str, login_url: str = "", username: str = "", pass
                 for otp in otp_list:
                     try:
                         rate_limiter.wait(domain)
-                        r = requests.post(
+                        r = auth_post(
                             endpoint,
                             data={param_name: otp},
                             timeout=3, verify=False
@@ -182,7 +183,7 @@ def twofa_bypass_scanner(url: str, login_url: str = "", username: str = "", pass
         for param_name, otp_value in bypass_techniques:
             try:
                 rate_limiter.wait(domain)
-                r = requests.post(
+                r = auth_post(
                     endpoint,
                     data={param_name: otp_value},
                     timeout=3, verify=False
@@ -244,7 +245,7 @@ def twofa_bypass_scanner(url: str, login_url: str = "", username: str = "", pass
     for bp in backup_paths:
         try:
             rate_limiter.wait(domain)
-            r = requests.get(f"{base}{bp}", timeout=4, verify=False)
+            r = auth_get(f"{base}{bp}", timeout=4, verify=False)
             if r.status_code == 200 and any(kw in r.text.lower() for kw in
                 ["backup", "recovery", "code"]):
                 # Check if codes are exposed without auth
@@ -310,7 +311,7 @@ def credential_stuffing_scanner(url: str, login_url: str = "") -> str:
         for lp in ["/login", "/signin", "/api/login", "/api/auth", "/auth/login", "/api/v1/login"]:
             try:
                 rate_limiter.wait(domain)
-                r = requests.get(f"{base}{lp}", timeout=4, verify=False)
+                r = auth_get(f"{base}{lp}", timeout=4, verify=False)
                 if r.status_code in [200, 405] and any(kw in r.text.lower() for kw in
                     ["login", "password", "username", "signin"]):
                     login_endpoint = f"{base}{lp}"
@@ -333,7 +334,7 @@ def credential_stuffing_scanner(url: str, login_url: str = "") -> str:
     for i in range(15):
         if check_cancelled(logger): break
         try:
-            r = requests.post(
+            r = auth_post(
                 login_endpoint,
                 data={
                     "username": f"testuser{i}@example.com",
@@ -458,7 +459,7 @@ def credential_stuffing_scanner(url: str, login_url: str = "") -> str:
     logger.add_log(tool_name, "PROCESSING", "Checking CAPTCHA presence")
     try:
         rate_limiter.wait(domain)
-        r = requests.get(login_endpoint, timeout=5, verify=False)
+        r = auth_get(login_endpoint, timeout=5, verify=False)
         captcha_indicators = [
             "captcha", "recaptcha", "hcaptcha", "turnstile",
             "g-recaptcha", "cf-turnstile", "funcaptcha"
@@ -496,12 +497,12 @@ def credential_stuffing_scanner(url: str, login_url: str = "") -> str:
         for _ in range(3):
             rate_limiter.wait(domain)
             t_start = _time.monotonic()
-            requests.post(login_endpoint, data={"username": "admin", "password": "WrongPass"}, timeout=5, verify=False)
+            auth_post(login_endpoint, data={"username": "admin", "password": "WrongPass"}, timeout=5, verify=False)
             times_valid_user.append(_time.monotonic() - t_start)
 
             rate_limiter.wait(domain)
             t_start = _time.monotonic()
-            requests.post(login_endpoint, data={"username": "nonexistent_xyz999@fake.com", "password": "WrongPass"}, timeout=5, verify=False)
+            auth_post(login_endpoint, data={"username": "nonexistent_xyz999@fake.com", "password": "WrongPass"}, timeout=5, verify=False)
             times_invalid_user.append(_time.monotonic() - t_start)
 
         avg_valid = sum(times_valid_user) / len(times_valid_user)
@@ -554,7 +555,7 @@ def mixed_content_scanner(url: str) -> str:
 
     try:
         rate_limiter.wait(domain)
-        r = requests.get(url, timeout=8, verify=False)
+        r = auth_get(url, timeout=8, verify=False)
         body = r.text
 
         # Active mixed content (scripts, iframes, objects) — HIGH RISK
@@ -703,7 +704,7 @@ def idor_uuid_scanner(url: str, cookies: str = "", auth_header: str = "") -> str
             try:
                 test_url = base_url_template.replace("{ID}", str(test_id))
                 rate_limiter.wait(domain)
-                r = requests.get(test_url, headers=headers, cookies=cookie_dict, timeout=5, verify=False)
+                r = auth_get(test_url, headers=headers, cookies=cookie_dict, timeout=5, verify=False)
 
                 if r.status_code == 200 and len(r.content) > 50:
                     accessible_ids.append({
@@ -770,7 +771,7 @@ def idor_uuid_scanner(url: str, cookies: str = "", auth_header: str = "") -> str
         if check_cancelled(logger): break
         try:
             rate_limiter.wait(domain)
-            r = requests.get(api_url, headers=headers, cookies=cookie_dict, timeout=4, verify=False)
+            r = auth_get(api_url, headers=headers, cookies=cookie_dict, timeout=4, verify=False)
             if r.status_code == 200 and len(r.content) > 100:
                 findings["info"].append({
                     "accessible_with_id_1": api_url,
@@ -811,7 +812,7 @@ def postmessage_vulnerability_scanner(url: str) -> str:
 
     try:
         rate_limiter.wait(domain)
-        r = requests.get(url, timeout=8, verify=False)
+        r = auth_get(url, timeout=8, verify=False)
         body = r.text
 
         # ── 1. Find postMessage listeners ────────────────────────────────────
@@ -951,7 +952,7 @@ def asn_ip_mapper(domain_or_ip: str) -> str:
     logger.add_log(tool_name, "PROCESSING", "Querying ASN information")
     try:
         rate_limiter.wait("ip-api.com")
-        r = requests.get(
+        r = auth_get(
             f"http://ip-api.com/json/{target_ip}?fields=status,country,regionName,city,isp,org,as,asname,query",
             timeout=8
         )
@@ -982,7 +983,7 @@ def asn_ip_mapper(domain_or_ip: str) -> str:
 
         if asn_number:
             rate_limiter.wait("bgpview.io")
-            r = requests.get(
+            r = auth_get(
                 f"https://api.bgpview.io/asn/{asn_number}/prefixes",
                 timeout=10,
                 headers={"User-Agent": "Mozilla/5.0"}

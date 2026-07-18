@@ -5,6 +5,7 @@ import urllib3
 from urllib.parse import quote, urlparse
 from langchain.tools import tool
 from core.rate_limiter import rate_limiter
+from core.auth_store import auth_get, auth_post
 from core.cancellation import check_cancelled
 from core.checkpoint import require_approval
 from core.auth_store import get_auth_kwargs
@@ -291,7 +292,7 @@ def stored_xss_scanner(url: str, params: str = "", check_url: str = "") -> str:
                 # Step 1: Submit payload
                 rate_limiter.wait(domain)
                 # Try POST first (common for stored XSS)
-                post_resp = requests.post(
+                post_resp = auth_post(
                     url,
                     data={param: payload},
                     timeout=5, verify=False
@@ -299,7 +300,7 @@ def stored_xss_scanner(url: str, params: str = "", check_url: str = "") -> str:
 
                 # Step 2: Fetch verify URL to check persistence
                 rate_limiter.wait(domain)
-                get_resp = requests.get(verify_url, timeout=5, verify=False)
+                get_resp = auth_get(verify_url, timeout=5, verify=False)
 
                 if marker in get_resp.text or payload in get_resp.text:
                     vulnerabilities.append({
@@ -451,9 +452,10 @@ def dom_xss_scanner(url: str) -> str:
         logger.add_log(tool_name, "WARNING", "Playwright not available — falling back to static analysis")
         # Fallback: static analysis via requests
         try:
-            from core.rate_limiter import rate_limiter as rl
-            rl.wait(_domain_of(url))
-            r = requests.get(url, timeout=8, verify=False)
+            from core.rate_limiter import rate_limiter
+            from core.auth_store import auth_get, auth_post
+            rate_limiter.wait(_domain_of(url))
+            r = auth_get(url, timeout=8, verify=False)
             for sink in ["innerHTML", "document.write", "eval(", "location.hash"]:
                 if sink in r.text:
                     findings["dangerous_sinks"].append(sink)
@@ -508,7 +510,7 @@ def jsonp_injection_scanner(url: str) -> str:
             rate_limiter.wait(domain)
             # Test 1: Benign callback name
             test_url = f"{url}{'&' if '?' in url else '?'}{cb_param}=nexusCallback"
-            r = requests.get(test_url, timeout=5, verify=False)
+            r = auth_get(test_url, timeout=5, verify=False)
 
             if "nexusCallback" in r.text and r.text.strip().startswith("nexusCallback("):
                 logger.add_log(tool_name, "WARNING", f"JSONP endpoint detected: param={cb_param}")
@@ -521,7 +523,7 @@ def jsonp_injection_scanner(url: str) -> str:
                 # Test 2: Try XSS via callback
                 rate_limiter.wait(domain)
                 xss_url = f"{url}{'&' if '?' in url else '?'}{cb_param}={quote(xss_payload)}"
-                xss_r = requests.get(xss_url, timeout=5, verify=False)
+                xss_r = auth_get(xss_url, timeout=5, verify=False)
 
                 if xss_payload in xss_r.text:
                     findings["vulnerabilities"].append({

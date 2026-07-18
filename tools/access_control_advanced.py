@@ -5,6 +5,7 @@ import urllib3
 from urllib.parse import quote, urlparse
 from langchain.tools import tool
 from core.rate_limiter import rate_limiter
+from core.auth_store import auth_get, auth_post
 from core.cancellation import check_cancelled
 from core.checkpoint import require_approval
 from core.auth_store import inject_into_session, auth_store
@@ -90,7 +91,7 @@ def access_control_scanner(url: str, cookies: str = "", auth_header: str = "") -
         if check_cancelled(logger): break
         try:
             rate_limiter.wait(domain)
-            r = requests.get(f"{base}{path}", headers=headers, cookies=cookie_dict, timeout=5, verify=False)
+            r = auth_get(f"{base}{path}", headers=headers, cookies=cookie_dict, timeout=5, verify=False)
             if r.status_code == 200 and len(r.content) > 100:
                 findings["forced_browsing"].append({
                     "url": f"{base}{path}",
@@ -142,7 +143,7 @@ def access_control_scanner(url: str, cookies: str = "", auth_header: str = "") -
             if check_cancelled(logger): break
             try:
                 rate_limiter.wait(domain)
-                r = requests.post(
+                r = auth_post(
                     f"{base}{rp}",
                     json={**payload, "username": "testuser_nexus", "password": "Test123!", "email": "test@nexus.com"},
                     headers={**headers, "Content-Type": "application/json"},
@@ -182,7 +183,7 @@ def access_control_scanner(url: str, cookies: str = "", auth_header: str = "") -
             if check_cancelled(logger): break
             try:
                 rate_limiter.wait(domain)
-                r = requests.get(f"{base}?{param}={tp}", headers=headers, cookies=cookie_dict, timeout=5, verify=False)
+                r = auth_get(f"{base}?{param}={tp}", headers=headers, cookies=cookie_dict, timeout=5, verify=False)
                 if any(sig in r.text for sig in ["root:x:", "bin/bash", "[fonts]", "boot loader"]):
                     findings["path_traversal_advanced"].append({
                         "parameter": param,
@@ -211,7 +212,7 @@ def access_control_scanner(url: str, cookies: str = "", auth_header: str = "") -
             if check_cancelled(logger): break
             try:
                 rate_limiter.wait(domain)
-                r = requests.get(
+                r = auth_get(
                     f"{base}?{param}={val}",
                     headers=headers, cookies=cookie_dict, timeout=5, verify=False
                 )
@@ -244,7 +245,7 @@ def access_control_scanner(url: str, cookies: str = "", auth_header: str = "") -
         if check_cancelled(logger): break
         try:
             rate_limiter.wait(domain)
-            r = requests.get(
+            r = auth_get(
                 f"{base}{endpoint}",
                 headers=headers, cookies=cookie_dict, timeout=5, verify=False
             )
@@ -272,7 +273,7 @@ def access_control_scanner(url: str, cookies: str = "", auth_header: str = "") -
         if check_cancelled(logger): break
         try:
             rate_limiter.wait(domain)
-            r = requests.get(
+            r = auth_get(
                 f"{base}{endpoint}",
                 headers=headers, cookies=cookie_dict, timeout=5, verify=False
             )

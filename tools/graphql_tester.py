@@ -6,6 +6,7 @@ from core.cancellation import check_cancelled
 from core.checkpoint import require_approval
 from tools.custom_tools import exec_logger
 from core.rate_limiter import rate_limiter
+from core.auth_store import auth_get, auth_post
 from core.auth_store import get_auth_kwargs
 
 try:
@@ -68,7 +69,7 @@ def _detect_graphql(base_url: str) -> list:
             url = f"{base_url.rstrip('/')}{path}"
 
             # Coba POST dengan query kosong dulu
-            resp = requests.post(
+            resp = auth_post(
                 url,
                 json={"query": "{ __typename }"},
                 headers={"Content-Type": "application/json"},
@@ -97,7 +98,7 @@ def _test_introspection(endpoint: str) -> dict:
     """Test apakah introspection diaktifin."""
     try:
         rate_limiter.wait(_domain_of(endpoint))
-        resp = requests.post(
+        resp = auth_post(
             endpoint,
             json={"query": INTROSPECTION_QUERY},
             headers={"Content-Type": "application/json"},
@@ -159,7 +160,7 @@ def _test_batch_query(endpoint: str) -> dict:
         # Kirim 10 query sekaligus dalam satu request
         batch = [{"query": "{ __typename }"}] * 10
 
-        resp = requests.post(
+        resp = auth_post(
             endpoint,
             json=batch,
             headers={"Content-Type": "application/json"},
@@ -195,7 +196,7 @@ def _test_deep_nested(endpoint: str) -> dict:
         nested = "{ __typename " + "a: __typename { " * 8 + "}" * 8 + " }"
 
         start = time.time()
-        resp = requests.post(
+        resp = auth_post(
             endpoint,
             json={"query": nested},
             headers={"Content-Type": "application/json"},
@@ -235,7 +236,7 @@ def _test_field_suggestion(endpoint: str) -> dict:
         rate_limiter.wait(_domain_of(endpoint))
 
         # Query field yang salah sengaja
-        resp = requests.post(
+        resp = auth_post(
             endpoint,
             json={"query": "{ usr { passwrd emai } }"},
             headers={"Content-Type": "application/json"},
@@ -277,7 +278,7 @@ def _test_idor(endpoint: str, query_type: str = "Query") -> dict:
     for query in idor_queries:
         try:
             rate_limiter.wait(_domain_of(endpoint))
-            resp = requests.post(
+            resp = auth_post(
                 endpoint,
                 json={"query": query},
                 headers={"Content-Type": "application/json"},
@@ -320,7 +321,7 @@ def _test_subscription(endpoint: str) -> dict:
             try:
                 rate_limiter.wait(_domain_of(endpoint))
                 # Try WebSocket upgrade
-                resp = requests.get(
+                resp = auth_get(
                     sub_url,
                     headers={
                         "Upgrade": "websocket",
@@ -358,7 +359,7 @@ def _test_batch_query_dos(endpoint: str) -> dict:
 
         import time
         start = time.time()
-        resp = requests.post(
+        resp = auth_post(
             endpoint,
             json=batch,
             headers={"Content-Type": "application/json"},
@@ -405,7 +406,7 @@ def _test_schema_stitching(endpoint: str) -> dict:
         for query in queries:
             try:
                 rate_limiter.wait(_domain_of(endpoint))
-                resp = requests.post(
+                resp = auth_post(
                     endpoint,
                     json={"query": query},
                     headers={"Content-Type": "application/json"},
@@ -449,7 +450,7 @@ def _test_injection(endpoint: str) -> dict:
     for payload in sql_payloads:
         try:
             rate_limiter.wait(_domain_of(endpoint))
-            resp = requests.post(
+            resp = auth_post(
                 endpoint,
                 json={"query": payload},
                 headers={"Content-Type": "application/json"},
@@ -484,7 +485,7 @@ def _test_injection(endpoint: str) -> dict:
     for payload in nosql_payloads:
         try:
             rate_limiter.wait(_domain_of(endpoint))
-            resp = requests.post(
+            resp = auth_post(
                 endpoint,
                 json={"query": payload},
                 headers={"Content-Type": "application/json"},
@@ -518,7 +519,7 @@ def _test_injection(endpoint: str) -> dict:
     for payload in xss_payloads:
         try:
             rate_limiter.wait(_domain_of(endpoint))
-            resp = requests.post(
+            resp = auth_post(
                 endpoint,
                 json={"query": payload},
                 headers={"Content-Type": "application/json"},
@@ -548,7 +549,7 @@ def _test_injection(endpoint: str) -> dict:
     for payload in ssrf_payloads:
         try:
             rate_limiter.wait(_domain_of(endpoint))
-            resp = requests.post(
+            resp = auth_post(
                 endpoint,
                 json={"query": payload},
                 headers={"Content-Type": "application/json"},

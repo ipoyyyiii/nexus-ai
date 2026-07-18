@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import quote, urlparse
 from langchain.tools import tool
 from core.rate_limiter import rate_limiter
+from core.auth_store import auth_get, auth_post
 from core.cancellation import check_cancelled
 from core.checkpoint import require_approval
 from core.auth_store import get_auth_kwargs
@@ -63,7 +64,7 @@ def host_header_injection_scanner(url: str) -> str:
         if check_cancelled(logger): break
         try:
             rate_limiter.wait(domain)
-            r = requests.get(url, headers=attack_header, timeout=5, verify=False)
+            r = auth_get(url, headers=attack_header, timeout=5, verify=False)
 
             # Check if attacker domain appears in response
             if "attacker-nexus.com" in r.text:
@@ -106,11 +107,11 @@ def host_header_injection_scanner(url: str) -> str:
         if check_cancelled(logger): break
         try:
             rate_limiter.wait(domain)
-            r = requests.get(f"{base}{rp}", timeout=4, verify=False)
+            r = auth_get(f"{base}{rp}", timeout=4, verify=False)
             if r.status_code == 200:
                 # Try poisoning the reset request
                 rate_limiter.wait(domain)
-                r2 = requests.post(
+                r2 = auth_post(
                     f"{base}{rp}",
                     data={"email": "victim@example.com"},
                     headers={"X-Forwarded-Host": "attacker-nexus.com"},
@@ -181,9 +182,9 @@ def race_condition_scanner(url: str, method: str = "POST", body: str = "", heade
         try:
             start = time.monotonic()
             if method.upper() == "GET":
-                r = requests.get(url, headers=extra_headers, timeout=10, verify=False)
+                r = auth_get(url, headers=extra_headers, timeout=10, verify=False)
             else:
-                r = requests.post(url, data=body or {}, headers=extra_headers, timeout=10, verify=False)
+                r = auth_post(url, data=body or {}, headers=extra_headers, timeout=10, verify=False)
             elapsed = time.monotonic() - start
             with lock:
                 results.append({
@@ -312,7 +313,7 @@ def file_upload_scanner(url: str, file_param: str = "file") -> str:
         try:
             rate_limiter.wait(domain)
             files = {file_param: (filename, content, content_type)}
-            r = requests.post(url, files=files, timeout=8, verify=False)
+            r = auth_post(url, files=files, timeout=8, verify=False)
 
             if r.status_code in [200, 201]:
                 # Check if file was accepted (not rejected)
@@ -337,7 +338,7 @@ def file_upload_scanner(url: str, file_param: str = "file") -> str:
                     if uploaded_url and any(ext in filename for ext in [".php", ".phtml", ".php5"]):
                         rate_limiter.wait(domain)
                         try:
-                            exec_r = requests.get(uploaded_url, timeout=5, verify=False)
+                            exec_r = auth_get(uploaded_url, timeout=5, verify=False)
                             if "NEXUS_UPLOAD_TEST" in exec_r.text:
                                 findings["vulnerabilities"].append({
                                     "type": "Remote Code Execution via File Upload",
@@ -416,7 +417,7 @@ def http_request_smuggling_scanner(url: str) -> str:
             # Method: send request with both CL and TE headers
             rate_limiter.wait(domain)
             start = time.monotonic()
-            r = requests.post(
+            r = auth_post(
                 url,
                 headers={
                     "Content-Type": "application/x-www-form-urlencoded",
@@ -456,7 +457,7 @@ def http_request_smuggling_scanner(url: str) -> str:
     try:
         rate_limiter.wait(domain)
         start = time.monotonic()
-        r = requests.post(
+        r = auth_post(
             url,
             headers={
                 "Content-Type": "application/x-www-form-urlencoded",
@@ -519,7 +520,7 @@ def websocket_security_scanner(url: str) -> str:
     logger.add_log(tool_name, "PROCESSING", "Detecting WebSocket endpoints in page source")
     try:
         rate_limiter.wait(domain)
-        r = requests.get(url, timeout=8, verify=False)
+        r = auth_get(url, timeout=8, verify=False)
 
         # Find WS URLs in page source
         ws_pattern = re.findall(r'["\']?(wss?://[^\s"\'<>]+)["\']?', r.text)
@@ -555,7 +556,7 @@ def websocket_security_scanner(url: str) -> str:
                 "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
                 "Origin": "https://attacker.com",  # Cross-origin — testing CSWSH
             }
-            r = requests.get(f"{base}{ws_path}", headers=upgrade_headers, timeout=5, verify=False)
+            r = auth_get(f"{base}{ws_path}", headers=upgrade_headers, timeout=5, verify=False)
 
             if r.status_code == 101:
                 findings["ws_endpoints"].append(f"{base}{ws_path}")
@@ -575,7 +576,7 @@ def websocket_security_scanner(url: str) -> str:
     # ── 3. Check Upgrade-Insecure-Requests policy ─────────────────────────────
     try:
         rate_limiter.wait(domain)
-        r = requests.get(url, timeout=5, verify=False)
+        r = auth_get(url, timeout=5, verify=False)
         csp = r.headers.get("Content-Security-Policy", "")
         if "upgrade-insecure-requests" not in csp and findings["ws_endpoints"]:
             findings["info"].append("upgrade-insecure-requests not in CSP — ws:// connections may not be upgraded to wss://")

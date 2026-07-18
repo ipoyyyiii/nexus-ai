@@ -14,6 +14,7 @@ import time
 from urllib.parse import quote, urlparse
 from langchain.tools import tool
 from core.rate_limiter import rate_limiter
+from core.auth_store import auth_get, auth_post
 from core.cancellation import check_cancelled
 from core.checkpoint import require_approval
 from core.auth_store import get_auth_kwargs
@@ -73,7 +74,7 @@ def password_storage_analyzer(url: str, login_url: str = "") -> str:
         for path in login_paths:
             try:
                 rate_limiter.wait(domain)
-                r = requests.get(f"{base}{path}", timeout=5, verify=False, **auth_kwargs)
+                r = auth_get(f"{base}{path}", timeout=5, verify=False, **auth_kwargs)
                 if r.status_code == 200 and any(kw in r.text.lower() for kw in ["login", "password", "username"]):
                     login_url = f"{base}{path}"
                     break
@@ -108,7 +109,7 @@ def password_storage_analyzer(url: str, login_url: str = "") -> str:
     # Check login page and responses for hash patterns
     try:
         rate_limiter.wait(domain)
-        r = requests.get(login_url, timeout=5, verify=False, **auth_kwargs)
+        r = auth_get(login_url, timeout=5, verify=False, **auth_kwargs)
         response_text = r.text + str(dict(r.headers))
 
         for hash_type, pattern in hash_patterns.items():
@@ -144,7 +145,7 @@ def password_storage_analyzer(url: str, login_url: str = "") -> str:
     try:
         # Request 1: Invalid username
         rate_limiter.wait(domain)
-        r_invalid_user = requests.post(
+        r_invalid_user = auth_post(
             login_url,
             data={"username": "nonexistent_user_xyz999", "password": "wrong_password"},
             timeout=5, verify=False, **auth_kwargs,
@@ -153,7 +154,7 @@ def password_storage_analyzer(url: str, login_url: str = "") -> str:
 
         # Request 2: Valid username, wrong password
         rate_limiter.wait(domain)
-        r_invalid_pass = requests.post(
+        r_invalid_pass = auth_post(
             login_url,
             data={"username": "admin", "password": "wrong_password_xyz"},
             timeout=5, verify=False, **auth_kwargs,
@@ -187,7 +188,7 @@ def password_storage_analyzer(url: str, login_url: str = "") -> str:
             try:
                 rate_limiter.wait(domain)
                 start = time.monotonic()
-                r = requests.post(
+                r = auth_post(
                     login_url,
                     data={"username": "admin", "password": test_pass},
                     timeout=5, verify=False, **auth_kwargs,
@@ -237,7 +238,7 @@ def password_storage_analyzer(url: str, login_url: str = "") -> str:
 
     try:
         rate_limiter.wait(domain)
-        r = requests.get(login_url, timeout=5, verify=False, **auth_kwargs)
+        r = auth_get(login_url, timeout=5, verify=False, **auth_kwargs)
 
         # Check for password-related headers
         password_headers = [
@@ -259,7 +260,7 @@ def password_storage_analyzer(url: str, login_url: str = "") -> str:
         for rp in reset_paths:
             try:
                 rate_limiter.wait(domain)
-                r = requests.get(f"{base}{rp}", timeout=5, verify=False, **auth_kwargs)
+                r = auth_get(f"{base}{rp}", timeout=5, verify=False, **auth_kwargs)
                 if r.status_code == 200:
                     # Check if reset form exposes user existence
                     if any(kw in r.text.lower() for kw in ["email sent", "check your email", "reset link sent"]):

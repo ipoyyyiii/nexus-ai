@@ -6,6 +6,7 @@ import urllib3
 from urllib.parse import quote, urlparse
 from langchain.tools import tool
 from core.rate_limiter import rate_limiter
+from core.auth_store import auth_get, auth_post
 from core.cancellation import check_cancelled
 from core.checkpoint import require_approval
 from core.auth_store import get_auth_kwargs
@@ -93,7 +94,7 @@ def insecure_deserialization_scanner(url: str, cookies: str = "", headers_json: 
     # Check cookies and response body for serialized objects
     try:
         rate_limiter.wait(domain)
-        r = requests.get(url, headers=extra_headers, cookies=cookie_dict, timeout=8, verify=False)
+        r = auth_get(url, headers=extra_headers, cookies=cookie_dict, timeout=8, verify=False)
 
         # Check response body
         for lang, sigs in signatures.items():
@@ -176,7 +177,7 @@ def insecure_deserialization_scanner(url: str, cookies: str = "", headers_json: 
                 try:
                     rate_limiter.wait(domain)
                     # Test GET
-                    r = requests.get(
+                    r = auth_get(
                         f"{url}?{param}={quote(payload)}",
                         headers=extra_headers, cookies=cookie_dict,
                         timeout=5, verify=False
@@ -210,7 +211,7 @@ def insecure_deserialization_scanner(url: str, cookies: str = "", headers_json: 
     logger.add_log(tool_name, "PROCESSING", "Checking for deserialization library hints")
     try:
         rate_limiter.wait(domain)
-        r = requests.get(url, timeout=5, verify=False)
+        r = auth_get(url, timeout=5, verify=False)
         gadget_hints = {
             "Commons Collections": "commons-collections",
             "Spring Framework": ["spring", "springframework"],
@@ -270,9 +271,9 @@ def web_cache_poisoning_scanner(url: str) -> str:
     logger.add_log(tool_name, "PROCESSING", "Detecting cache behavior")
     try:
         rate_limiter.wait(domain)
-        r1 = requests.get(url, timeout=5, verify=False)
+        r1 = auth_get(url, timeout=5, verify=False)
         rate_limiter.wait(domain)
-        r2 = requests.get(url, timeout=5, verify=False)
+        r2 = auth_get(url, timeout=5, verify=False)
 
         cache_headers = {
             "Cache-Control": r1.headers.get("Cache-Control", "MISSING"),
@@ -318,7 +319,7 @@ def web_cache_poisoning_scanner(url: str) -> str:
         if check_cancelled(logger): break
         try:
             rate_limiter.wait(domain)
-            r = requests.get(url, headers=attack_header, timeout=5, verify=False)
+            r = auth_get(url, headers=attack_header, timeout=5, verify=False)
 
             header_name = list(attack_header.keys())[0]
             header_val = list(attack_header.values())[0]
@@ -352,7 +353,7 @@ def web_cache_poisoning_scanner(url: str) -> str:
     try:
         rate_limiter.wait(domain)
         # Fat GET: GET request with body
-        r = requests.get(
+        r = auth_get(
             url,
             data=f"utm_content={canary}",
             headers={"Content-Type": "application/x-www-form-urlencoded"},
@@ -426,7 +427,7 @@ def cache_deception_scanner(url: str, auth_cookies: str = "") -> str:
             try:
                 # Request 1: authenticated
                 rate_limiter.wait(domain)
-                r_auth = requests.get(
+                r_auth = auth_get(
                     deception_url,
                     cookies=cookie_dict,
                     timeout=5, verify=False
@@ -447,7 +448,7 @@ def cache_deception_scanner(url: str, auth_cookies: str = "") -> str:
                     if has_sensitive:
                         # Request 2: unauthenticated — check if cached data is served
                         rate_limiter.wait(domain)
-                        r_unauth = requests.get(deception_url, timeout=5, verify=False)
+                        r_unauth = auth_get(deception_url, timeout=5, verify=False)
 
                         if r_unauth.status_code == 200 and any(si in r_unauth.text.lower() for si in sensitive_indicators):
                             findings["vulnerabilities"].append({
@@ -541,7 +542,7 @@ def ssrf_advanced_scanner(url: str, upload_param: str = "file") -> str:
         try:
             rate_limiter.wait(domain)
             files = {upload_param: ("payload.svg", svg_content, "image/svg+xml")}
-            r = requests.post(url, files=files, timeout=8, verify=False)
+            r = auth_post(url, files=files, timeout=8, verify=False)
 
             # SSRF indicators
             if r.status_code == 200:
@@ -583,13 +584,13 @@ def ssrf_advanced_scanner(url: str, upload_param: str = "file") -> str:
         if check_cancelled(logger): break
         try:
             rate_limiter.wait(domain)
-            r = requests.get(f"{base}{ep}", timeout=4, verify=False)
+            r = auth_get(f"{base}{ep}", timeout=4, verify=False)
             if r.status_code in [200, 405]:  # endpoint exists
                 for param in url_params[:4]:
                     for internal_url in internal_targets[:3]:
                         try:
                             rate_limiter.wait(domain)
-                            test_r = requests.get(
+                            test_r = auth_get(
                                 f"{base}{ep}?{param}={quote(internal_url)}",
                                 timeout=8, verify=False
                             )
@@ -623,7 +624,7 @@ def ssrf_advanced_scanner(url: str, upload_param: str = "file") -> str:
         for internal_url in internal_targets[:2]:
             try:
                 rate_limiter.wait(domain)
-                r = requests.get(
+                r = auth_get(
                     f"{base}?{param}={quote(internal_url)}",
                     timeout=6, verify=False
                 )

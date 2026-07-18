@@ -4,6 +4,7 @@ from core.cancellation import check_cancelled
 from core.checkpoint import require_approval
 from tools.custom_tools import exec_logger
 from core.rate_limiter import rate_limiter
+from core.auth_store import auth_get, auth_post
 from core.auth_store import get_auth_kwargs
 from engines.oob_engine import oob_engine
 from engines.stealth_engine import stealth_get, stealth_post, stealth
@@ -102,7 +103,7 @@ def _find_xml_endpoints(base_url: str) -> list:
         try:
             rate_limiter.wait(_domain_of(base_url))
             url = f"{base_url.rstrip('/')}{path}"
-            resp = requests.get(url, timeout=5, verify=False)
+            resp = auth_get(url, timeout=5, verify=False)
 
             # 200, 400, 405 = endpoint exist
             if resp.status_code in (200, 400, 405, 415):
@@ -135,7 +136,7 @@ def _test_xxe_on_endpoint(url: str) -> list:
         try:
             rate_limiter.wait(domain)
 
-            resp = requests.post(
+            resp = auth_post(
                 url,
                 data=payload,
                 headers={

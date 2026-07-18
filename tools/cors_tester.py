@@ -4,6 +4,7 @@ from core.cancellation import check_cancelled
 from core.checkpoint import require_approval
 from tools.custom_tools import exec_logger
 from core.rate_limiter import rate_limiter
+from core.auth_store import auth_get, auth_post
 from core.auth_store import get_auth_kwargs
 
 try:
@@ -76,7 +77,7 @@ def cors_tester(target_url: str) -> str:
             rate_limiter.wait(domain)
 
             # Test GET request dengan origin
-            resp = requests.get(
+            resp = auth_get(
                 target_url,
                 headers={
                     "Origin": origin,

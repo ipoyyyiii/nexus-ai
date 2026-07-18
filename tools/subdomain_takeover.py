@@ -136,7 +136,7 @@ def detect_subdomain_takeover(subdomain: str) -> str:
         # Kirim request ke HTTP dan HTTPS dengan timeout cepat
         url = f"http://{subdomain}"
         auth_kw = get_auth_kwargs(subdomain)
-        response = requests.get(url, timeout=5, headers={"User-Agent": "Mozilla/5.0"}, **auth_kw)
+        response = auth_get(url, timeout=5, headers={"User-Agent": "Mozilla/5.0"}, **auth_kw)
         response_text = response.text
         
         expected_fingerprint = FINGERPRINTS[matched_provider]

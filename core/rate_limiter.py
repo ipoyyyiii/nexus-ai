@@ -6,8 +6,39 @@ from typing import Dict, Optional
 
 
 def is_stealth_mode() -> bool:
-    """Check if stealth mode is enabled."""
-    return os.environ.get("STEALTH_MODE", "0") == "1"
+    """Check if stealth mode is enabled.
+    Checks environment variable and also database for persistence.
+    """
+    # Check environment variable first
+    env_stealth = os.environ.get("STEALTH_MODE", "0")
+    if env_stealth == "1":
+        return True
+    
+    # Fallback: check if there's a global setting file
+    # This handles cases where env var isn't passed to Docker
+    try:
+        stealth_file = "/tmp/stealth_mode_enabled"
+        if os.path.exists(stealth_file):
+            return True
+    except:
+        pass
+    
+    return False
+
+
+def set_stealth_mode(enabled: bool):
+    """Set stealth mode globally."""
+    os.environ["STEALTH_MODE"] = "1" if enabled else "0"
+    # Also create/remove flag file for persistence
+    try:
+        if enabled:
+            with open("/tmp/stealth_mode_enabled", "w") as f:
+                f.write("1")
+        else:
+            if os.path.exists("/tmp/stealth_mode_enabled"):
+                os.remove("/tmp/stealth_mode_enabled")
+    except:
+        pass
 
 
 class DomainRateLimiter:

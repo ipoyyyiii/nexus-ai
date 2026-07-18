@@ -6,6 +6,7 @@ import urllib3
 from urllib.parse import quote, urlparse
 from langchain.tools import tool
 from core.rate_limiter import rate_limiter
+from core.auth_store import auth_get, auth_post
 from core.cancellation import check_cancelled
 from core.checkpoint import require_approval
 from core.auth_store import get_auth_kwargs
@@ -320,7 +321,7 @@ def command_injection_scanner(url: str, params: str = "") -> str:
 
                 if detection_type == "time":
                     start = time.monotonic()
-                    r = requests.get(test_url, timeout=10, verify=False)
+                    r = auth_get(test_url, timeout=10, verify=False)
                     elapsed = time.monotonic() - start
                     if elapsed >= 4.5:
                         vulnerabilities.append({
@@ -333,7 +334,7 @@ def command_injection_scanner(url: str, params: str = "") -> str:
                         logger.add_log(tool_name, "WARNING", f"Blind CMDi via time-delay: param={param}, delay={elapsed:.1f}s")
                         break  # vuln confirmed, move to next param
                 else:
-                    r = requests.get(test_url, timeout=8, verify=False)
+                    r = auth_get(test_url, timeout=8, verify=False)
                     if any(ind in r.text for ind in indicators):
                         vulnerabilities.append({
                             "parameter": param,
@@ -455,7 +456,7 @@ def log_injection_scanner(url: str) -> str:
                 "Referer": f"https://legitimate-site.com{payload}",
                 "X-Forwarded-For": f"1.2.3.4{payload}",
             }
-            r = requests.get(url, headers=headers, timeout=5, verify=False)
+            r = auth_get(url, headers=headers, timeout=5, verify=False)
             # Jika payload ter-reflect di response body, itu XSS+log injection
             if "INJECTED" in r.text or "FakeLogEntry" in r.text:
                 findings["vulnerabilities"].append({
@@ -476,7 +477,7 @@ def log_injection_scanner(url: str) -> str:
     for log_path in ["/logs", "/log", "/debug/logs", "/admin/logs", "/var/log"]:
         try:
             rate_limiter.wait(domain)
-            r = requests.get(f"{base}{log_path}", timeout=4, verify=False)
+            r = auth_get(f"{base}{log_path}", timeout=4, verify=False)
             if r.status_code == 200 and len(r.text) > 200:
                 findings["vulnerabilities"].append({
                     "type": "Log File Exposed",
@@ -537,7 +538,7 @@ def csv_injection_scanner(url: str, params: str = "") -> str:
             try:
                 rate_limiter.wait(domain)
                 # Test GET
-                r = requests.get(f"{url}?{param}={quote(payload)}", timeout=5, verify=False)
+                r = auth_get(f"{url}?{param}={quote(payload)}", timeout=5, verify=False)
                 # Jika payload ter-reflect AS-IS di response (terutama di CSV/text output), itu vuln
                 if payload in r.text:
                     content_type = r.headers.get("Content-Type", "")

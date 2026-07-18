@@ -13,6 +13,7 @@ import re
 from urllib.parse import quote, urlparse, parse_qs, urlencode, urljoin
 from langchain.tools import tool
 from core.rate_limiter import rate_limiter
+from core.auth_store import auth_get, auth_post
 from core.cancellation import check_cancelled
 from core.checkpoint import require_approval
 from core.auth_store import get_auth_kwargs
@@ -191,7 +192,7 @@ def open_redirect_scanner(url: str, params: str = "") -> str:
             rate_limiter.wait(domain)
             test_url = f"{base}?{param}=https://evil.com"
             stealth_headers = stealth.get_browser_headers(test_url)
-            resp = requests.get(
+            resp = auth_get(
                 test_url,
                 headers=stealth_headers,
                 timeout=5,
@@ -225,7 +226,7 @@ def open_redirect_scanner(url: str, params: str = "") -> str:
             rate_limiter.wait(domain)
             test_url = f"{base}?{param}=//evil.com"
             stealth_headers = stealth.get_browser_headers(test_url)
-            resp = requests.get(
+            resp = auth_get(
                 test_url,
                 headers=stealth_headers,
                 timeout=5,
@@ -266,7 +267,7 @@ def open_redirect_scanner(url: str, params: str = "") -> str:
                     rate_limiter.wait(domain)
                     test_url = f"{base}?{param}={quote(payload, safe='')}"
                     stealth_headers = stealth.get_browser_headers(test_url)
-                    resp = requests.get(
+                    resp = auth_get(
                         test_url,
                         headers=stealth_headers,
                         timeout=5,

@@ -53,7 +53,7 @@ def wayback_scraper(domain: str) -> str:
         )
 
         exec_logger.add_log("Wayback Scraper", "PROCESSING", "Fetching URL list dari CDX API")
-        resp = requests.get(cdx_url, timeout=30)
+        resp = auth_get(cdx_url, timeout=30)
         resp.raise_for_status()
 
         raw = resp.json()

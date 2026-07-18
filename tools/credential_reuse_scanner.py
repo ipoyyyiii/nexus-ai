@@ -13,6 +13,7 @@ import re
 from urllib.parse import quote, urlparse
 from langchain.tools import tool
 from core.rate_limiter import rate_limiter
+from core.auth_store import auth_get, auth_post
 from core.cancellation import check_cancelled
 from core.checkpoint import require_approval
 from core.auth_store import get_auth_kwargs
@@ -106,7 +107,7 @@ def credential_reuse_scanner(url: str, credentials: str = "") -> str:
     for path in auth_paths:
         try:
             rate_limiter.wait(domain)
-            r = requests.get(f"{base}{path}", timeout=5, verify=False, **auth_kwargs)
+            r = auth_get(f"{base}{path}", timeout=5, verify=False, **auth_kwargs)
             if r.status_code in [200, 405, 401, 403]:
                 auth_endpoints.append(f"{base}{path}")
         except Exception:

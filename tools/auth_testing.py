@@ -141,7 +141,7 @@ def test_auth_rate_limiting(login_url: str) -> str:
     status_codes = []
     for _ in range(10):
         try:
-            res = requests.post(url, json=payload, headers=headers, timeout=5)
+            res = auth_post(url, json=payload, headers=headers, timeout=5)
             status_codes.append(res.status_code)
             time.sleep(0.1)
         except requests.RequestException:

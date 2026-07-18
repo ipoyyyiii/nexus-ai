@@ -5,6 +5,7 @@ from core.cancellation import check_cancelled
 from core.checkpoint import require_approval
 from tools.custom_tools import exec_logger
 from core.rate_limiter import rate_limiter
+from core.auth_store import auth_get, auth_post
 from core.auth_store import get_auth_kwargs
 
 try:
@@ -53,9 +54,9 @@ def _test_ssti_on_param(url: str, param: str, method: str = "GET") -> list:
             if method.upper() == "GET":
                 from urllib.parse import quote
                 test_url = f"{url}?{param}={quote(payload)}"
-                resp = requests.get(test_url, timeout=5, verify=False)
+                resp = auth_get(test_url, timeout=5, verify=False)
             else:
-                resp = requests.post(
+                resp = auth_post(
                     url,
                     data={param: payload},
                     timeout=5,

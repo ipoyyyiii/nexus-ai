@@ -6,6 +6,7 @@ import urllib3
 from urllib.parse import urlparse
 from langchain.tools import tool
 from core.rate_limiter import rate_limiter
+from core.auth_store import auth_get, auth_post
 from core.cancellation import check_cancelled
 from core.auth_store import get_auth_kwargs
 
@@ -59,7 +60,7 @@ def session_management_scanner(url: str, login_url: str = "", username: str = ""
     logger.add_log(tool_name, "PROCESSING", "Analyzing cookie security flags")
     try:
         rate_limiter.wait(domain)
-        r = requests.get(base, timeout=5, verify=False)
+        r = auth_get(base, timeout=5, verify=False)
         cookies = r.cookies
 
         # Also parse Set-Cookie headers manually
@@ -191,7 +192,7 @@ def session_management_scanner(url: str, login_url: str = "", username: str = ""
     logger.add_log(tool_name, "PROCESSING", "Checking session security headers")
     try:
         rate_limiter.wait(domain)
-        r = requests.get(base, timeout=5, verify=False)
+        r = auth_get(base, timeout=5, verify=False)
 
         # Check for session-related security headers
         security_headers = {
@@ -307,13 +308,13 @@ def session_management_scanner(url: str, login_url: str = "", username: str = ""
     try:
         rate_limiter.wait(domain)
         # Test dengan username yang kemungkinan valid vs jelas invalid
-        r_valid = requests.post(
+        r_valid = auth_post(
             login_endpoint,
             data={"username": "admin", "password": "wrongpassword_xyz123"},
             timeout=5, verify=False
         )
         rate_limiter.wait(domain)
-        r_invalid = requests.post(
+        r_invalid = auth_post(
             login_endpoint,
             data={"username": "thisdoesnotexist_xyz987", "password": "wrongpassword_xyz123"},
             timeout=5, verify=False
@@ -379,7 +380,7 @@ def password_reset_tester(url: str, email: str = "test@test.com") -> str:
     for rp in reset_paths:
         try:
             rate_limiter.wait(domain)
-            r = requests.get(f"{base}{rp}", timeout=5, verify=False)
+            r = auth_get(f"{base}{rp}", timeout=5, verify=False)
             if r.status_code == 200 and any(kw in r.text.lower() for kw in ["reset", "forgot", "email", "recover"]):
                 reset_endpoint = f"{base}{rp}"
                 logger.add_log(tool_name, "SUCCESS", f"Password reset endpoint found: {rp}")
@@ -396,9 +397,9 @@ def password_reset_tester(url: str, email: str = "test@test.com") -> str:
     logger.add_log(tool_name, "PROCESSING", "Checking account enumeration via reset")
     try:
         rate_limiter.wait(domain)
-        r_valid = requests.post(reset_endpoint, data={"email": email}, timeout=5, verify=False)
+        r_valid = auth_post(reset_endpoint, data={"email": email}, timeout=5, verify=False)
         rate_limiter.wait(domain)
-        r_invalid = requests.post(reset_endpoint, data={"email": "thisdoesnotexist99999@invalid.xyz"}, timeout=5, verify=False)
+        r_invalid = auth_post(reset_endpoint, data={"email": "thisdoesnotexist99999@invalid.xyz"}, timeout=5, verify=False)
 
         if r_valid.text != r_invalid.text or abs(len(r_valid.text) - len(r_invalid.text)) > 50:
             findings["vulnerabilities"].append({
@@ -419,7 +420,7 @@ def password_reset_tester(url: str, email: str = "test@test.com") -> str:
             "X-Forwarded-Host": "attacker-domain.com",
             "X-Host": "attacker-domain.com",
         }
-        r = requests.post(
+        r = auth_post(
             reset_endpoint,
             data={"email": email},
             headers=poisoned_headers,
