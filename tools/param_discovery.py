@@ -11,7 +11,7 @@ from core.cancellation import check_cancelled
 from core.checkpoint import require_approval
 from core.rate_limiter import rate_limiter
 from core.redact import redact
-# 1. Taruh import proxy router di sini men
+# 1. Taruh import proxy router di sthis men
 from core.proxy_router import proxy_router
 from core.auth_store import inject_into_session
 
@@ -180,7 +180,7 @@ def param_discovery_get(url: str, tech_stack: str = "") -> str:
         return "DIBATALKAN: job di-cancel oleh user."
 
     approved = require_approval(
-        action=f"GET parameter discovery pada {url}",
+        action=f"GET parameter discovery on {url}",
         context=f"Bruteforce {len(COMMON_GET_PARAMS)} common parameters. Tech stack: {tech_stack or 'unknown'}",
         risk="low",
         exec_logger=logger,
@@ -198,7 +198,7 @@ def param_discovery_get(url: str, tech_stack: str = "") -> str:
         tech_params = TECH_SPECIFIC[tech_stack.lower()]
         wordlist = tech_params + [p for p in wordlist if p not in tech_params]
 
-    # ── Baseline request dengan Proxy ──────────────────────────────────────────
+    # ── Baseline request with Proxy ──────────────────────────────────────────
     rate_limiter.wait(domain)
     current_proxy = proxy_router.get_proxy()
     try:
@@ -220,7 +220,7 @@ def param_discovery_get(url: str, tech_stack: str = "") -> str:
     batch_size = 5
     interesting_batches = []
 
-    # ── Bruteforce in batches dengan Proxy ─────────────────────────────────────
+    # ── Bruteforce in batches with Proxy ─────────────────────────────────────
     for i in range(0, len(wordlist), batch_size):
         if check_cancelled(logger):
             break
@@ -249,7 +249,7 @@ def param_discovery_get(url: str, tech_stack: str = "") -> str:
         except Exception:
             continue
 
-    # ── Individual test untuk batch yang interesting dengan Proxy ───────────────
+    # ── Individual test for batch that interesting with Proxy ───────────────
     for batch in interesting_batches:
         for param in batch:
             if check_cancelled(logger):
@@ -278,7 +278,7 @@ def param_discovery_get(url: str, tech_stack: str = "") -> str:
                 if param.lower() in resp.text.lower() and param.lower() not in baseline.text.lower():
                     evidence.append(f"Parameter name '{param}' ter-reflect di response")
                 if resp.status_code in (400, 422):
-                    evidence.append(f"Status {resp.status_code} = server mengenali parameter ini")
+                    evidence.append(f"Status {resp.status_code} = server recognizes parameter ini")
 
                 if evidence:
                     discovered.append({
@@ -341,7 +341,7 @@ def param_discovery_get(url: str, tech_stack: str = "") -> str:
 @tool
 def param_discovery_post(url: str, content_type: str = "application/x-www-form-urlencoded") -> str:
     """
-    Discover hidden POST body parameters di endpoint target dengan perlindungan proxy.
+    Discover hidden POST body parameters di endpoint target with perlindungan proxy.
     """
     logger = _logger()
     tool_name = "POST Parameter Discovery"
@@ -350,8 +350,8 @@ def param_discovery_post(url: str, content_type: str = "application/x-www-form-u
         return "DIBATALKAN: job di-cancel oleh user."
 
     approved = require_approval(
-        action=f"POST parameter discovery pada {url}",
-        context=f"Test {len(COMMON_POST_PARAMS)} common POST params dengan content-type: {content_type}",
+        action=f"POST parameter discovery on {url}",
+        context=f"Test {len(COMMON_POST_PARAMS)} common POST params with content-type: {content_type}",
         risk="low",
         exec_logger=logger,
     )
@@ -361,7 +361,7 @@ def param_discovery_post(url: str, content_type: str = "application/x-www-form-u
     domain = _domain_of(url)
     use_json = "json" in content_type.lower()
 
-    # Baseline POST request dengan Proxy
+    # Baseline POST request with Proxy
     rate_limiter.wait(domain)
     current_proxy = proxy_router.get_proxy()
     try:
@@ -418,7 +418,7 @@ def param_discovery_post(url: str, content_type: str = "application/x-www-form-u
             if param.lower() in resp.text.lower() and param.lower() not in baseline.text.lower():
                 evidence.append(f"Parameter '{param}' ter-reflect di response")
             if resp.status_code in (400, 422):
-                evidence.append(f"Status {resp.status_code} = server mengenali parameter ini")
+                evidence.append(f"Status {resp.status_code} = server recognizes parameter ini")
 
             if evidence:
                 discovered.append({
@@ -458,7 +458,7 @@ def param_discovery_post(url: str, content_type: str = "application/x-www-form-u
 @tool
 def param_discovery_headers(url: str) -> str:
     """
-    Discover custom HTTP headers yang received server dengan rotasi proxy acak.
+    Discover custom HTTP headers that received server with rotasi proxy acak.
     """
     logger = _logger()
     tool_name = "Header Parameter Discovery"
@@ -485,7 +485,7 @@ def param_discovery_headers(url: str) -> str:
 
     domain = _domain_of(url)
 
-    # Baseline dengan Proxy
+    # Baseline with Proxy
     rate_limiter.wait(domain)
     current_proxy = proxy_router.get_proxy()
     try:

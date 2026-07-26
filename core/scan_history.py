@@ -1,7 +1,7 @@
 """
 SCAN HISTORY — Scan History Tracking & Comparison
 ===================================================
-Track semua scan results dan bandingin antar scan.
+Track all scan results dan bandingin antar scan.
 
 Usage:
     from scan_history import scan_history
@@ -40,7 +40,7 @@ def _logger():
 class ScanHistory:
     """
     Track scan results dan bandingin antar scan.
-    Uses Supabase untuk persistence.
+    Uses Supabase for persistence.
     """
 
     def __init__(self):
@@ -120,7 +120,7 @@ class ScanHistory:
         limit: int = 10,
     ) -> List[Dict[str, Any]]:
         """
-        Get scan history untuk target.
+        Get scan history for target.
         """
         sb = self._get_supabase()
         if not sb:
@@ -145,7 +145,7 @@ class ScanHistory:
 
     def get_latest(self, target: str) -> Optional[Dict[str, Any]]:
         """
-        Get scan result terakhir untuk target.
+        Get scan result terakhir for target.
         """
         history = self.get_history(target, limit=1)
         return history[0] if history else None
@@ -156,7 +156,7 @@ class ScanHistory:
         current_findings: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
         """
-        Bandingin current findings dengan scan senot yetnya.
+        Bandingin current findings with scan senot yetnya.
         
         Return:
             {
@@ -253,7 +253,7 @@ class ScanHistory:
         }
 
     def _fingerprint(self, finding: Dict) -> str:
-        """Generate fingerprint buat comparison."""
+        """Generate fingerprint for comparison."""
         # Gabungkan vuln_type + url + parameter sebagai unique ID
         vuln_type = finding.get("vuln_type", finding.get("type", "unknown"))
         url = finding.get("url", "")
@@ -261,7 +261,7 @@ class ScanHistory:
         return f"{vuln_type}:{url}:{param}"
 
     def _severity_score(self, data: Dict) -> int:
-        """Calculate severity score buat trend comparison."""
+        """Calculate severity score for trend comparison."""
         return (
             data.get("critical_count", 0) * 4 +
             data.get("high_count", 0) * 3 +

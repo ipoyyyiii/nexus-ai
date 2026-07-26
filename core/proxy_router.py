@@ -4,7 +4,7 @@ from typing import Dict, List, Optional
 
 class FreeProxyRouter:
     def __init__(self):
-        # Array berisi semua source terpercaya yang updated tiap jam
+        # Array berisi all source trusted that updated tiap jam
         self.sources = [
             "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=5000&country=all&ssl=all&anonymity=all",
             "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt",
@@ -14,14 +14,14 @@ class FreeProxyRouter:
         self.proxies: List[str] = []
 
     def refresh_proxies(self) -> int:
-        """Fetching dan menggabungkan list proxy gratis dari seluruh source tanpa duplikasi."""
-        # Using set() agar IP yang kembar otomatis tereliminasi
+        """Fetching dan menggabungkan list proxy gratis from seluruh source tanpa duplikasi."""
+        # Using set() agar IP that kembar otomatis tereliminasi
         unique_proxies = set()
-        print("\n[INFO] 🔄 Starting proses Proxy Aggregation dari berbagai sumber...")
+        print("\n[INFO] 🔄 Starting proses Proxy Aggregation from berbagai sumber...")
 
         for url in self.sources:
             try:
-                # Ambil nama domain buat log penanda
+                # Ambil nama domain for log penanda
                 domain_name = url.split('/')[2]
                 response = requests.get(url, timeout=7)
                 
@@ -37,18 +37,18 @@ class FreeProxyRouter:
                             unique_proxies.add(cleaned)
                             
                     added_count = len(unique_proxies) - count_before
-                    print(f"[+] Success menyedot dari {domain_name} -> Adding {added_count} proxy unik.")
+                    print(f"[+] Success menyedot from {domain_name} -> Adding {added_count} proxy unik.")
             
             except Exception as e:
-                print(f"[-] Failed mengambil dari {url[:30]}... Error: {str(e)}")
+                print(f"[-] Failed mengambil from {url[:30]}... Error: {str(e)}")
 
-        # Convert kembali dari set ke list agar bisa di-comot pake random.choice
+        # Convert kembali from set ke list agar can di-comot pake random.choice
         self.proxies = list(unique_proxies)
         print(f"[SUCCESS] 🎉 Penggabungan selesai! Total pool proxy siap pakai: {len(self.proxies)} IP.\n")
         return len(self.proxies)
 
     def get_proxy(self) -> Optional[Dict[str, str]]:
-        """Fetching satu proxy acak dari pool gabungan."""
+        """Fetching satu proxy acak from pool gabungan."""
         if not self.proxies:
             count = self.refresh_proxies()
             if count == 0:
@@ -63,7 +63,7 @@ class FreeProxyRouter:
         }
 
     def remove_dead_proxy(self, proxy_dict: Dict[str, str]):
-        """Deleting proxy dari memori jika terdeteksi mati saat executed agent."""
+        """Deleting proxy from memori jika terdeteksi mati saat executed agent."""
         if not proxy_dict:
             return
         proxy_url = proxy_dict.get("http", "").replace("http://", "")

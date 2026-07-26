@@ -11,15 +11,15 @@ from core.auth_store import get_auth_kwargs
 @tool("test_jwt_weakness")
 def test_jwt_weakness(jwt_token: str) -> str:
     """
-    Menganalisa struktur token JWT untuk mendeteksi miskonfigurasi 
-    seperti penggunaan 'alg': 'none' yang bisa memicu otentikasi bypass.
+    Menganalisa struktur token JWT for mendeteksi miskonfigurasi 
+    seperti penggunaan 'alg': 'none' that can memicu otentikasi bypass.
     """
     if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
     
     token = jwt_token.strip()
     parts = token.split('.')
     if len(parts) != 3:
-        return "[-] Format token bukan JWT yang valid (harus terdiri dari 3 bagian yang dipisah titik)."
+        return "[-] Format token bukan JWT that valid (must terdiri from 3 bagian that dipisah titik)."
 
     findings = []
 
@@ -110,7 +110,7 @@ def test_jwt_weakness(jwt_token: str) -> str:
         findings.insert(0, f"=== JWT ANALYSIS ===\nAlgorithm: {alg}\n")
         
         if any("[CRITICAL]" in f or "[HIGH]" in f for f in findings):
-            findings.append("\n[RECOMMENDATION] Token ini vulnerable — segera rotate JWT secret dan perbaiki konfigurasi.")
+            findings.append("\n[RECOMMENDATION] Token this vulnerable — segera rotate JWT secret dan perbaiki konfigurasi.")
         
         return "\n".join(findings)
         
@@ -120,14 +120,14 @@ def test_jwt_weakness(jwt_token: str) -> str:
 @tool("test_auth_rate_limiting")
 def test_auth_rate_limiting(login_url: str) -> str:
     """
-    Testing keberadaan rate limiting pada endpoint otentikasi (login/password-reset) 
-    dengan mengirimkan 10 request cepat secara beruntun.
+    Testing keberadaan rate limiting on endpoint otentikasi (login/password-reset) 
+    with mengirimkan 10 request cepat secara beruntun.
     """
     if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     approved = require_approval(
-        action=f"Auth rate limiting test pada {login_url}",
-        context="Sending 10 request login beruntun dengan kredensial dummy",
+        action=f"Auth rate limiting test on {login_url}",
+        context="Sending 10 request login beruntun with kredensial dummy",
         risk="medium",
         exec_logger=exec_logger,
     )
@@ -150,10 +150,10 @@ def test_auth_rate_limiting(login_url: str) -> str:
     rate_limited = status_codes.count(429)
     
     if rate_limited > 0:
-        return f"[+] Target memiliki Rate Limiting aktif pada endpoint {url}. Terdeteksi status code 429 sebanyak {rate_limited} kali."
+        return f"[+] Target memiliki Rate Limiting aktif on endpoint {url}. Terdeteksi status code 429 sebanyak {rate_limited} kali."
     
     distinct_codes = set(status_codes)
-    return f"[WARN] POTENTIAL MISSING RATE LIMITING: Endpoint {url} menerima 10 request beruntun tanpa proteksi 429. Respon yang received: {list(distinct_codes)}. Rentan terhadap Brute Force."
+    return f"[WARN] POTENTIAL MISSING RATE LIMITING: Endpoint {url} menerima 10 request beruntun tanpa proteksi 429. Respon that received: {list(distinct_codes)}. Rentan terhadap Brute Force."
 
 
 @tool("jwt_tool_analysis")

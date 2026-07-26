@@ -1,7 +1,7 @@
 """
 Core Infrastructure Package
 ============================
-Re-exports semua core modules buat clean imports.
+Re-exports all core modules for clean imports.
 """
 
 from core.checkpoint import checkpoint_store, require_approval, current_job_id

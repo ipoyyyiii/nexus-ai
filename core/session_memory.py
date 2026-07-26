@@ -1,9 +1,9 @@
 """
 SESSION MEMORY
 ===============
-Agent bisa "ingat" findings dari session-session senot yetnya terhadap target
-yang sama. Waktu lo mulai pentest target X lagi besok, agent load dulu
-semua yang udah found senot yetnya — subdomain, vuln, endpoint, tech stack.
+Agent can "ingat" findings from session-session senot yetnya terhadap target
+that sama. Waktu lo mulai pentest target X lagi besok, agent load dulu
+all that udah found senot yetnya — subdomain, vuln, endpoint, tech stack.
 
 Saved di Supabase tabel `session_memory`:
 
@@ -19,11 +19,11 @@ Saved di Supabase tabel `session_memory`:
     create index if not exists idx_memory_domain on session_memory(target_domain);
 
 memory_type values:
-- "subdomain"    — subdomain yang udah found
-- "tech_stack"   — tech stack yang terdeteksi
-- "vuln"         — vulnerability yang udah found/dicoba
-- "endpoint"     — endpoint/parameter yang udah found
-- "finding"      — confirmed finding (buat reference di session baru)
+- "subdomain"    — subdomain that udah found
+- "tech_stack"   — tech stack that terdeteksi
+- "vuln"         — vulnerability that udah found/dicoba
+- "endpoint"     — endpoint/parameter that udah found
+- "finding"      — confirmed finding (for reference di session baru)
 """
 
 import json
@@ -52,7 +52,7 @@ class SessionMemory:
         session_id: Optional[str] = None,
     ) -> bool:
         """
-        Simpan satu memory entry. Kalau udah ada entry yang sama
+        Simpan satu memory entry. Kalau udah ada entry that sama
         (domain + type + content key utama), update instead of insert.
         """
         domain = _domain_of(target)
@@ -71,7 +71,7 @@ class SessionMemory:
 
     def load(self, target: str, memory_type: Optional[str] = None) -> List[Dict]:
         """
-        Load semua memory untuk domain target tertentu.
+        Load all memory for domain target tertentu.
         Kalau memory_type di-specify, filter by type.
         """
         domain = _domain_of(target)
@@ -87,8 +87,8 @@ class SessionMemory:
 
     def build_context(self, target: str) -> str:
         """
-        Build context string dari semua memory buat di-inject ke agent prompt.
-        Return string yang siap dipaste sebagai backstory tambahan agent.
+        Build context string from all memory for di-inject ke agent prompt.
+        Return string that siap dipaste sebagai backstory tambahan agent.
         """
         all_memories = self.load(target)
         if not all_memories:
@@ -145,8 +145,8 @@ class SessionMemory:
         session_id: Optional[str] = None,
     ):
         """
-        Parse report teks dari assessor dan extract findings buat disimpen ke memory.
-        Dipanggil otomatis di akhir run_pentest_job setelah job selesai.
+        Parse report teks from assessor dan extract findings for disimpen ke memory.
+        Dipanggil otomatis di akhir run_pentest_job sealready job selesai.
         """
         import re
         domain = _domain_of(target)
@@ -183,7 +183,7 @@ class SessionMemory:
         session_id: Optional[str] = None,
     ):
         """
-        Simpan parameter yang udah di-test supaya gak di-test lagi di scan berikutnya.
+        Simpan parameter that udah di-test supaya gak di-test lagi di scan berikutnya.
         """
         domain = _domain_of(target)
         for param in params:
@@ -200,7 +200,7 @@ class SessionMemory:
         tool_name: str = "",
     ) -> list:
         """
-        Ambil list parameter yang udah di-test.
+        Ambil list parameter that udah di-test.
         """
         memory_type = "tested_params"
         all_memories = self.load(target, memory_type)

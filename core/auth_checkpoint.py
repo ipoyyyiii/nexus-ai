@@ -1,7 +1,7 @@
 """
 AUTH CHECKPOINT
 ===============
-HITL (Human-in-the-Loop) flow buat minta credentials ke user.
+HITL (Human-in-the-Loop) flow for minta credentials ke user.
 
 Flow:
 1. Tool detect login wall → panggil request_auth()
@@ -10,7 +10,7 @@ Flow:
 4. Auth checkpoint store return auth info ke tool
 5. Tool login atau inject session → lanjut scan
 
-Mirip checkpoint.py, tapi khusus buat authentication.
+Mirip checkpoint.py, tapi khusus for authentication.
 """
 
 import threading
@@ -24,7 +24,7 @@ class AuthCheckpointStore:
     def __init__(self):
         self._lock = threading.Lock()
         self._pending: Dict[str, dict] = {}
-        # Callbacks di-set dari api.py
+        # Callbacks set from api.py
         self.on_auth_request: Optional[Callable[[str, str, str], None]] = None
         self.on_auth_response: Optional[Callable[[str], None]] = None
 
@@ -39,7 +39,7 @@ class AuthCheckpointStore:
         timeout: int = 300,
     ) -> Optional[Dict[str, Any]]:
         """
-        Blocking call — dipanggil dari worker thread.
+        Blocking call — dipanggil from worker thread.
         Minta credentials/session ke user, tunggu response.
 
         Return:
@@ -87,7 +87,7 @@ class AuthCheckpointStore:
         return entry.get("response") if entry else None
 
     def respond(self, job_id: str, auth_data: Optional[Dict[str, Any]]) -> bool:
-        """Dipanggil dari endpoint /auth/respond ketika user kasih credentials."""
+        """Dipanggil from endpoint /auth/respond ketika user kasih credentials."""
         with self._lock:
             entry = self._pending.get(job_id)
             if not entry:
@@ -117,7 +117,7 @@ def request_auth(
     exec_logger=None,
 ) -> Optional[Dict[str, Any]]:
     """
-    Helper yang dipanggil dari dalam tool ketika login wall terdeteksi.
+    Helper that dipanggil from dalam tool ketika login wall terdeteksi.
 
     Return auth_data dict atau None kalau rejected/timeout.
     """
@@ -127,7 +127,7 @@ def request_auth(
         if exec_logger:
             exec_logger.add_log(
                 "AUTH", "BLOCKED",
-                f"Login wall terdeteksi di {domain}, tapi gak ada job_id — gak bisa minta credentials."
+                f"Login wall terdeteksi di {domain}, tapi gak ada job_id — gak can minta credentials."
             )
         return None
 
@@ -158,7 +158,7 @@ def request_auth(
         if exec_logger:
             exec_logger.add_log(
                 "AUTH", "BLOCKED",
-                f"Auth rejected atau timeout untuk {domain}"
+                f"Auth rejected atau timeout for {domain}"
             )
 
     return auth_data

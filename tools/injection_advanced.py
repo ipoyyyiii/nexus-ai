@@ -29,18 +29,18 @@ def _logger():
 @tool("blind_sqli_scanner")
 def blind_sqli_scanner(url: str, params: str = "") -> str:
     """
-    Scan untuk Blind SQL Injection (time-based dan boolean-based).
+    Scan for Blind SQL Injection (time-based dan boolean-based).
     Berguna ketika error-based SQLi not menampilkan error di response.
     params: comma-separated parameter names to test
     """
     tool_name = "Blind SQLi Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting blind SQLi scan pada {url}")
+    logger.add_log(tool_name, "START", f"Starting blind SQLi scan on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     approved = require_approval(
-        action=f"Blind SQL Injection scan pada {url}",
-        context=f"Testing time-based (SLEEP) dan boolean-based payloads pada params: {params or 'default'}",
+        action=f"Blind SQL Injection scan on {url}",
+        context=f"Testing time-based (SLEEP) dan boolean-based payloads on params: {params or 'default'}",
         risk="medium",
         exec_logger=logger,
     )
@@ -119,7 +119,7 @@ def blind_sqli_scanner(url: str, params: str = "") -> str:
         for payload, db_type in time_payloads:
             try:
                 # ── TIME CONSISTENCY CHECK ─────────────────────────────────
-                # Kirim 3x buat pastikan delay konsisten, bukan jitter
+                # Kirim 3x for pastikan delay konsisten, bukan jitter
                 delays = []
                 for attempt in range(3):
                     rate_limiter.wait(domain)
@@ -131,7 +131,7 @@ def blind_sqli_scanner(url: str, params: str = "") -> str:
                     elapsed = time.monotonic() - start
                     delays.append(elapsed)
 
-                # Cek konsistensi: semua delay harus > threshold
+                # Cek konsistensi: all delay must > threshold
                 threshold = 3.5
                 consistent_delays = [d for d in delays if d >= threshold]
                 all_slow = len(consistent_delays) == 3
@@ -168,14 +168,14 @@ def blind_sqli_scanner(url: str, params: str = "") -> str:
                         f"Blind SQLi (time) partial: param={param}, DB={db_type}, {len(consistent_delays)}/3 slow")
                     break
                 else:
-                    # Kurang dari 2/3 lambat = kemungkinan jitter/FP
+                    # Kurang from 2/3 lambat = kemungkinan jitter/FP
                     logger.add_log(tool_name, "INFO",
                         f"Time test {param} inconclusive: only {len(consistent_delays)}/3 slow (likely jitter)")
                     continue
 
             except requests.Timeout:
                 # ── TIMEOUT CONSISTENCY CHECK ───────────────────────────────
-                # Timeout juga harus dikirim 2x buat konsistensi
+                # Timeout juga must sent 2x for konsistensi
                 timeout_count = 0
                 for _ in range(2):
                     try:
@@ -284,17 +284,17 @@ def blind_sqli_scanner(url: str, params: str = "") -> str:
 @tool("nosql_injection_scanner")
 def nosql_injection_scanner(url: str, params: str = "") -> str:
     """
-    Scan untuk NoSQL Injection (MongoDB, CouchDB).
+    Scan for NoSQL Injection (MongoDB, CouchDB).
     Test operator injection: $gt, $ne, $where, $regex patterns.
     params: comma-separated parameter names to test
     """
     tool_name = "NoSQL Injection Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting NoSQL injection scan pada {url}")
+    logger.add_log(tool_name, "START", f"Starting NoSQL injection scan on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     approved = require_approval(
-        action=f"NoSQL injection scan pada {url}",
+        action=f"NoSQL injection scan on {url}",
         context=f"Testing MongoDB operator injection payloads ($gt, $ne, $where)",
         risk="medium",
         exec_logger=logger,
@@ -399,13 +399,13 @@ def nosql_injection_scanner(url: str, params: str = "") -> str:
 @tool("ldap_injection_scanner")
 def ldap_injection_scanner(url: str, params: str = "") -> str:
     """
-    Scan untuk LDAP Injection vulnerability.
-    Sering found di enterprise apps yang pake LDAP authentication (Active Directory).
+    Scan for LDAP Injection vulnerability.
+    Sering found di enterprise apps that pake LDAP authentication (Active Directory).
     params: comma-separated parameter names (biasanya username, user, email)
     """
     tool_name = "LDAP Injection Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting LDAP injection scan pada {url}")
+    logger.add_log(tool_name, "START", f"Starting LDAP injection scan on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     domain = _domain_of(url)
@@ -502,13 +502,13 @@ def ldap_injection_scanner(url: str, params: str = "") -> str:
 @tool("xpath_injection_scanner")
 def xpath_injection_scanner(url: str, params: str = "") -> str:
     """
-    Scan untuk XPath Injection vulnerability.
-    XPath injection terjadi di aplikasi yang query XML data store using user input.
+    Scan for XPath Injection vulnerability.
+    XPath injection occurred di aplikasi that query XML data store using user input.
     params: comma-separated parameter names to test
     """
     tool_name = "XPath Injection Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting XPath injection scan pada {url}")
+    logger.add_log(tool_name, "START", f"Starting XPath injection scan on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     domain = _domain_of(url)

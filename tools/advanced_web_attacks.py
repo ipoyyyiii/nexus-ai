@@ -32,7 +32,7 @@ def _logger():
 @tool("host_header_injection_scanner")
 def host_header_injection_scanner(url: str) -> str:
     """
-    Scan untuk Host Header Injection vulnerability.
+    Scan for Host Header Injection vulnerability.
     Mencakup:
     - Password reset poisoning via Host header
     - Cache poisoning via X-Forwarded-Host
@@ -41,7 +41,7 @@ def host_header_injection_scanner(url: str) -> str:
     """
     tool_name = "Host Header Injection Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting host header injection scan pada {url}")
+    logger.add_log(tool_name, "START", f"Starting host header injection scan on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     domain = _domain_of(url)
@@ -144,8 +144,8 @@ def host_header_injection_scanner(url: str) -> str:
 @tool("race_condition_scanner")
 def race_condition_scanner(url: str, method: str = "POST", body: str = "", headers_json: str = "", concurrency: int = 20) -> str:
     """
-    Scan untuk Race Condition vulnerability.
-    Sending banyak request secara concurrent untuk exploit timing windows.
+    Scan for Race Condition vulnerability.
+    Sending banyak request secara concurrent for exploit timing windows.
     Common targets: coupon redeem, transfer funds, vote systems, rate limits.
     url: target endpoint
     method: HTTP method (GET/POST)
@@ -155,11 +155,11 @@ def race_condition_scanner(url: str, method: str = "POST", body: str = "", heade
     """
     tool_name = "Race Condition Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting race condition scan pada {url}")
+    logger.add_log(tool_name, "START", f"Starting race condition scan on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     approved = require_approval(
-        action=f"Race Condition scan pada {url}",
+        action=f"Race Condition scan on {url}",
         context=f"Sending {concurrency} concurrent {method} requests ke {url} secara bersamaan",
         risk="high",
         exec_logger=logger,
@@ -255,11 +255,11 @@ def race_condition_scanner(url: str, method: str = "POST", body: str = "", heade
 @tool("file_upload_scanner")
 def file_upload_scanner(url: str, file_param: str = "file") -> str:
     """
-    Scan untuk File Upload vulnerability:
+    Scan for File Upload vulnerability:
     - MIME type bypass
     - Double extension (.php.jpg)
     - Null byte injection (.php%00.jpg)
-    - Polyglot files (valid image yang juga valid PHP/JS)
+    - Polyglot files (valid image that juga valid PHP/JS)
     - Content-Type bypass
     - File extension blacklist bypass
     url: file upload endpoint
@@ -267,12 +267,12 @@ def file_upload_scanner(url: str, file_param: str = "file") -> str:
     """
     tool_name = "File Upload Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting file upload scan pada {url}")
+    logger.add_log(tool_name, "START", f"Starting file upload scan on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     approved = require_approval(
-        action=f"File Upload scan pada {url}",
-        context=f"Mengupload file dengan berbagai ekstensi dan MIME bypass ke param '{file_param}'",
+        action=f"File Upload scan on {url}",
+        context=f"Mengupload file with berbagai ekstensi dan MIME bypass ke param '{file_param}'",
         risk="high",
         exec_logger=logger,
     )
@@ -370,13 +370,13 @@ def file_upload_scanner(url: str, file_param: str = "file") -> str:
 @tool("http_request_smuggling_scanner")
 def http_request_smuggling_scanner(url: str) -> str:
     """
-    Scan untuk HTTP Request Smuggling (CL.TE dan TE.CL).
-    Sending raw HTTP requests dengan conflicting Content-Length dan Transfer-Encoding.
-    Detection berdasarkan timing dan response behavior.
+    Scan for HTTP Request Smuggling (CL.TE dan TE.CL).
+    Sending raw HTTP requests with conflicting Content-Length dan Transfer-Encoding.
+    Detection based on timing dan response behavior.
     """
     tool_name = "HTTP Request Smuggling Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting HTTP request smuggling scan pada {url}")
+    logger.add_log(tool_name, "START", f"Starting HTTP request smuggling scan on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     domain = _domain_of(url)
@@ -499,16 +499,16 @@ def http_request_smuggling_scanner(url: str) -> str:
 @tool("websocket_security_scanner")
 def websocket_security_scanner(url: str) -> str:
     """
-    Scan untuk WebSocket security vulnerabilities:
+    Scan for WebSocket security vulnerabilities:
     - Missing auth on WebSocket connections
     - Missing origin check (CSWSH — Cross-Site WebSocket Hijacking)
     - Message injection
     - Insecure WS (ws:// instead of wss://)
-    url: target URL (akan di-detect apakah ada WS endpoint)
+    url: target URL (will di-detect apakah ada WS endpoint)
     """
     tool_name = "WebSocket Security Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting WebSocket security scan pada {url}")
+    logger.add_log(tool_name, "START", f"Starting WebSocket security scan on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     domain = _domain_of(url)
@@ -516,7 +516,7 @@ def websocket_security_scanner(url: str) -> str:
     base = url.rstrip("/")
     findings = {"vulnerabilities": [], "ws_endpoints": [], "info": []}
 
-    # ── 1. Detect WebSocket endpoints dari page source ────────────────────────
+    # ── 1. Detect WebSocket endpoints from page source ────────────────────────
     logger.add_log(tool_name, "PROCESSING", "Detecting WebSocket endpoints in page source")
     try:
         rate_limiter.wait(domain)

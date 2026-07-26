@@ -56,7 +56,7 @@ class DomainRateLimiter:
         self._lock = threading.Lock()
 
     def wait(self, domain: str):
-        """Wait sampai rate limit untuk domain ini terpenuhi."""
+        """Wait sampai rate limit for domain this terpenuhi."""
         # Apply stealth mode rate if enabled
         if is_stealth_mode():
             rate = min(self._domain_rates.get(domain, self._default_rate), 0.5)
@@ -77,21 +77,21 @@ class DomainRateLimiter:
             time.sleep(sleep_for)
 
     def set_rate(self, requests_per_second: float):
-        """Set default rate untuk semua domain."""
+        """Set default rate for all domain."""
         with self._lock:
             self._default_rate = requests_per_second
 
     def set_domain_rate(self, domain: str, requests_per_second: float):
-        """Set rate khusus untuk domain tertentu."""
+        """Set rate khusus for domain tertentu."""
         with self._lock:
             self._domain_rates[domain] = requests_per_second
 
     def get_domain_rate(self, domain: str) -> float:
-        """Ambil rate untuk domain tertentu."""
+        """Ambil rate for domain tertentu."""
         return self._domain_rates.get(domain, self._default_rate)
 
     def remove_domain_rate(self, domain: str):
-        """Hapus rate override untuk domain, balik ke default."""
+        """Delete rate override for domain, balik ke default."""
         with self._lock:
             self._domain_rates.pop(domain, None)
 

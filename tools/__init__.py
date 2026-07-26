@@ -1,7 +1,7 @@
 """
 Tools Package
 ==============
-Re-exports semua tool functions buat clean imports.
+Re-exports all tool functions for clean imports.
 """
 
 # ── Custom Tools (core scanners) ─────────────────────────────────────────────

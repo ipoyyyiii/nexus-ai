@@ -27,7 +27,7 @@ def _domain_of(url: str) -> str:
 
 
 def _detect_oauth_endpoints(base_url: str) -> list:
-    """Auto-detect OAuth endpoints dari target."""
+    """Auto-detect OAuth endpoints from target."""
     common_oauth_paths = [
         "/oauth/authorize", "/oauth2/authorize", "/auth/oauth",
         "/connect/authorize", "/openid/authorize",
@@ -49,7 +49,7 @@ def _detect_oauth_endpoints(base_url: str) -> list:
                 verify=False,
                 allow_redirects=False,
             )
-            # 200, 302, 400 (missing params) semua ngindikasiin endpoint exist
+            # 200, 302, 400 (missing params) all ngindikasiin endpoint exist
             if resp.status_code in (200, 302, 400, 401, 403):
                 found.append(f"{base_url.rstrip('/')}{path}")
                 exec_logger.add_log("OAuth Tester", "SUCCESS", f"OAuth endpoint found: {path}")
@@ -80,7 +80,7 @@ def _test_state_parameter(authorize_url: str, client_id: str) -> dict:
             findings.append({
                 "type": "Missing State Parameter",
                 "severity": "High",
-                "detail": "Server not memvalidasi/meminta state parameter — rentan CSRF pada OAuth flow"
+                "detail": "Server not memvalidasi/meminta state parameter — rentan CSRF on OAuth flow"
             })
     except Exception:
         pass
@@ -167,7 +167,7 @@ def _test_redirect_uri_bypass(authorize_url: str, client_id: str, legit_redirect
 
 
 def _test_pkce_missing(authorize_url: str, client_id: str) -> list:
-    """Test apakah PKCE di-enforce untuk public clients."""
+    """Test apakah PKCE di-enforce for public clients."""
     findings = []
 
     try:
@@ -185,12 +185,12 @@ def _test_pkce_missing(authorize_url: str, client_id: str) -> list:
             timeout=5, verify=False, allow_redirects=False
         )
 
-        # Kalau server tetap lanjut tanpa PKCE = vulnerable (terutama buat SPA/mobile)
+        # Kalau server tetap lanjut tanpa PKCE = vulnerable (terutama for SPA/mobile)
         if resp.status_code in (200, 302):
             findings.append({
                 "type": "PKCE Not Enforced",
                 "severity": "Medium",
-                "detail": "Server not mewajibkan PKCE — authorization code rentan di-intercept pada public clients (SPA/mobile apps)"
+                "detail": "Server not mewajibkan PKCE — authorization code rentan di-intercept on public clients (SPA/mobile apps)"
             })
     except Exception:
         pass
@@ -199,7 +199,7 @@ def _test_pkce_missing(authorize_url: str, client_id: str) -> list:
 
 
 def _test_token_leakage(authorize_url: str) -> list:
-    """Test apakah token bisa leak via response_type=token (implicit flow)."""
+    """Test apakah token can leak via response_type=token (implicit flow)."""
     findings = []
 
     try:
@@ -231,7 +231,7 @@ def _test_token_leakage(authorize_url: str) -> list:
 @tool("oauth_flow_tester")
 def oauth_flow_tester(target_url: str, client_id: str = "", redirect_uri: str = "") -> str:
     """
-    Testing implementasi OAuth/SSO pada target untuk menemukan kerentanan umum:
+    Testing implementasi OAuth/SSO on target for menemukan kerentanan umum:
     - Missing/weak state parameter (CSRF)
     - Redirect URI bypass (token hijacking)
     - PKCE not enforced (code interception)
@@ -240,13 +240,13 @@ def oauth_flow_tester(target_url: str, client_id: str = "", redirect_uri: str = 
     
     Args:
         target_url: Base URL target (contoh: https://target.com)
-        client_id: OAuth client_id kalau udah diketahui (opsional)
-        redirect_uri: Legitimate redirect URI kalau udah diketahui (opsional)
+        client_id: OAuth client_id kalau udah known (opsional)
+        redirect_uri: Legitimate redirect URI kalau udah known (opsional)
     """
     if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     approved = require_approval(
-        action=f"OAuth flow testing pada {target_url}",
+        action=f"OAuth flow testing on {target_url}",
         context=f"Test: state CSRF, redirect URI bypass, PKCE, implicit flow. client_id={client_id or 'auto-detect'}",
         risk="medium",
         exec_logger=exec_logger,
@@ -254,7 +254,7 @@ def oauth_flow_tester(target_url: str, client_id: str = "", redirect_uri: str = 
     if not approved:
         return "TEST DIBATALKAN: human-in-the-loop approval rejected atau timeout."
 
-    exec_logger.add_log("OAuth Tester", "START", f"Starting OAuth flow testing pada {target_url}")
+    exec_logger.add_log("OAuth Tester", "START", f"Starting OAuth flow testing on {target_url}")
 
     all_findings = []
 
@@ -263,7 +263,7 @@ def oauth_flow_tester(target_url: str, client_id: str = "", redirect_uri: str = 
     oauth_endpoints = _detect_oauth_endpoints(target_url)
 
     if not oauth_endpoints:
-        return f"[+] Not found OAuth/SSO endpoint standar pada {target_url}. Target mungkin pake custom auth flow atau not mengimplementasi OAuth."
+        return f"[+] Not found OAuth/SSO endpoint standar on {target_url}. Target mungkin pake custom auth flow atau not mengimplementasi OAuth."
 
     exec_logger.add_log("OAuth Tester", "SUCCESS", f"Found {len(oauth_endpoints)} OAuth endpoints")
 
@@ -277,7 +277,7 @@ def oauth_flow_tester(target_url: str, client_id: str = "", redirect_uri: str = 
     test_client_id = client_id or "test_client"
     test_redirect = redirect_uri or f"{target_url}/callback"
 
-    # Step 2: Run semua tests
+    # Step 2: Run all tests
     exec_logger.add_log("OAuth Tester", "PROCESSING", "Testing state parameter")
     state_findings = _test_state_parameter(authorize_endpoint, test_client_id)
     all_findings.extend(state_findings)
@@ -305,10 +305,10 @@ def oauth_flow_tester(target_url: str, client_id: str = "", redirect_uri: str = 
 
     output = f"=== OAUTH/SSO FLOW TEST RESULTS FOR {target_url} ===\n\n"
     output += f"Endpoints found: {', '.join(oauth_endpoints)}\n"
-    output += f"Authorize endpoint yang ditest: {authorize_endpoint}\n\n"
+    output += f"Authorize endpoint that ditest: {authorize_endpoint}\n\n"
 
     if not all_findings:
-        output += "[+] Not found kerentanan OAuth yang obvious. Manual testing tetap disarankan untuk edge cases.\n"
+        output += "[+] Not found kerentanan OAuth that obvious. Manual testing tetap disarankan for edge cases.\n"
         return output
 
     # Group by severity
@@ -336,6 +336,6 @@ def oauth_flow_tester(target_url: str, client_id: str = "", redirect_uri: str = 
             output += f"  ▸ {f['type']}\n"
             output += f"    {f['detail']}\n"
 
-    output += f"\n⚠️  Manual verification required untuk konfirmasi semua findings di atas.\n"
+    output += f"\n⚠️  Manual verification required for confirmation all findings di atas.\n"
 
     return output

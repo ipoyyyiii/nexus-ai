@@ -42,7 +42,7 @@ _PATTERNS = [
 
 def redact(value: Any) -> Any:
     """
-    Rekursif — bisa nerima str, dict, list, atau tipe lain.
+    Rekursif — can nerima str, dict, list, atau tipe lain.
     Non-string dikembalikan apa adanya (int, bool, None, dst).
     """
     if isinstance(value, str):

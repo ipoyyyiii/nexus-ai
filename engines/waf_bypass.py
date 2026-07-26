@@ -1,7 +1,7 @@
 """
 WAF BYPASS PAYLOADS — WAF-Aware Payload Library
 =================================================
-Collection encoded payloads buat bypass common WAF rules.
+Collection encoded payloads for bypass common WAF rules.
 
 Usage:
     from engines.waf_bypass import WAFBypass
@@ -19,7 +19,7 @@ from urllib.parse import quote
 
 class WAFBypass:
     """
-    Generate WAF-aware payloads dengan berbagai encoding techniques.
+    Generate WAF-aware payloads with berbagai encoding techniques.
     
     Supported encoding techniques:
     - URL encoding (single/double)
@@ -248,7 +248,7 @@ class WAFBypass:
 
     def apply_bypass_techniques(self, payload: str) -> List[str]:
         """
-        Generate WAF bypass variants dari base payload.
+        Generate WAF bypass variants from base payload.
         Return list of encoded payloads.
         """
         variants = [payload]  # Original

@@ -28,7 +28,7 @@ def _logger():
 @tool("misconfiguration_scanner")
 def misconfiguration_scanner(url: str) -> str:
     """
-    Scan comprehensive security misconfiguration pada target URL.
+    Scan comprehensive security misconfiguration on target URL.
     Mencakup: .git/.env exposed, backup files, directory listing,
     default credentials, debug mode, server version disclosure,
     exposed admin panels, internal IP disclosure, HTTP→HTTPS redirect,
@@ -36,7 +36,7 @@ def misconfiguration_scanner(url: str) -> str:
     """
     tool_name = "Misconfiguration Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting misconfiguration scan pada {url}")
+    logger.add_log(tool_name, "START", f"Starting misconfiguration scan on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     domain = _domain_of(url)

@@ -105,11 +105,11 @@ def langchain_to_crewai(lc_tool):
     from pydantic import create_model
     import inspect
 
-    # Bangun schema dari args_schema tool asli
+    # Bangun schema from args_schema tool asli
     if hasattr(lc_tool, 'args_schema') and lc_tool.args_schema:
         schema = lc_tool.args_schema
     else:
-        # Fallback: bikin schema dinamis dari signature fungsi
+        # Fallback: bikin schema dinamis from signature fungsi
         sig = inspect.signature(lc_tool.func)
         fields = {
             k: (str, ...) 
@@ -131,19 +131,19 @@ def langchain_to_crewai(lc_tool):
 # ============================================================
 # API KEY AUTH
 # Set NEXUS_API_KEY di .env. Semua endpoint sensitif butuh header
-# `X-API-Key`. Kalau NEXUS_API_KEY gak di-set sama sekali, server
-# REFUSE TO START dengan auth kosong (biar gak ke-deploy tanpa sadar
+# `X-API-Key`. Kalau NEXUS_API_KEY gak set sama sekali, server
+# REFUSE TO START with auth kosong (biar gak ke-deploy tanpa sadar
 # tanpa proteksi apapun) — kecuali eksplisit di-allow lewat
-# NEXUS_ALLOW_NO_AUTH=true (cuma buat dev lokal).
+# NEXUS_ALLOW_NO_AUTH=true (cuma for dev lokal).
 # ============================================================
 NEXUS_API_KEY = os.environ.get("NEXUS_API_KEY")
 ALLOW_NO_AUTH = os.environ.get("NEXUS_ALLOW_NO_AUTH", "false").lower() == "true"
 
 if not NEXUS_API_KEY and not ALLOW_NO_AUTH:
     raise RuntimeError(
-        "NEXUS_API_KEY not yet di-set di .env. Generate satu (mis. python -c "
+        "NEXUS_API_KEY not yet set di .env. Generate satu (mis. python -c "
         "\"import secrets; print(secrets.token_hex(32))\") lalu set NEXUS_API_KEY=<hasilnya>. "
-        "Kalau ini cuma dev lokal dan sengaja mau tanpa auth, set NEXUS_ALLOW_NO_AUTH=true."
+        "Kalau this cuma dev lokal dan sengaja mau tanpa auth, set NEXUS_ALLOW_NO_AUTH=true."
     )
 
 async def require_api_key(x_api_key: Optional[str] = Header(default=None)):
@@ -172,7 +172,7 @@ app.add_middleware(
 # ============================================================
 # IN-MEMORY JOB STORE
 # Saving status setiap pentest job secara thread-safe.
-# Di production ganti dengan Redis.
+# Di production ganti with Redis.
 # ============================================================
 jobs: Dict[str, Dict[str, Any]] = {}
 
@@ -215,7 +215,7 @@ def _on_auth_request(job_id: str, url: str, domain: str):
     update_job(
         job_id,
         status="waiting_auth",
-        message=f"Login wall terdeteksi di {domain}. Waiting credentials/session dari user.",
+        message=f"Login wall terdeteksi di {domain}. Waiting credentials/session from user.",
         auth_request={
             "url": url,
             "domain": domain,
@@ -231,7 +231,7 @@ auth_checkpoint_store.on_auth_response = _on_auth_response
 
 
 # ============================================================
-# CONTINUE STORE — buat phase-by-phase execution
+# CONTINUE STORE — for phase-by-phase execution
 # ============================================================
 class ContinueStore:
     def __init__(self):
@@ -273,13 +273,13 @@ class PentestRequest(BaseModel):
     target: str           # URL eksplisit, already validated di frontend
     goal: str
     session_id: Optional[str] = None
-    # Per-agent model override dari frontend. Key: "recon" | "analis" | "eksekutor" | "assessor"
-    # Value: model_id dari model_registry.py (mis. "claude-sonnet", "glm-4.5-air-free"), atau
+    # Per-agent model override from frontend. Key: "recon" | "analis" | "eksekutor" | "assessor"
+    # Value: model_id from model_registry.py (mis. "claude-sonnet", "glm-4.5-air-free"), atau
     # None/gak diisi -> default fallback chain (paid dulu, baru free kalau failed).
     agent_models: Optional[Dict[str, Optional[str]]] = None
     # Auth credentials (opsional). Kalau diisi, auto-login senot yet scan dimulai.
     credentials: Optional[Dict[str, Any]] = None
-    # Scan configuration — phases mana yang mau running
+    # Scan configuration — phases mana that mau running
     scan_config: Optional[Dict[str, Any]] = None
 
 class ImageRequest(BaseModel):
@@ -325,12 +325,12 @@ def update_job(job_id: str, **kwargs):
 
 # ============================================================
 # BACKGROUND PENTEST RUNNER
-# Ini yang dulu blocking sekarang jalan di background thread.
+# Ini that dulu blocking sekarang jalan di background thread.
 # ============================================================
 def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_models: Optional[Dict[str, Optional[str]]] = None, credentials: Optional[Dict[str, Any]] = None, scan_config: Optional[Dict[str, Any]] = None):
     """
     Phase-by-phase execution: Recon -> Analis -> Eksekutor -> Assessor.
-    Setelah setiap phase, pause dan tunggu user klik "Continue".
+    Sealready setiap phase, pause dan tunggu user klik "Continue".
     Auto-Pilot mode: skip manual approval, auto-continue.
     """
     agent_models = agent_models or {}
@@ -409,7 +409,7 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
                 except Exception as login_err:
                     update_job(job_id, message=f"Auto-login failed: {login_err}. Lanjut tanpa auth.")
             elif mode == "session":
-                update_job(job_id, status="running", message=f"Injecting session untuk {domain}...")
+                update_job(job_id, status="running", message=f"Injecting session for {domain}...")
                 try:
                     from tools.playwright_tools import inject_session
                     inject_result = inject_session.invoke({
@@ -473,14 +473,14 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
                     verbose=True
                 )
                 task = Task(
-                    description=f"Active Recon target: {target}. Petakan ports, tech-stack, WAF, DNS, SSL, cloud assets, JS secrets.",
+                    description=f"Active Recon target: {target}. Petwill ports, tech-stack, WAF, DNS, SSL, cloud assets, JS secrets.",
                     expected_output="Laporan intelijen infrastruktur lengkap dalam format GFM markdown.",
                     agent=agent
                 )
             elif phase == "analis":
                 agent = Agent(
                     role="Senior Vulnerability Strategist",
-                    goal="Rancang payload presisi berdasarkan intel recon.",
+                    goal="Rancang payload presisi based on intel recon.",
                     backstory="Mastermind eksploitasi. Payload-nya surgical, WAF-aware.",
                     llm=llm_analis,
                     tools=[langchain_to_crewai(t) for t in [
@@ -504,7 +504,7 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
                 )
                 recon_ctx = all_results.get("recon", "")[:1000]
                 task = Task(
-                    description=f"Target: {target} | Goal: {goal}\nBerdasarkan recon:\n{recon_ctx}\n\nTest semua injection vectors: SQLi, XSS, LFI, Header Injection.",
+                    description=f"Target: {target} | Goal: {goal}\nBerdasarkan recon:\n{recon_ctx}\n\nTest all injection vectors: SQLi, XSS, LFI, Header Injection.",
                     expected_output="Daftar vulnerabilities dalam format GFM markdown.",
                     agent=agent
                 )
@@ -531,7 +531,7 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
                 )
                 analis_ctx = all_results.get("analis", "")[:1000]
                 task = Task(
-                    description=f"Target: {target}\nEksekusi attack vectors dari Analis:\n{analis_ctx}\n\nTest API endpoints, SSRF, IDOR, auth bypass.",
+                    description=f"Target: {target}\nEksekusi attack vectors from Analis:\n{analis_ctx}\n\nTest API endpoints, SSRF, IDOR, auth bypass.",
                     expected_output="Log eksekusi dalam format GFM markdown.",
                     agent=agent
                 )
@@ -549,7 +549,7 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
                     f"### Exploitation:\n{all_results.get('eksekutor', 'N/A')[:500]}",
                 ])
                 task = Task(
-                    description=f"Analisis semua findings untuk {target}:\n{prev_ctx}\n\nBuat laporan GFM markdown. Jangan gunakan ASCII art. Setiap vulnerability harus punya section terpisah dengan metadata lengkap (CWE-ID, CVSS vector, severity, steps to reproduce, PoC). Gunakan tabel markdown, bullet points, dan blockquote (>).",
+                    description=f"Analisis all findings for {target}:\n{prev_ctx}\n\nBuat laporan GFM markdown. Jangan gunwill ASCII art. Setiap vulnerability must punya section terpisah with metadata lengkap (CWE-ID, CVSS vector, severity, steps to reproduce, PoC). Gunwill tabel markdown, bullet points, dan blockquote (>).",
                     expected_output="Laporan eksekutif risk assessment dalam format GFM markdown.",
                     agent=agent
                 )
@@ -573,7 +573,7 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
                     update_job(job_id, status="running", message=f"Phase {phase_names.get(phase, phase)} selesai. Auto-Pilot: continuing...")
                     # Auto-approve, no pause
                 else:
-                    update_job(job_id, status="waiting_continue", message=f"Phase {phase_names.get(phase, phase)} selesai. Klik 'Continue' untuk lanjut.")
+                    update_job(job_id, status="waiting_continue", message=f"Phase {phase_names.get(phase, phase)} selesai. Klik 'Continue' for lanjut.")
                     approved = continue_store.request_continue(job_id)
                     if not approved:
                         update_job(job_id, status="cancelled", message="Cancelled oleh user.")
@@ -583,7 +583,7 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
         # ── Finalize ──────────────────────────────────────────────────────────
         raw_report = "\n\n---\n\n".join(all_reports) if all_reports else "Not ada results."
 
-        # Post-process: generate full professional report dari phase results
+        # Post-process: generate full professional report from phase results
         try:
             from tools.report_generator import ReportGenerator
             gen = ReportGenerator()
@@ -608,7 +608,7 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
             try:
                 scan_history.save(
                     target=target,
-                    findings=[],  # Findings dari phase results
+                    findings=[],  # Findings from phase results
                     session_id=session_id,
                     summary={"waf": waf_result.get("waf", "Unknown"), "phases": list(all_results.keys())},
                 )
@@ -659,8 +659,8 @@ async def get_sessions(_: bool = Depends(require_api_key)):
 @app.get("/sessions/{session_id}/messages")
 async def get_session_messages(session_id: str, _: bool = Depends(require_api_key)):
     """
-    Ambil semua chat messages dari session tertentu, diurutkan dari yang paling lama.
-    Frontend pakai ini buat restore chat history waktu klik session di sidebar.
+    Ambil all chat messages from session tertentu, diurutkan from that paling lama.
+    Frontend pakai this for restore chat history waktu klik session di sidebar.
     """
     try:
         res = (
@@ -677,7 +677,7 @@ async def get_session_messages(session_id: str, _: bool = Depends(require_api_ke
 
 @app.get("/models")
 async def get_models(_: bool = Depends(require_api_key)):
-    """Return daftar model yang available buat dipilih di frontend."""
+    """Return daftar model that available for selected di frontend."""
     return list_available_models()
 
 
@@ -704,7 +704,7 @@ async def get_scope_rules(_: bool = Depends(require_api_key)):
 @app.post("/scope-rules")
 async def create_scope_rule(req: ScopeRuleRequest, _: bool = Depends(require_api_key)):
     if req.rule_type not in ("allow", "deny"):
-        raise HTTPException(status_code=400, detail="rule_type harus 'allow' atau 'deny'.")
+        raise HTTPException(status_code=400, detail="rule_type must 'allow' atau 'deny'.")
     if not req.pattern.strip():
         raise HTTPException(status_code=400, detail="Pattern not boleh kosong.")
     if not req.program_name.strip():
@@ -732,11 +732,11 @@ async def delete_scope_rule(rule_id: str, _: bool = Depends(require_api_key)):
 
 @app.delete("/sessions/{session_id}")
 async def delete_session(session_id: str, _: bool = Depends(require_api_key)):
-    """Hapus session dan semua chat messages terkait."""
+    """Delete session dan all chat messages terkait."""
     try:
-        # Hapus chat messages dulu
+        # Delete chat messages dulu
         supabase.table("chat_messages").delete().eq("session_id", session_id).execute()
-        # Hapus session
+        # Delete session
         supabase.table("sessions").delete().eq("id", session_id).execute()
         return {"ok": True, "deleted": session_id}
     except Exception as e:
@@ -747,7 +747,7 @@ async def delete_session(session_id: str, _: bool = Depends(require_api_key)):
 async def start_pentest(req: PentestRequest, background_tasks: BackgroundTasks, _: bool = Depends(require_api_key)):
     """
     Langsung return job_id. Pentest jalan di background.
-    Frontend poll /job/{job_id} atau stream dari /job/{job_id}/stream.
+    Frontend poll /job/{job_id} atau stream from /job/{job_id}/stream.
     """
     # Cek scope DULU senot yet bikin session/job apapun — fail fast, jangan
     # nunggu sampai background job jalan baru ketauan rejected.
@@ -800,9 +800,9 @@ async def get_job(job_id: str, _: bool = Depends(require_api_key)):
 @app.post("/job/{job_id}/cancel")
 async def cancel_job(job_id: str, _: bool = Depends(require_api_key)):
     """
-    Cancel job yang lagi jalan. Set cancellation token yang dicek oleh setiap
-    tool senot yet eksekusi — tool yang not yet jalan akan berhenti, tool yang
-    currently berjalan akan selesai dulu baru berhenti di tool berikutnya.
+    Cancel job that lagi jalan. Set cancellation token that checked oleh setiap
+    tool senot yet eksekusi — tool that not yet jalan will berhenti, tool yang
+    currently berjalan will completed dulu baru berhenti di tool berikutnya.
     """
     if job_id not in jobs:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -811,7 +811,7 @@ async def cancel_job(job_id: str, _: bool = Depends(require_api_key)):
     if job.get("status") not in ("queued", "running", "waiting_hitl", "waiting_continue"):
         raise HTTPException(
             status_code=400,
-            detail=f"Job not bisa di-cancel, status saat ini: {job.get('status')}"
+            detail=f"Job not can di-cancel, status saat ini: {job.get('status')}"
         )
 
     # Kalau lagi nunggu HITL/continue, auto-reject dulu biar thread gak stuck
@@ -820,7 +820,7 @@ async def cancel_job(job_id: str, _: bool = Depends(require_api_key)):
 
     cancelled = cancellation_store.cancel(job_id)
     if cancelled:
-        update_job(job_id, status="cancelling", message="Waiting tool selesai lalu berhenti...")
+        update_job(job_id, status="cancelling", message="Waiting tool completed lalu berhenti...")
 
     return {"ok": cancelled, "job_id": job_id}
 
@@ -828,7 +828,7 @@ async def cancel_job(job_id: str, _: bool = Depends(require_api_key)):
 @app.post("/job/{job_id}/continue")
 async def continue_job(job_id: str, _: bool = Depends(require_api_key)):
     """
-    Continue job setelah phase selesai. User klik 'Continue' di frontend.
+    Continue job sealready phase selesai. User klik 'Continue' di frontend.
     """
     if job_id not in jobs:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -851,7 +851,7 @@ async def continue_job(job_id: str, _: bool = Depends(require_api_key)):
 async def stream_job(job_id: str, token: Optional[str] = None):
     """
     SSE endpoint. Diprotect pakai query param `?token=` karena EventSource
-    browser gak bisa kirim custom header. Token di-generate waktu POST /pentest
+    browser gak can kirim custom header. Token di-generate waktu POST /pentest
     dan sent balik ke frontend di response body.
     """
     if job_id not in jobs:
@@ -914,8 +914,8 @@ async def stream_job(job_id: str, token: Optional[str] = None):
 @app.get("/checkpoint/{job_id}")
 async def get_checkpoint(job_id: str, _: bool = Depends(require_api_key)):
     """
-    Frontend poll/baca ini buat tau apakah job lagi nunggu approval, dan
-    detail aksi apa yang mau running.
+    Frontend poll/baca this for tau apakah job lagi nunggu approval, dan
+    detail aksi apa that mau running.
     """
     pending = checkpoint_store.get_pending(job_id)
     if not pending:
@@ -927,11 +927,11 @@ async def get_checkpoint(job_id: str, _: bool = Depends(require_api_key)):
 async def respond_checkpoint(data: CheckpointResponse, _: bool = Depends(require_api_key)):
     """
     Frontend kirim approved=True/False ke sini. Ini langsung set threading.Event
-    yang lagi di-`wait()` oleh worker thread tempat tool eksekusi nungguin.
+    that lagi di-`wait()` oleh worker thread tempat tool eksekusi nungguin.
     """
     ok = checkpoint_store.respond(data.job_id, data.approved)
     if not ok:
-        raise HTTPException(status_code=404, detail="Not ada checkpoint aktif untuk job_id ini")
+        raise HTTPException(status_code=404, detail="Not ada checkpoint aktif for job_id ini")
     return {"ok": True, "approved": data.approved}
 
 
@@ -939,7 +939,7 @@ async def respond_checkpoint(data: CheckpointResponse, _: bool = Depends(require
 async def respond_auth(data: AuthResponse, _: bool = Depends(require_api_key)):
     """
     Frontend kirim credentials atau session cookies ke sini.
-    Ini langsung set threading.Event yang lagi di-`wait()` oleh worker thread.
+    Ini langsung set threading.Event that lagi di-`wait()` oleh worker thread.
     """
     # Build auth_data dict
     auth_data = {
@@ -954,17 +954,17 @@ async def respond_auth(data: AuthResponse, _: bool = Depends(require_api_key)):
         auth_data["cookies"] = data.cookies
         auth_data["headers"] = data.headers or {}
     else:
-        raise HTTPException(status_code=400, detail="mode harus 'credentials' atau 'session'")
+        raise HTTPException(status_code=400, detail="mode must 'credentials' atau 'session'")
 
     ok = auth_checkpoint_store.respond(data.job_id, auth_data)
     if not ok:
-        raise HTTPException(status_code=404, detail="Not ada auth request aktif untuk job_id ini")
+        raise HTTPException(status_code=404, detail="Not ada auth request aktif for job_id ini")
     return {"ok": True, "mode": data.mode}
 
 
 @app.get("/auth/pending/{job_id}")
 async def get_pending_auth(job_id: str, _: bool = Depends(require_api_key)):
-    """Frontend poll ini buat cek apakah ada auth request yang pending."""
+    """Frontend poll this for cek apakah ada auth request that pending."""
     pending = auth_checkpoint_store.get_pending(job_id)
     if not pending:
         return {"waiting": False}
@@ -979,7 +979,7 @@ async def get_pending_auth(job_id: str, _: bool = Depends(require_api_key)):
 async def export_report_markdown(job_id: str, _: bool = Depends(require_api_key)):
     """
     Export laporan dalam format Markdown siap paste ke HackerOne.
-    Return plain text dengan Content-Disposition biar browser auto-download.
+    Return plain text with Content-Disposition biar browser auto-download.
     """
     if job_id not in jobs:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -995,7 +995,7 @@ async def export_report_markdown(job_id: str, _: bool = Depends(require_api_key)
     logs = job.get("logs", [])
     summary = job.get("summary", {})
 
-    # Ringkasan tools yang executed
+    # Ringkasan tools that executed
     tools_list = ", ".join(summary.get("tools_executed", [])) or "N/A"
     duration = f"{summary.get('duration_seconds', 0):.1f}s"
     error_count = summary.get("error_count", 0)
@@ -1028,7 +1028,7 @@ async def export_report_markdown(job_id: str, _: bool = Depends(require_api_key)
 ## Execution Log (Summary)
 
 """
-    # Tambah log entries yang punya status WARNING/ERROR/SUCCESS (skip PROCESSING/START buat brevity)
+    # Tambah log entries that punya status WARNING/ERROR/SUCCESS (skip PROCESSING/START for brevity)
     notable_logs = [l for l in logs if l.get("status") in ("WARNING", "ERROR", "SUCCESS")]
     if notable_logs:
         for log in notable_logs[:30]:  # Max 30 biar gak kebanjiran
@@ -1177,7 +1177,7 @@ async def inject_new_target(
     session_id: str = None,
     _: bool = Depends(require_api_key)
 ):
-    # Resolve job_id dari session_id kalau agent cuma tau session_id
+    # Resolve job_id from session_id kalau agent cuma tau session_id
     if not job_id and session_id:
         job_id = next(
             (jid for jid, j in jobs.items() if j.get("session_id") == session_id),
@@ -1194,6 +1194,6 @@ async def inject_new_target(
         return {"status": "ignored", "message": "Target already masuk antrean atau already discan."}
 
     asyncio.run_coroutine_threadsafe(state.queue.put(new_url), asyncio.get_event_loop())
-    update_job(job_id, message=f"Adding target baru dari {req.source}: {new_url}")
+    update_job(job_id, message=f"Adding target baru from {req.source}: {new_url}")
 
     return {"status": "success", "message": f"Target {new_url} success added ke antrean pool."}

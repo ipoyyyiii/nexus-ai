@@ -32,17 +32,17 @@ def _logger():
 @tool("command_injection_scanner")
 def command_injection_scanner(url: str, params: str = "") -> str:
     """
-    Scan untuk OS Command Injection (RCE) pada target URL.
+    Scan for OS Command Injection (RCE) on target URL.
     params: comma-separated parameter names (e.g., "cmd,exec,ping,host")
     Mencoba payload time-based dan output-based detection.
     """
     tool_name = "Command Injection Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting command injection scan pada {url}")
+    logger.add_log(tool_name, "START", f"Starting command injection scan on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     approved = require_approval(
-        action=f"OS Command Injection scan pada {url}",
+        action=f"OS Command Injection scan on {url}",
         context=f"Sending OS command payloads (sleep, id, whoami) ke params: {params or 'default'}",
         risk="high",
         exec_logger=logger,
@@ -53,8 +53,8 @@ def command_injection_scanner(url: str, params: str = "") -> str:
 
     def _run_commix_confirmation(url: str, params: list, logger) -> dict:
         """
-        Run commix sebagai confirmation step untuk command injection.
-        Return dict dengan is_confirmed, evidence, severity.
+        Run commix sebagai confirmation step for command injection.
+        Return dict with is_confirmed, evidence, severity.
         """
         import subprocess
         import tempfile
@@ -426,13 +426,13 @@ def command_injection_scanner(url: str, params: str = "") -> str:
 @tool("log_injection_scanner")
 def log_injection_scanner(url: str) -> str:
     """
-    Scan untuk Log Injection vulnerability.
+    Scan for Log Injection vulnerability.
     Mencoba inject newline characters dan fake log entries ke parameter input
-    yang mungkin di-log oleh server (User-Agent, Referer, custom params).
+    that mungkin di-log oleh server (User-Agent, Referer, custom params).
     """
     tool_name = "Log Injection Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting log injection scan pada {url}")
+    logger.add_log(tool_name, "START", f"Starting log injection scan on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     domain = _domain_of(url)
@@ -457,7 +457,7 @@ def log_injection_scanner(url: str) -> str:
                 "X-Forwarded-For": f"1.2.3.4{payload}",
             }
             r = auth_get(url, headers=headers, timeout=5, verify=False)
-            # Jika payload ter-reflect di response body, itu XSS+log injection
+            # Jika payload ter-reflect di response body, that XSS+log injection
             if "INJECTED" in r.text or "FakeLogEntry" in r.text:
                 findings["vulnerabilities"].append({
                     "type": "Log Injection (Reflected)",
@@ -471,7 +471,7 @@ def log_injection_scanner(url: str) -> str:
         except Exception:
             pass
 
-    # Check apakah ada log viewer yang accessible
+    # Check apakah ada log viewer that accessible
     rate_limiter.wait(domain)
     base = url.rstrip("/")
     for log_path in ["/logs", "/log", "/debug/logs", "/admin/logs", "/var/log"]:
@@ -503,14 +503,14 @@ def log_injection_scanner(url: str) -> str:
 @tool("csv_injection_scanner")
 def csv_injection_scanner(url: str, params: str = "") -> str:
     """
-    Scan untuk CSV/Formula Injection (juga disebut Excel Injection).
-    Searching input fields yang mungkin masuk ke file CSV/Excel export.
-    Payload seperti =CMD() atau =HYPERLINK() bisa execute code saat file dibuka.
+    Scan for CSV/Formula Injection (juga disebut Excel Injection).
+    Searching input fields that mungkin masuk ke file CSV/Excel export.
+    Payload seperti =CMD() atau =HYPERLINK() can execute code saat file dibuka.
     params: comma-separated param names to test
     """
     tool_name = "CSV Injection Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting CSV injection scan pada {url}")
+    logger.add_log(tool_name, "START", f"Starting CSV injection scan on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     domain = _domain_of(url)
@@ -539,7 +539,7 @@ def csv_injection_scanner(url: str, params: str = "") -> str:
                 rate_limiter.wait(domain)
                 # Test GET
                 r = auth_get(f"{url}?{param}={quote(payload)}", timeout=5, verify=False)
-                # Jika payload ter-reflect AS-IS di response (terutama di CSV/text output), itu vuln
+                # Jika payload ter-reflect AS-IS di response (terutama di CSV/text output), that vuln
                 if payload in r.text:
                     content_type = r.headers.get("Content-Type", "")
                     is_csv = "csv" in content_type or "excel" in content_type or "spreadsheet" in content_type

@@ -29,21 +29,21 @@ def _logger():
 @tool("stored_xss_scanner")
 def stored_xss_scanner(url: str, params: str = "", check_url: str = "") -> str:
     """
-    Scan untuk Stored (Persistent) XSS.
+    Scan for Stored (Persistent) XSS.
     Submit payload ke URL target, lalu cek apakah payload muncul di check_url.
     url: endpoint tempat submit payload (misal /api/comment, /profile)
-    params: parameter yang di-test (e.g., "name,comment,bio")
-    check_url: URL tempat payload seharusnya muncul setelah tersimpan (e.g., /comments, /profile/view)
-               Kalau kosong, gue cek di URL yang sama setelah submit.
+    params: parameter that di-test (e.g., "name,comment,bio")
+    check_url: URL tempat payload seharusnya muncul sealready tersimpan (e.g., /comments, /profile/view)
+               Kalau kosong, gue cek di URL that sama sealready submit.
     """
     tool_name = "Stored XSS Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting stored XSS scan pada {url}")
+    logger.add_log(tool_name, "START", f"Starting stored XSS scan on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     approved = require_approval(
-        action=f"Stored XSS scan pada {url}",
-        context=f"Submit XSS payload ke form/API, lalu fetch {check_url or url} untuk verifikasi persistence",
+        action=f"Stored XSS scan on {url}",
+        context=f"Submit XSS payload ke form/API, lalu fetch {check_url or url} for verifikasi persistence",
         risk="medium",
         exec_logger=logger,
     )
@@ -62,8 +62,8 @@ def stored_xss_scanner(url: str, params: str = "", check_url: str = "") -> str:
     # ── DALFOX CONFIRMATION FUNCTION ──────────────────────────────────────────
     def _run_dalfox_confirmation(base_url: str, verify_url: str, params: list, logger) -> dict:
         """
-        Run dalfox sebagai confirmation step untuk XSS.
-        Return dict dengan is_confirmed, evidence, severity.
+        Run dalfox sebagai confirmation step for XSS.
+        Return dict with is_confirmed, evidence, severity.
         """
         import subprocess
         import tempfile
@@ -178,7 +178,7 @@ def stored_xss_scanner(url: str, params: str = "", check_url: str = "") -> str:
                 "note": f"dalfox error: {str(e)[:100]}",
             }
 
-    # Unique marker biar bisa track payload spesifik
+    # Unique marker biar can track payload spesifik
     marker = "NEXUSXSS42"
 
     # ── COMPREHENSIVE XSS PAYLOAD LIBRARY ─────────────────────────────────────
@@ -351,14 +351,14 @@ def stored_xss_scanner(url: str, params: str = "", check_url: str = "") -> str:
 @tool("dom_xss_scanner")
 def dom_xss_scanner(url: str) -> str:
     """
-    Scan untuk DOM-based XSS using Playwright (headless browser).
+    Scan for DOM-based XSS using Playwright (headless browser).
     Analyzes dangerous JavaScript sinks: innerHTML, eval, document.write,
     location.href, outerHTML, insertAdjacentHTML, setTimeout with string, dll.
     Juga checks URL fragment (#) based injection.
     """
     tool_name = "DOM XSS Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting DOM XSS scan pada {url}")
+    logger.add_log(tool_name, "START", f"Starting DOM XSS scan on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     findings = {
@@ -487,13 +487,13 @@ def dom_xss_scanner(url: str) -> str:
 @tool("jsonp_injection_scanner")
 def jsonp_injection_scanner(url: str) -> str:
     """
-    Scan untuk JSONP Injection vulnerability.
-    JSONP endpoints yang pake user-controlled callback parameter rentan
-    terhadap data theft dan XSS. Cek apakah callback param bisa di-inject.
+    Scan for JSONP Injection vulnerability.
+    JSONP endpoints that pake user-controlled callback parameter rentan
+    terhadap data theft dan XSS. Cek apakah callback param can di-inject.
     """
     tool_name = "JSONP Injection Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting JSONP injection scan pada {url}")
+    logger.add_log(tool_name, "START", f"Starting JSONP injection scan on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     domain = _domain_of(url)

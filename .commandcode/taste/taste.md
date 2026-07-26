@@ -13,7 +13,7 @@
 
 # code-style
 - AI agent reports must use Github Flavored Markdown (GFM) format only; no ASCII art decorations or manual borders. Confidence: 0.75
-- All code, comments, tool output, and documentation (including README) must be in English for GitHub accessibility. Confidence: 0.90
+- All code, comments, tool output, and documentation (including README) must be in English for GitHub accessibility. Confidence: 0.95
 
 # communication
 - Communicate with the user using casual Indonesian language (e.g., "kocak", "men", "gue", "lu", "bentar dulu"). Confidence: 0.80

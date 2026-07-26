@@ -3,7 +3,7 @@ import requests
 from langchain.tools import tool
 from core.auth_store import get_auth_kwargs
 
-# Fingerprints populer untuk Subdomain Takeover
+# Fingerprints populer for Subdomain Takeover
 FINGERPRINTS = {
     # ── Cloud Hosting ─────────────────────────────────────────────────────────
     "github.io": "There isn't a GitHub Pages site here",
@@ -110,7 +110,7 @@ FINGERPRINTS = {
 def detect_subdomain_takeover(subdomain: str) -> str:
     """
     Nge-cek apakah sebuah subdomain rentan terhadap Subdomain Takeover 
-    dengan menganalisa DNS CNAME dan fingerprint response HTTP-nya.
+    with menganalisa DNS CNAME dan fingerprint response HTTP-nya.
     """
     subdomain = subdomain.strip().replace("http://", "").replace("https://", "").split("/")[0]
     
@@ -119,9 +119,9 @@ def detect_subdomain_takeover(subdomain: str) -> str:
         answers = dns.resolver.resolve(subdomain, 'CNAME')
         cname_target = str(answers[0].target).lower()
     except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, dns.exception.DNSException):
-        return f"[+] {subdomain}: Not memiliki CNAME record yang mengarah ke external service (Aman)."
+        return f"[+] {subdomain}: Not memiliki CNAME record that mengarah ke external service (Aman)."
 
-    # 2. Cek apakah CNAME mengarah ke cloud provider yang kita kenal
+    # 2. Cek apakah CNAME mengarah ke cloud provider that kita kenal
     matched_provider = None
     for provider, sig in FINGERPRINTS.items():
         if provider in cname_target:
@@ -129,11 +129,11 @@ def detect_subdomain_takeover(subdomain: str) -> str:
             break
             
     if not matched_provider:
-        return f"[+] {subdomain}: Memiliki CNAME ke {cname_target}, tapi not cocok dengan signature takeover yang diketahui."
+        return f"[+] {subdomain}: Memiliki CNAME ke {cname_target}, tapi not cocok with signature takeover that diketahui."
 
-    # 3. Kirim request HTTP untuk konfirmasi Fingerprint (Vulnerable atau Nggak)
+    # 3. Kirim request HTTP for confirmation Fingerprint (Vulnerable atau Nggak)
     try:
-        # Kirim request ke HTTP dan HTTPS dengan timeout cepat
+        # Kirim request ke HTTP dan HTTPS with timeout cepat
         url = f"http://{subdomain}"
         auth_kw = get_auth_kwargs(subdomain)
         response = auth_get(url, timeout=5, headers={"User-Agent": "Mozilla/5.0"}, **auth_kw)
@@ -146,4 +146,4 @@ def detect_subdomain_takeover(subdomain: str) -> str:
         return f"[+] {subdomain}: Mengarah ke {matched_provider} ({cname_target}), tetapi layanannya tampaknya aktif / already diklaim."
         
     except requests.RequestException:
-        return f"[-] {subdomain}: Failed memvalidasi HTTP response untuk CNAME {cname_target} (Server down / RTO)."
+        return f"[-] {subdomain}: Failed memvalidasi HTTP response for CNAME {cname_target} (Server down / RTO)."

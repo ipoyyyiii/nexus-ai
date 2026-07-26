@@ -205,7 +205,7 @@ class WAFDetector:
 
     def detect(self, url: str, exec_logger=None) -> Dict[str, Any]:
         """
-        Detect WAF pada target URL.
+        Detect WAF on target URL.
         
         Return:
             {
@@ -348,7 +348,7 @@ class WAFDetector:
         return result
 
     def _calculate_confidence(self, match_count: int) -> str:
-        """Calculate confidence level berdasarkan jumlah matches."""
+        """Calculate confidence level based on jumlah matches."""
         if match_count >= 3:
             return "high"
         elif match_count >= 2:
@@ -357,7 +357,7 @@ class WAFDetector:
             return "low"
 
     def _get_recommendations(self, waf_name: str, strategy: Dict) -> List[str]:
-        """Generate scanning recommendations berdasarkan WAF."""
+        """Generate scanning recommendations based on WAF."""
         recs = []
 
         rate = strategy.get("rate_limit", 2.0)
@@ -382,7 +382,7 @@ class WAFDetector:
         return recs
 
     def get_strategy(self, url: str) -> Dict[str, Any]:
-        """Get scanning strategy untuk target URL."""
+        """Get scanning strategy for target URL."""
         result = self.detect(url)
         return result.get("strategy", {})
 

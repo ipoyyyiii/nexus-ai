@@ -1,14 +1,14 @@
 """
 AUTH STORE
 ==========
-Thread-safe session storage per-domain buat authenticated scanning.
+Thread-safe session storage per-domain for authenticated scanning.
 
 Flow:
 1. Tool detect login wall → trigger auth_checkpoint
 2. User kasih credentials (auto-login) ATAU session cookies (manual)
 3. Session saved di store
-4. Semua tools bisa akses session yang sama (share antar tools)
-5. Session di-cleanup otomatis pas job selesai
+4. Semua tools can akses session that sama (share antar tools)
+5. Session cleaned up otomatis pas job selesai
 
 Structure:
     auth_store.get_session("target.com") → AuthSession atau None
@@ -71,7 +71,7 @@ class AuthSession:
         self.request_count += 1
 
     def get_request_kwargs(self) -> Dict[str, Any]:
-        """Return kwargs yang bisa langsung dipake di requests.get/post."""
+        """Return kwargs that can langsung dipake di requests.get/post."""
         self.mark_used()
         kwargs = {}
         if self.cookies:
@@ -103,12 +103,12 @@ class AuthStore:
         self._sessions: Dict[str, AuthSession] = {}
 
     def save_session(self, domain: str, session: AuthSession):
-        """Simpan session untuk domain."""
+        """Simpan session for domain."""
         with self._lock:
             self._sessions[domain] = session
 
     def get_session(self, domain: str) -> Optional[AuthSession]:
-        """Ambil session untuk domain. Return None kalau gak ada atau expired."""
+        """Ambil session for domain. Return None kalau gak ada atau expired."""
         with self._lock:
             session = self._sessions.get(domain)
             if session and session.is_expired():
@@ -117,21 +117,21 @@ class AuthStore:
             return session
 
     def has_session(self, domain: str) -> bool:
-        """Cek apakah ada session aktif untuk domain."""
+        """Cek apakah ada session aktif for domain."""
         return self.get_session(domain) is not None
 
     def clear_session(self, domain: str):
-        """Hapus session untuk domain."""
+        """Delete session for domain."""
         with self._lock:
             self._sessions.pop(domain, None)
 
     def clear_all(self):
-        """Hapus semua session (dipanggil pas job selesai)."""
+        """Delete all session (dipanggil pas job selesai)."""
         with self._lock:
             self._sessions.clear()
 
     def list_sessions(self) -> Dict[str, Dict]:
-        """List semua session aktif."""
+        """List all session aktif."""
         with self._lock:
             return {
                 domain: session.to_dict()
@@ -142,7 +142,7 @@ class AuthStore:
     def inject_into_kwargs(self, domain: str, kwargs: Dict) -> Dict:
         """
         Auto-inject session cookies/headers ke requests kwargs.
-        Dipanggil dari tools senot yet make request.
+        Dipanggil from tools senot yet make request.
         """
         session = self.get_session(domain)
         if not session:
@@ -172,7 +172,7 @@ class AuthStore:
 def inject_into_session(requests_session, domain: str):
     """
     Inject session cookies/headers ke requests.Session object.
-    Dipakai oleh tools yang pakai shared SESSION object.
+    Used by tools that use shared SESSION object.
 
     Usage:
         from auth_store import inject_into_session
@@ -201,13 +201,13 @@ def authenticated_request(
     **kwargs,
 ):
     """
-    Helper function buat make authenticated request dengan login wall detection.
+    Helper function for make authenticated request with login wall detection.
 
     Flow:
-    1. Cek auth_store untuk session
+    1. Cek auth_store for session
     2. Inject session ke request
     3. Make request
-    4. Cek apakah response adalah login wall
+    4. Cek apakah response is login wall
     5. Kalau login wall → trigger auth checkpoint
     6. Return (response, login_wall_result)
 
@@ -340,8 +340,8 @@ def authenticated_request(
 
 def get_auth_kwargs(domain: str) -> Dict:
     """
-    Return kwargs dict (cookies + headers) buat di-inject ke requests.get/post.
-    Dipakai oleh tools yang gak punya shared SESSION object.
+    Return kwargs dict (cookies + headers) for di-inject ke requests.get/post.
+    Used by tools that do not have shared SESSION object.
 
     Usage:
         from auth_store import get_auth_kwargs
@@ -360,7 +360,7 @@ def get_auth_kwargs(domain: str) -> Dict:
 
 def auth_get(url: str, timeout: int = 10, exec_logger=None, **kwargs) -> requests.Response:
     """
-    Drop-in replacement buat requests.get() dengan auth handling.
+    Drop-in replacement for requests.get() with auth handling.
     Automatic login wall detection + credential injection.
     """
     response, _ = authenticated_request(url, "GET", timeout=timeout, exec_logger=exec_logger, **kwargs)
@@ -369,7 +369,7 @@ def auth_get(url: str, timeout: int = 10, exec_logger=None, **kwargs) -> request
 
 def auth_post(url: str, data=None, json_data=None, timeout: int = 10, exec_logger=None, **kwargs) -> requests.Response:
     """
-    Drop-in replacement buat requests.post() dengan auth handling.
+    Drop-in replacement for requests.post() with auth handling.
     Automatic login wall detection + credential injection.
     """
     response, _ = authenticated_request(url, "POST", data=data, json_data=json_data, timeout=timeout, exec_logger=exec_logger, **kwargs)

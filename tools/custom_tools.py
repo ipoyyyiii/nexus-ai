@@ -41,7 +41,7 @@ class ExecutionLogger:
         self.lock = threading.Lock()
     
     def add_log(self, tool_name: str, status: str, message: str, details: Dict = None):
-        """Log hasil eksekusi tool dengan timestamp — data sensitif di-redact dulu."""
+        """Log hasil eksekusi tool with timestamp — data sensitif di-redact dulu."""
         with self.lock:
             log_entry = {
                 "timestamp": datetime.now().isoformat(),
@@ -54,12 +54,12 @@ class ExecutionLogger:
             print(f"[LOG] {log_entry}")
     
     def get_logs(self) -> List[Dict]:
-        """Return semua logs"""
+        """Return all logs"""
         with self.lock:
             return self.logs.copy()
     
     def clear_logs(self):
-        """Clear semua logs"""
+        """Clear all logs"""
         with self.lock:
             self.logs.clear()
     
@@ -89,7 +89,7 @@ exec_logger = ExecutionLogger()
 # TOOL 1: ADVANCED ACTIVE RECON (UPGRADED)
 # ==========================================
 def scan_port(ip, port):
-    """Fungsi internal buat scanning port super cepat"""
+    """Fungsi internal for scanning port super cepat"""
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(0.5)
@@ -104,12 +104,12 @@ def scan_port(ip, port):
 @tool("Active Recon Target")
 def recon_target(url: str) -> str:
     """
-    Tool DEEP RECON untuk Information Gathering tingkat lanjut.
+    Tool DEEP RECON for Information Gathering tingkat lanjut.
     Executing: DNS Resolution, Fast Port Scanning, Deep WAF Detection, 
     Missing Security Headers, dan Tech-Stack Fingerprinting.
     """
     tool_name = "Active Recon Target"
-    exec_logger.add_log(tool_name, "START", f"Starting deep recon untuk {url}")
+    exec_logger.add_log(tool_name, "START", f"Starting deep recon for {url}")
     if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
     
     try:
@@ -136,7 +136,7 @@ def recon_target(url: str) -> str:
         
         exec_logger.add_log(tool_name, "SUCCESS", f"Port scan selesai: {len(open_ports)} port terbuka", {"open_ports": open_ports})
 
-        # 3. HTTP Request untuk Headers & Body Analysis (with auth + stealth support)
+        # 3. HTTP Request for Headers & Body Analysis (with auth + stealth support)
         exec_logger.add_log(tool_name, "PROCESSING", "Analyzing HTTP response headers dan body")
         from core.auth_store import authenticated_request
         response, login_wall = authenticated_request(
@@ -212,15 +212,15 @@ def recon_target(url: str) -> str:
 @tool("SQL Injection Scanner")
 def scan_sql_injection(url: str, params: str = "") -> str:
     """
-    Scan untuk kerentanan SQL Injection pada target URL.
+    Scan for kerentanan SQL Injection on target URL.
     params: comma-separated parameter names (e.g., "id,username,email")
     """
     tool_name = "SQL Injection Scanner"
-    exec_logger.add_log(tool_name, "START", f"Starting SQLi scan pada {url}")
+    exec_logger.add_log(tool_name, "START", f"Starting SQLi scan on {url}")
     if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     approved = require_approval(
-        action=f"SQL Injection scan pada {url}",
+        action=f"SQL Injection scan on {url}",
         context=f"Params: {params or 'default (id,q,search)'}",
         risk="medium",
         exec_logger=exec_logger,
@@ -338,7 +338,7 @@ def scan_sql_injection(url: str, params: str = "") -> str:
         # Combine all payloads
         all_payloads = list(set(error_payloads + union_payloads + waf_bypass_payloads))
 
-        # Paired Semantic Testing — kirim dua payload yang harusnya hasil beda
+        # Paired Semantic Testing — kirim dua payload that harusnya hasil beda
         semantic_pairs = {
             "numeric": [("1+0", "1+1"), ("1", "2"), ("0", "1")],
             "string": [("test", "test' OR '1'='1"), ("a", "b"), ("normal", "normal'--")],
@@ -348,7 +348,7 @@ def scan_sql_injection(url: str, params: str = "") -> str:
         vulnerabilities = []
         seen_params = set()  # Deduplication — satu finding per parameter
         
-        exec_logger.add_log(tool_name, "PROCESSING", f"Testing {len(param_list)} parameters dengan {len(all_payloads)} payloads + {len(time_payloads)} time-based + semantic pairs")
+        exec_logger.add_log(tool_name, "PROCESSING", f"Testing {len(param_list)} parameters with {len(all_payloads)} payloads + {len(time_payloads)} time-based + semantic pairs")
         
         # Capture baseline using response differ
         baseline = differ.capture_baseline(url)
@@ -374,7 +374,7 @@ def scan_sql_injection(url: str, params: str = "") -> str:
                     
                     # High vulnerability score = likely vulnerable
                     if diff["vulnerability_score"] >= 0.5:
-                        # Confirmation step: kirim safe payload buat verifikasi
+                        # Confirmation step: kirim safe payload for verifikasi
                         _baseline_ref = dict(baseline)
                         diff["_baseline"] = _baseline_ref
                         confirmation = differ.confirm_detection(url, param, diff)
@@ -475,7 +475,7 @@ def scan_sql_injection(url: str, params: str = "") -> str:
                             elapsed = time.time() - start
                             delays.append(elapsed)
                         
-                        # Semua delay harus > 4 detik
+                        # Semua delay must > 4 detik
                         if all(d >= 4.0 for d in delays):
                             avg_delay = sum(delays) / len(delays)
                             vulnerabilities.append({
@@ -493,7 +493,7 @@ def scan_sql_injection(url: str, params: str = "") -> str:
                             exec_logger.add_log(tool_name, "WARNING", f"Time-based SQLi confirmed: {param}, DB={db_type}, delay={avg_delay:.1f}s")
                             break
                     except requests.Timeout:
-                        # Timeout juga bisa indikasi success
+                        # Timeout juga can indikasi success
                         vulnerabilities.append({
                             "parameter": param,
                             "payload": payload,
@@ -534,7 +534,7 @@ def scan_sql_injection(url: str, params: str = "") -> str:
 def _run_sqlmap_confirmation(url: str, param: str, exec_logger) -> dict:
     """
     Run sqlmap sebagai confirmation step.
-    Return dict dengan is_confirmed, details, severity.
+    Return dict with is_confirmed, details, severity.
     """
     import subprocess
     import json
@@ -684,14 +684,14 @@ def _run_sqlmap_confirmation(url: str, param: str, exec_logger) -> dict:
 @tool("XSS & CSRF Detector")
 def detect_xss_csrf(url: str) -> str:
     """
-    Deteksi kerentanan XSS dan CSRF pada target.
+    Deteksi kerentanan XSS dan CSRF on target.
     """
     tool_name = "XSS & CSRF Detector"
-    exec_logger.add_log(tool_name, "START", f"Starting XSS/CSRF detection pada {url}")
+    exec_logger.add_log(tool_name, "START", f"Starting XSS/CSRF detection on {url}")
     if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     approved = require_approval(
-        action=f"XSS/CSRF scan pada {url}",
+        action=f"XSS/CSRF scan on {url}",
         context="Sending payload script reflected-XSS ke parameter 'test'",
         risk="medium",
         exec_logger=exec_logger,
@@ -716,7 +716,7 @@ def detect_xss_csrf(url: str) -> str:
             "missing_csrf_tokens": False
         }
         
-        exec_logger.add_log(tool_name, "PROCESSING", "Scanning untuk XSS vectors")
+        exec_logger.add_log(tool_name, "PROCESSING", "Scanning for XSS vectors")
         
         # Test XSS
         for payload in xss_payloads:
@@ -885,7 +885,7 @@ def enumerate_dns_subdomains(domain: str) -> str:
     Enumerate DNS records dan discover subdomains.
     """
     tool_name = "DNS & Subdomain Enumerator"
-    exec_logger.add_log(tool_name, "START", f"Starting DNS enumeration untuk {domain}")
+    exec_logger.add_log(tool_name, "START", f"Starting DNS enumeration for {domain}")
     if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
     
     try:
@@ -951,7 +951,7 @@ def enumerate_dns_subdomains(domain: str) -> str:
 @tool("Password Strength Analyzer")
 def analyze_password_strength(password: str) -> str:
     """
-    Analyzing kekuatan password berdasarkan entropy, patterns, dan common attacks.
+    Analyzing kekuatan password based on entropy, patterns, dan common attacks.
     """
     tool_name = "Password Strength Analyzer"
     exec_logger.add_log(tool_name, "START", f"Analyzing password strength")
@@ -1032,10 +1032,10 @@ def analyze_password_strength(password: str) -> str:
 @tool("API Security Tester")
 def test_api_security(api_url: str, method: str = "GET") -> str:
     """
-    Test API endpoints untuk common security issues.
+    Test API endpoints for common security issues.
     """
     tool_name = "API Security Tester"
-    exec_logger.add_log(tool_name, "START", f"Testing API security pada {api_url}")
+    exec_logger.add_log(tool_name, "START", f"Testing API security on {api_url}")
     if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
     
     try:
@@ -1112,14 +1112,14 @@ def test_api_security(api_url: str, method: str = "GET") -> str:
 @tool("LFI/RFI Scanner")
 def scan_lfi_rfi(url: str, param: str = "file") -> str:
     """
-    Scan untuk Local File Inclusion (LFI) dan Remote File Inclusion (RFI).
+    Scan for Local File Inclusion (LFI) dan Remote File Inclusion (RFI).
     """
     tool_name = "LFI/RFI Scanner"
-    exec_logger.add_log(tool_name, "START", f"Scanning LFI/RFI pada {url}")
+    exec_logger.add_log(tool_name, "START", f"Scanning LFI/RFI on {url}")
     if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     approved = require_approval(
-        action=f"LFI/RFI scan pada {url}",
+        action=f"LFI/RFI scan on {url}",
         context=f"param={param}, termasuk percobaan akses /etc/passwd dan OOB RFI test",
         risk="medium",
         exec_logger=exec_logger,
@@ -1206,14 +1206,14 @@ def scan_lfi_rfi(url: str, param: str = "file") -> str:
 @tool("Header Injection Tester")
 def test_header_injection(url: str) -> str:
     """
-    Test untuk Header Injection vulnerabilities (HTTP Response Splitting, CRLF Injection).
+    Test for Header Injection vulnerabilities (HTTP Response Splitting, CRLF Injection).
     """
     tool_name = "Header Injection Tester"
-    exec_logger.add_log(tool_name, "START", f"Testing header injection pada {url}")
+    exec_logger.add_log(tool_name, "START", f"Testing header injection on {url}")
     if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     approved = require_approval(
-        action=f"Header injection test pada {url}",
+        action=f"Header injection test on {url}",
         context="Sending CRLF/null-byte payload via custom headers",
         risk="low",
         exec_logger=exec_logger,
@@ -1241,7 +1241,7 @@ def test_header_injection(url: str) -> str:
         for injection_type, payload in injection_payloads.items():
             try:
                 rate_limiter.wait(domain)
-                # Test dengan custom header
+                # Test with custom header
                 headers = {
                     "User-Agent": f"Mozilla/5.0{payload}",
                     "X-Test": payload
@@ -1276,9 +1276,9 @@ def test_header_injection(url: str) -> str:
 # ==========================================
 @tool("Baca Log Burp Suite")
 def baca_log_burp(file_path: str) -> str:
-    """Reading file hasil export HTTP History dari Burp Suite (format JSON)."""
+    """Reading file hasil export HTTP History from Burp Suite (format JSON)."""
     tool_name = "Baca Log Burp Suite"
-    exec_logger.add_log(tool_name, "START", f"Reading Burp log dari {file_path}")
+    exec_logger.add_log(tool_name, "START", f"Reading Burp log from {file_path}")
     if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
     
     try:
@@ -1322,7 +1322,7 @@ def tembak_payload(url: str, method: str, headers_json: str, body_data: str) -> 
     )
     if not approved:
         exec_logger.add_log(tool_name, "BLOCKED", "Request cancelled: approval rejected/timeout/no-context")
-        return "EKSEKUSI DIBATALKAN: human-in-the-loop approval rejected atau timeout. Not ada request yang sent."
+        return "EKSEKUSI DIBATALKAN: human-in-the-loop approval rejected atau timeout. Not ada request that sent."
 
     try:
         headers = json.loads(headers_json) if headers_json else {}
@@ -1350,7 +1350,7 @@ def tembak_payload(url: str, method: str, headers_json: str, body_data: str) -> 
 def report_new_endpoint(session_id: str, new_url: str, discovered_by: str) -> str:
     """
     Used ketika agent menemukan URL, path API, atau subdomain baru 
-    di tengah proses pentesting. URL ini akan dimasukkan ke antrean scan berikutnya.
+    di tengah proses pentesting. URL this will dimasukkan ke antrean scan berikutnya.
     """
     url = new_url.strip()
     try:
@@ -1362,7 +1362,7 @@ def report_new_endpoint(session_id: str, new_url: str, discovered_by: str) -> st
         )
         if res.status_code == 200:
             return f"[SUCCESS] Target baru '{url}' success dimasukkan ke antrean pool oleh {discovered_by}."
-        return f"[-] Failed mendaftarkan target, server merespon dengan status: {res.status_code}"
+        return f"[-] Failed mendaftarkan target, server merespon with status: {res.status_code}"
     except Exception as e:
         return f"[-] Failed menghubungi internal orchestrator: {str(e)}"
 

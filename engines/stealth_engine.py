@@ -60,7 +60,7 @@ BROWSER_HEADERS = {
     "Connection": "keep-alive",
 }
 
-# ── API-like Headers (untuk API endpoints) ────────────────────────────────────
+# ── API-like Headers (for API endpoints) ────────────────────────────────────
 
 API_HEADERS = {
     "Accept": "application/json, text/plain, */*",
@@ -79,7 +79,7 @@ API_HEADERS = {
 
 class StealthEngine:
     """
-    Anti-detection engine buat bikin requests lo gak keliatan automated.
+    Anti-detection engine for bikin requests lo gak keliatan automated.
     """
 
     def __init__(self):
@@ -93,7 +93,7 @@ class StealthEngine:
 
     def get_browser_headers(self, url: str, is_api: bool = False) -> Dict[str, str]:
         """
-        Return browser-like headers yang konsisten dengan User-Agent.
+        Return browser-like headers that konsisten with User-Agent.
         """
         ua = self.get_random_ua()
         headers = {
@@ -105,7 +105,7 @@ class StealthEngine:
         else:
             headers.update(BROWSER_HEADERS)
 
-        # Tambah Referer yang realistis
+        # Tambah Referer that realistis
         parsed = urlparse(url)
         base = f"{parsed.scheme}://{parsed.netloc}"
         headers["Referer"] = f"{base}/"
@@ -174,7 +174,7 @@ except ImportError:
 
 class StealthSession:
     """
-    TLS-fingerprint-aware session yang mimic browser.
+    TLS-fingerprint-aware session that mimic browser.
     Pakai tls_client kalau available, fallback ke requests.
     """
 
@@ -201,7 +201,7 @@ class StealthSession:
 
     def request(self, method: str, url: str, **kwargs) -> Any:
         """
-        Make request dengan TLS fingerprint spoofing.
+        Make request with TLS fingerprint spoofing.
         """
         session = self.get_session()
 
@@ -239,17 +239,17 @@ def _domain_of(url: str) -> str:
 
 def stealth_get(url: str, **kwargs) -> Any:
     """
-    Drop-in replacement buat requests.get() dengan stealth.
+    Drop-in replacement for requests.get() with stealth.
     Tambahkan auto-jitter, random UA, browser headers.
     """
     return stealth_session.request("GET", url, **kwargs)
 
 
 def stealth_post(url: str, **kwargs) -> Any:
-    """Drop-in replacement buat requests.post() dengan stealth."""
+    """Drop-in replacement for requests.post() with stealth."""
     return stealth_session.request("POST", url, **kwargs)
 
 
 def stealth_request(method: str, url: str, **kwargs) -> Any:
-    """Drop-in replacement buat requests.request() dengan stealth."""
+    """Drop-in replacement for requests.request() with stealth."""
     return stealth_session.request(method, url, **kwargs)

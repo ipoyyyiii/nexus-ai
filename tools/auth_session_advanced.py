@@ -29,7 +29,7 @@ def _logger():
 @tool("session_management_scanner")
 def session_management_scanner(url: str, login_url: str = "", username: str = "", password: str = "") -> str:
     """
-    Scan untuk kerentanan session management:
+    Scan for kerentanan session management:
     - Cookie flags (HttpOnly, Secure, SameSite)
     - Session fixation
     - Session timeout
@@ -37,11 +37,11 @@ def session_management_scanner(url: str, login_url: str = "", username: str = ""
     - Session ID entropy / predictability
     url: target base URL
     login_url: endpoint login (e.g. /login) — opsional
-    username/password: credentials untuk test session behavior — opsional
+    username/password: credentials for test session behavior — opsional
     """
     tool_name = "Session Management Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting session management scan pada {url}")
+    logger.add_log(tool_name, "START", f"Starting session management scan on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     domain = _domain_of(url)
@@ -249,7 +249,7 @@ def session_management_scanner(url: str, login_url: str = "", username: str = ""
                 findings["session_fixation"] = True
                 findings["summary"].append({
                     "type": "Session Fixation",
-                    "detail": "Session ID not berubah setelah login — attacker bisa pre-set session ID",
+                    "detail": "Session ID not berubah sealready login — attacker can pre-set session ID",
                     "severity": "High"
                 })
                 logger.add_log(tool_name, "WARNING", "Session fixation detected!")
@@ -293,7 +293,7 @@ def session_management_scanner(url: str, login_url: str = "", username: str = ""
                         findings["logout_invalidation"] = True
                         findings["summary"].append({
                             "type": "Logout Token Not Invalidated",
-                            "detail": f"Session cookie '{cookie_name}' masih valid setelah logout",
+                            "detail": f"Session cookie '{cookie_name}' masih valid sealready logout",
                             "severity": "High"
                         })
                         logger.add_log(tool_name, "WARNING", "Logout does not invalidate session token!")
@@ -307,7 +307,7 @@ def session_management_scanner(url: str, login_url: str = "", username: str = ""
     logger.add_log(tool_name, "PROCESSING", "Checking account enumeration via response diff")
     try:
         rate_limiter.wait(domain)
-        # Test dengan username yang kemungkinan valid vs jelas invalid
+        # Test with username that kemungkinan valid vs jelas invalid
         r_valid = auth_post(
             login_endpoint,
             data={"username": "admin", "password": "wrongpassword_xyz123"},
@@ -357,11 +357,11 @@ def password_reset_tester(url: str, email: str = "test@test.com") -> str:
     - Host header poisoning dalam reset email
     - Account enumeration via reset response
     url: base URL aplikasi
-    email: email untuk test password reset
+    email: email for test password reset
     """
     tool_name = "Password Reset Tester"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Testing password reset flow pada {url}")
+    logger.add_log(tool_name, "START", f"Testing password reset flow on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     domain = _domain_of(url)
@@ -426,8 +426,8 @@ def password_reset_tester(url: str, email: str = "test@test.com") -> str:
             headers=poisoned_headers,
             timeout=5, verify=False
         )
-        # Jika not error (500) dan server menerima request dengan Host palsu,
-        # kemungkinan reset link di email akan pake domain attacker
+        # Jika not error (500) dan server menerima request with Host palsu,
+        # kemungkinan reset link di email will pake domain attacker
         if r.status_code in [200, 201, 302]:
             findings["vulnerabilities"].append({
                 "type": "Possible Host Header Poisoning in Password Reset",

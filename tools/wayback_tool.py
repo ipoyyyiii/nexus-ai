@@ -29,16 +29,16 @@ INTERESTING_EXTENSIONS = {
 @tool("wayback_scraper")
 def wayback_scraper(domain: str) -> str:
     """
-    Scrape Wayback Machine (archive.org) buat nemuin semua URL historis dari target domain.
-    Sangat efektif buat nemuin endpoint lama, file sensitif, dan parameter tersembunyi
-    yang udah deleted dari UI tapi servernya masih aktif.
+    Scrape Wayback Machine (archive.org) for nemuin all URL historis from target domain.
+    Sangat efektif for nemuin endpoint lama, file sensitif, dan parameter tersembunyi
+    that udah deleted from UI tapi servernya masih aktif.
     """
     if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     # Bersihin domain input
     domain = domain.strip().replace("https://", "").replace("http://", "").split("/")[0]
 
-    exec_logger.add_log("Wayback Scraper", "START", f"Scraping Wayback Machine untuk {domain}")
+    exec_logger.add_log("Wayback Scraper", "START", f"Scraping Wayback Machine for {domain}")
 
     try:
         # Hit Wayback CDX API — collapse by urlkey biar gak dobel
@@ -52,13 +52,13 @@ def wayback_scraper(domain: str) -> str:
             f"&filter=statuscode:200"
         )
 
-        exec_logger.add_log("Wayback Scraper", "PROCESSING", "Fetching URL list dari CDX API")
+        exec_logger.add_log("Wayback Scraper", "PROCESSING", "Fetching URL list from CDX API")
         resp = auth_get(cdx_url, timeout=30)
         resp.raise_for_status()
 
         raw = resp.json()
         if not raw or len(raw) <= 1:
-            return f"Wayback Machine not punya data historis untuk {domain}."
+            return f"Wayback Machine not punya data historis for {domain}."
 
         # Skip header row
         entries = raw[1:]
@@ -164,13 +164,13 @@ def wayback_scraper(domain: str) -> str:
                 findings["cloud_paths"].append(url)
                 continue
 
-            # Cek URL dengan parameter (potential injection points)
+            # Cek URL with parameter (potential injection points)
             if "?" in url and "=" in url:
                 findings["parameters"].append(url)
 
         # Build output report
         total_interesting = sum(len(v) for v in findings.values())
-        exec_logger.add_log("Wayback Scraper", "SUCCESS", f"Interesting URLs: {total_interesting} dari {len(entries)} total")
+        exec_logger.add_log("Wayback Scraper", "SUCCESS", f"Interesting URLs: {total_interesting} from {len(entries)} total")
 
         output = f"=== WAYBACK MACHINE RESULTS FOR {domain} ===\n"
         output += f"Total URL historis: {len(entries)} | Interesting: {total_interesting}\n\n"
@@ -236,13 +236,13 @@ def wayback_scraper(domain: str) -> str:
                 output += f"  - {url}\n"
 
         if total_interesting == 0:
-            output += "Not ada URL menarik yang found dari historical data.\n"
+            output += "Not ada URL menarik that found from historical data.\n"
 
         return output
 
     except requests.Timeout:
         exec_logger.add_log("Wayback Scraper", "ERROR", "Timeout saat fetch CDX API")
-        return f"Timeout: Wayback Machine not merespons dalam 30 detik untuk {domain}."
+        return f"Timeout: Wayback Machine not merespons dalam 30 detik for {domain}."
     except Exception as e:
         exec_logger.add_log("Wayback Scraper", "ERROR", f"Scraping failed: {str(e)}")
         return f"Wayback scraping error: {str(e)}"

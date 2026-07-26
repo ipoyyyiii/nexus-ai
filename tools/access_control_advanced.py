@@ -29,7 +29,7 @@ def _logger():
 @tool("access_control_scanner")
 def access_control_scanner(url: str, cookies: str = "", auth_header: str = "") -> str:
     """
-    Scan untuk Broken Access Control vulnerabilities:
+    Scan for Broken Access Control vulnerabilities:
     - Forced browsing (unauth endpoint discovery)
     - HTTP method bypass (PUT/DELETE/PATCH)
     - Mass assignment (extra params injection)
@@ -41,7 +41,7 @@ def access_control_scanner(url: str, cookies: str = "", auth_header: str = "") -
     """
     tool_name = "Access Control Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting access control scan pada {url}")
+    logger.add_log(tool_name, "START", f"Starting access control scan on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     domain = _domain_of(url)
@@ -57,7 +57,7 @@ def access_control_scanner(url: str, cookies: str = "", auth_header: str = "") -
                 k, v = part.strip().split("=", 1)
                 cookie_dict[k.strip()] = v.strip()
 
-    # Inject dari auth_store jika ada session
+    # Inject from auth_store jika ada session
     auth_session = auth_store.get_session(domain)
     if auth_session:
         if auth_session.headers:

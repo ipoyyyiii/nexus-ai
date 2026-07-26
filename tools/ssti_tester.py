@@ -40,7 +40,7 @@ SSTI_PAYLOADS = [
 
 
 def _test_ssti_on_param(url: str, param: str, method: str = "GET") -> list:
-    """Test SSTI pada satu parameter."""
+    """Test SSTI on satu parameter."""
     findings = []
     domain = _domain_of(url)
     auth_kwargs = get_auth_kwargs(domain)
@@ -73,7 +73,7 @@ def _test_ssti_on_param(url: str, param: str, method: str = "GET") -> list:
                     "method": method,
                     "severity": "Critical",
                     "detail": (
-                        f"SSTI confirmed pada parameter '{param}' — "
+                        f"SSTI confirmed on parameter '{param}' — "
                         f"payload '{payload}' dievaluasi jadi '{expected}'. "
                         f"Template engine: {engine}. "
                         f"Potensi RCE (Remote Code Execution)."
@@ -93,8 +93,8 @@ def _test_ssti_on_param(url: str, param: str, method: str = "GET") -> list:
 
 def _run_tplmap_confirmation(url: str, params: list, logger) -> dict:
     """
-    Run tplmap sebagai confirmation step untuk SSTI.
-    Return dict dengan is_confirmed, evidence, severity.
+    Run tplmap sebagai confirmation step for SSTI.
+    Return dict with is_confirmed, evidence, severity.
     """
     import subprocess
     import tempfile
@@ -209,8 +209,8 @@ def _run_tplmap_confirmation(url: str, params: list, logger) -> dict:
 @tool("ssti_tester")
 def ssti_tester(target_url: str, params: str = "") -> str:
     """
-    Testing Server-Side Template Injection (SSTI) pada target.
-    SSTI bisa berujung ke Remote Code Execution (RCE) — salah satu
+    Testing Server-Side Template Injection (SSTI) on target.
+    SSTI can berujung ke Remote Code Execution (RCE) — salah satu
     vuln paling critical di bug bounty.
     
     Supports: Jinja2, Twig, Freemarker, ERB, Spring EL, Razor, Smarty, Pebble.
@@ -218,12 +218,12 @@ def ssti_tester(target_url: str, params: str = "") -> str:
     Args:
         target_url: URL target (contoh: https://target.com/search)
         params: Comma-separated parameter names (contoh: "q,name,template").
-                Kalau kosong, auto-discover dari URL dan common params.
+                Kalau kosong, auto-discover from URL dan common params.
     """
     if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     approved = require_approval(
-        action=f"SSTI testing pada {target_url}",
+        action=f"SSTI testing on {target_url}",
         context=f"Inject template expression payloads ke parameter: {params or 'auto-detect'}",
         risk="medium",
         exec_logger=exec_logger,
@@ -231,13 +231,13 @@ def ssti_tester(target_url: str, params: str = "") -> str:
     if not approved:
         return "TEST DIBATALKAN: human-in-the-loop approval rejected atau timeout."
 
-    exec_logger.add_log("SSTI Tester", "START", f"Starting SSTI testing pada {target_url}")
+    exec_logger.add_log("SSTI Tester", "START", f"Starting SSTI testing on {target_url}")
 
     # Resolve parameter list
     if params:
         param_list = [p.strip() for p in params.split(",") if p.strip()]
     else:
-        # Auto-detect dari URL query string
+        # Auto-detect from URL query string
         from urllib.parse import urlparse, parse_qs
         parsed = urlparse(target_url)
         param_list = list(parse_qs(parsed.query).keys())
@@ -304,6 +304,6 @@ def ssti_tester(target_url: str, params: str = "") -> str:
             output += f"    ✅ tplmap CONFIRMED\n"
         output += "\n"
 
-    output += "⚠️  SSTI confirmed — lakukan manual exploitation untuk verify RCE impact senot yet report ke H1.\n"
+    output += "⚠️  SSTI confirmed — lakukan manual exploitation for verify RCE impact senot yet report ke H1.\n"
 
     return output

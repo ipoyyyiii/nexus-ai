@@ -1,7 +1,7 @@
 """
 AUTH DETECTION
 ==============
-Detect login walls dari HTTP responses.
+Detect login walls from HTTP responses.
 
 Indikator login wall:
 - Status 401 / 403
@@ -9,7 +9,7 @@ Indikator login wall:
 - Login form di response body
 - "Unauthorized" / "Please sign in" text di response
 
-Dipakai oleh tools buat decide: lanjut scan atau trigger auth checkpoint.
+Used by tools to decide: continue scan or trigger auth checkpoint.
 """
 
 import re
@@ -68,7 +68,7 @@ MFA_INDICATORS = [
 
 
 class LoginWallResult:
-    """Result dari login wall detection."""
+    """Result from login wall detection."""
 
     def __init__(
         self,
@@ -106,12 +106,12 @@ def detect_login_wall(
     body: Optional[str] = None,
 ) -> LoginWallResult:
     """
-    Detect apakah response adalah login wall.
+    Detect apakah response is login wall.
 
     Args:
         response: requests.Response object
-        url: URL yang di-request
-        body: response body text (optional, bisa di-pass biar gak double-read)
+        url: URL that di-request
+        body: response body text (optional, can di-pass biar gak double-read)
 
     Returns:
         LoginWallResult
@@ -184,12 +184,12 @@ def detect_login_wall(
                 )
 
     # ── 4. Check MFA indicators (kalau login wall terdeteksi) ─────────────────
-    # Ini cek di response yang mungkin udah login page
+    # Ini cek di response that mungkin udah login page
     if body:
         for pattern in MFA_INDICATORS:
             if re.search(pattern, body_lower):
                 # MFA terdeteksi — return info tapi gak set detected=True
-                # (karena ini bukan login wall, tapi MFA wall)
+                # (karena this bukan login wall, tapi MFA wall)
                 return LoginWallResult(
                     detected=True,
                     wall_type="mfa",

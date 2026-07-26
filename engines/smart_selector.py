@@ -1,7 +1,7 @@
 """
 SMART TOOL SELECTOR — Tech Stack Based Tool Selection
 ======================================================
-Pilih tools yang paling relevan berdasarkan tech stack target.
+Pilih tools that paling relevan based on tech stack target.
 
 Usage:
     from engines.smart_selector import smart_selector
@@ -27,7 +27,7 @@ def _domain_of(url: str) -> str:
 # TECH STACK → TOOL MAPPING
 # ============================================================
 
-# Tools yang relevan per tech stack
+# Tools that relevan per tech stack
 TECH_TOOL_MAP = {
     "php": {
         "high_priority": [
@@ -167,7 +167,7 @@ ALWAYS_RUN = [
 
 class SmartToolSelector:
     """
-    Select tools berdasarkan tech stack target.
+    Select tools based on tech stack target.
     """
 
     def __init__(self):
@@ -175,7 +175,7 @@ class SmartToolSelector:
 
     def detect_tech_stack(self, url: str) -> Dict[str, str]:
         """
-        Detect tech stack dari target URL.
+        Detect tech stack from target URL.
         Return: {"language": "...", "framework": "...", "database": "..."}
         """
         import requests
@@ -259,15 +259,15 @@ class SmartToolSelector:
         all_tools: Optional[List[str]] = None,
     ) -> List[str]:
         """
-        Select tools berdasarkan tech stack dan phase.
+        Select tools based on tech stack dan phase.
         
         Args:
             tech_stack: {"language": "...", "framework": "...", "database": "..."}
             phase: "recon" | "analis" | "eksekutor" | "assessor"
-            all_tools: List semua available tools (optional)
+            all_tools: List all available tools (optional)
         
         Returns:
-            List of tool names yang paling relevan
+            List of tool names that paling relevan
         """
         language = tech_stack.get("language", "unknown")
         framework = tech_stack.get("framework", "unknown")
@@ -275,16 +275,16 @@ class SmartToolSelector:
 
         selected = set(ALWAYS_RUN)
 
-        # Add tools dari language
+        # Add tools from language
         if language in TECH_TOOL_MAP:
             selected.update(TECH_TOOL_MAP[language].get("high_priority", []))
             selected.update(TECH_TOOL_MAP[language].get("medium_priority", []))
 
-        # Add tools dari framework
+        # Add tools from framework
         if framework in TECH_TOOL_MAP:
             selected.update(TECH_TOOL_MAP[framework].get("high_priority", []))
 
-        # Add tools dari database
+        # Add tools from database
         if database in DB_TOOL_MAP:
             selected.update(DB_TOOL_MAP[database])
 
@@ -325,7 +325,7 @@ class SmartToolSelector:
         }
 
         if phase in phase_tools:
-            # Intersect dengan phase tools
+            # Intersect with phase tools
             selected = selected.intersection(set(phase_tools[phase]))
         else:
             # Gak filter by phase
@@ -334,7 +334,7 @@ class SmartToolSelector:
         return list(selected)
 
     def get_skip_tools(self, tech_stack: Dict[str, str]) -> List[str]:
-        """Return tools yang bisa di-skip berdasarkan tech stack."""
+        """Return tools that can di-skip based on tech stack."""
         language = tech_stack.get("language", "unknown")
         framework = tech_stack.get("framework", "unknown")
 

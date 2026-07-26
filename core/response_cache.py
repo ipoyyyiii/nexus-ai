@@ -1,7 +1,7 @@
 """
 RESPONSE CACHE — HTTP Response Caching
 ========================================
-Cache HTTP responses buat avoid repeat requests ke target yang sama.
+Cache HTTP responses for avoid repeat requests ke target that sama.
 
 Usage:
     from response_cache import response_cache
@@ -44,7 +44,7 @@ class ResponseCache:
         self._misses = 0
 
     def _make_key(self, url: str, method: str = "GET", data: str = "") -> str:
-        """Generate cache key dari url + method + data."""
+        """Generate cache key from url + method + data."""
         key_str = f"{method}:{url}:{data}"
         return hashlib.md5(key_str.encode()).hexdigest()
 
@@ -79,7 +79,7 @@ class ResponseCache:
             url: Request URL
             response: requests.Response object atau dict
             method: HTTP method
-            data: Request body (untuk POST)
+            data: Request body (for POST)
         """
         key = self._make_key(url, method, data)
 
@@ -97,7 +97,7 @@ class ResponseCache:
         with self._lock:
             # Evict kalau cache penuh
             if len(self._cache) >= self._max_size:
-                # Hapus entry tertua
+                # Delete entry tertua
                 oldest_key = min(self._cache, key=lambda k: self._cache[k]["timestamp"])
                 del self._cache[oldest_key]
 
@@ -109,13 +109,13 @@ class ResponseCache:
             }
 
     def invalidate(self, url: str, method: str = "GET"):
-        """Hapus cache untuk URL tertentu."""
+        """Delete cache for URL tertentu."""
         key = self._make_key(url, method)
         with self._lock:
             self._cache.pop(key, None)
 
     def invalidate_domain(self, domain: str):
-        """Hapus semua cache untuk domain tertentu."""
+        """Delete all cache for domain tertentu."""
         with self._lock:
             keys_to_delete = [
                 k for k, v in self._cache.items()
@@ -125,7 +125,7 @@ class ResponseCache:
                 del self._cache[k]
 
     def clear(self):
-        """Hapus semua cache."""
+        """Delete all cache."""
         with self._lock:
             self._cache.clear()
             self._hits = 0

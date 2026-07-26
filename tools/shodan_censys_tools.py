@@ -37,25 +37,25 @@ def shodan_scanner(target: str) -> str:
     """
     Recon komprehensif using Shodan API.
     Bisa menerima: domain, IP address, atau CIDR range.
-    Data yang dikumpulkan:
-    - Open ports & services (dengan banner info)
-    - CVEs yang terdeteksi
+    Data that dikumpulkan:
+    - Open ports & services (with banner info)
+    - CVEs that terdeteksi
     - Technology fingerprint (server, framework, OS)
     - SSL/TLS certificate info
     - Geolocation & ISP/ASN
     - Historical scan data
-    - Related IPs (dari ASN yang sama)
+    - Related IPs (from ASN that sama)
     target: domain atau IP (e.g., "example.com" atau "93.184.216.34")
     """
     tool_name = "Shodan Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting Shodan recon untuk {target}")
+    logger.add_log(tool_name, "START", f"Starting Shodan recon for {target}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     api_key = _get_shodan_key()
     if not api_key or api_key == "your_shodan_api_key_here":
         return json.dumps({
-            "error": "SHODAN_API_KEY not di-set di .env",
+            "error": "SHODAN_API_KEY not set di .env",
             "action": "Tambahkan: SHODAN_API_KEY=your_key ke file .env"
         })
 
@@ -98,7 +98,7 @@ def shodan_scanner(target: str) -> str:
             if r.status_code == 200:
                 findings["dns_resolve"] = r.json()
 
-            # Domain info (subdomains dari Shodan)
+            # Domain info (subdomains from Shodan)
             rate_limiter.wait("api.shodan.io")
             r = requests.get(
                 f"{SHODAN_BASE}/dns/domain/{_domain_of(target)}",
@@ -295,25 +295,25 @@ def censys_scanner(target: str) -> str:
     """
     Recon komprehensif using Censys API v2.
     Bisa menerima: domain atau IP address.
-    Data yang dikumpulkan:
+    Data that dikumpulkan:
     - Open ports & protocols
     - TLS/SSL certificate detail (SAN, chain, issuer)
     - Service banners dan software versions
     - HTTP response headers dan titles
     - BGP/routing info
-    - Historical certificates (buat subdomain discovery)
+    - Historical certificates (for subdomain discovery)
     - Infrastructure fingerprint
     target: domain atau IP (e.g., "example.com" atau "93.184.216.34")
     """
     tool_name = "Censys Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting Censys recon untuk {target}")
+    logger.add_log(tool_name, "START", f"Starting Censys recon for {target}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     pat = _get_censys_pat()
     if not pat or pat == "your_censys_pat_here":
         return json.dumps({
-            "error": "CENSYS_PAT not di-set di .env",
+            "error": "CENSYS_PAT not set di .env",
             "action": "Tambahkan CENSYS_PAT=your_personal_access_token ke file .env",
             "get_pat": "Login ke https://search.censys.io → Account → Personal Access Tokens → Generate token"
         })

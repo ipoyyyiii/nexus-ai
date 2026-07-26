@@ -85,7 +85,7 @@ CVSS_THRESHOLDS = {
 
 class ReportGenerator:
     """
-    Generate professional penetration testing reports dari vulnerability findings.
+    Generate professional penetration testing reports from vulnerability findings.
     """
 
     def __init__(self, author: str = "Nexus AI Pentest Agent"):
@@ -94,7 +94,7 @@ class ReportGenerator:
 
     def generate(self, finding: Dict[str, Any]) -> str:
         """
-        Generate single vulnerability report dari finding dict.
+        Generate single vulnerability report from finding dict.
         
         Expected finding keys:
         - vuln_type: str (e.g., "sql_injection", "xss_reflected")
@@ -326,7 +326,7 @@ class ReportGenerator:
         target: str = "",
     ) -> str:
         """
-        Generate full report dari phase-by-phase results.
+        Generate full report from phase-by-phase results.
         phase_results = {"recon": "...", "analis": "...", "eksekutor": "...", "assessor": "..."}
         """
         report = []

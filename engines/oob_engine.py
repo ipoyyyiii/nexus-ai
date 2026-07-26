@@ -1,7 +1,7 @@
 """
 OOB ENGINE — Out-of-Band Interaction Engine
 ============================================
-Private interactsh-server integration buat blind vulnerability detection.
+Private interactsh-server integration for blind vulnerability detection.
 
 Infrastructure:
 - Domain: whoopbhapzham.my.id
@@ -81,7 +81,7 @@ class OOBEngine:
 
     def generate_correlation_id(self, vuln_type: str) -> str:
         """
-        Generate unique correlation ID buat tracking.
+        Generate unique correlation ID for tracking.
         Format: {vuln_type}-{random6}
         Contoh: ssrf-a3f8c2, xxe-b7d1e4, rce-k9m2n5
         """
@@ -110,7 +110,7 @@ class OOBEngine:
     def build_ssrf_payload(self, param: str = "url") -> Dict[str, str]:
         """
         Build SSRF payload.
-        Returns dict dengan correlation_id, payload_url, dan beberapa format.
+        Returns dict with correlation_id, payload_url, dan beberapa format.
         """
         cid = self.generate_correlation_id("ssrf")
         subdomain = f"{cid}.{self.domain}"
@@ -142,8 +142,8 @@ class OOBEngine:
 
     def build_xxe_payload(self, param: str = "data") -> Dict[str, Any]:
         """
-        Build Blind XXE payload dengan external DTD callback.
-        Returns dict dengan correlation_id, XML payloads, dan DTD content.
+        Build Blind XXE payload with external DTD callback.
+        Returns dict with correlation_id, XML payloads, dan DTD content.
         """
         cid = self.generate_correlation_id("xxe")
         subdomain = f"{cid}.{self.domain}"
@@ -274,7 +274,7 @@ class OOBEngine:
 
     def build_smuggling_oob_payload(self) -> Dict[str, str]:
         """
-        Build HTTP Request Smuggling payload dengan OOB callback.
+        Build HTTP Request Smuggling payload with OOB callback.
         """
         cid = self.generate_correlation_id("smuggle")
         subdomain = f"{cid}.{self.domain}"
@@ -287,7 +287,7 @@ class OOBEngine:
 
     def build_ssti_oob_payload(self) -> Dict[str, str]:
         """
-        Build SSTI payload dengan OOB callback.
+        Build SSTI payload with OOB callback.
         """
         cid = self.generate_correlation_id("ssti")
         subdomain = f"{cid}.{self.domain}"
@@ -308,7 +308,7 @@ class OOBEngine:
 
     def build_cors_oob_payload(self) -> Dict[str, str]:
         """
-        Build CORS misconfig test payload dengan OOB origin.
+        Build CORS misconfig test payload with OOB origin.
         """
         cid = self.generate_correlation_id("cors")
         subdomain = f"{cid}.{self.domain}"
@@ -328,8 +328,8 @@ class OOBEngine:
         interval: float = OOB_POLL_INTERVAL,
     ) -> Dict[str, Any]:
         """
-        Poll interactsh server logs buat cek apakah ada interaction
-        dengan correlation_id yang dicari.
+        Poll interactsh server logs for cek apakah ada interaction
+        with correlation_id that dicari.
 
         Returns:
             {
@@ -492,7 +492,7 @@ class OOBEngine:
         Full blind SSRF test:
         1. Generate OOB payload
         2. Inject ke target parameters/headers
-        3. Poll buat verify callback
+        3. Poll for verify callback
         """
         from core.rate_limiter import rate_limiter
         domain = _domain_of(url)
@@ -503,7 +503,7 @@ class OOBEngine:
 
         if exec_logger:
             exec_logger.add_log("OOB Blind SSRF", "START",
-                f"Testing blind SSRF pada {url} | callback: {callback_url}")
+                f"Testing blind SSRF on {url} | callback: {callback_url}")
 
         param_list = [p.strip() for p in params.split(",")] if params else [
             "url", "uri", "link", "src", "source", "href",
@@ -557,7 +557,7 @@ class OOBEngine:
         # Poll for OOB interaction
         if exec_logger:
             exec_logger.add_log("OOB Blind SSRF", "PROCESSING",
-                f"Polling OOB server untuk correlation_id: {cid}")
+                f"Polling OOB server for correlation_id: {cid}")
 
         poll_result = self.poll_logs(cid)
 
@@ -590,7 +590,7 @@ class OOBEngine:
         Full blind XXE test:
         1. Generate OOB XXE payload
         2. Inject ke target
-        3. Poll buat verify callback
+        3. Poll for verify callback
         """
         from core.rate_limiter import rate_limiter
         domain = _domain_of(url)
@@ -601,7 +601,7 @@ class OOBEngine:
 
         if exec_logger:
             exec_logger.add_log("OOB Blind XXE", "START",
-                f"Testing blind XXE pada {url} | callback: {callback_url}")
+                f"Testing blind XXE on {url} | callback: {callback_url}")
 
         inject_details = []
 
@@ -641,7 +641,7 @@ class OOBEngine:
         # Poll for OOB interaction
         if exec_logger:
             exec_logger.add_log("OOB Blind XXE", "PROCESSING",
-                f"Polling OOB server untuk correlation_id: {cid}")
+                f"Polling OOB server for correlation_id: {cid}")
 
         poll_result = self.poll_logs(cid)
 
@@ -675,7 +675,7 @@ class OOBEngine:
         Full Log4j JNDI injection test:
         1. Generate JNDI payloads
         2. Inject via parameters dan headers
-        3. Poll buat verify callback
+        3. Poll for verify callback
         """
         from core.rate_limiter import rate_limiter
         domain = _domain_of(url)
@@ -686,7 +686,7 @@ class OOBEngine:
 
         if exec_logger:
             exec_logger.add_log("OOB Log4j", "START",
-                f"Testing Log4j JNDI pada {url} | callback: {subdomain}")
+                f"Testing Log4j JNDI on {url} | callback: {subdomain}")
 
         inject_details = []
 
@@ -729,7 +729,7 @@ class OOBEngine:
         # Poll for OOB interaction
         if exec_logger:
             exec_logger.add_log("OOB Log4j", "PROCESSING",
-                f"Polling OOB server untuk correlation_id: {cid}")
+                f"Polling OOB server for correlation_id: {cid}")
 
         poll_result = self.poll_logs(cid)
 
@@ -762,7 +762,7 @@ class OOBEngine:
         Full OOB OS Command Injection test:
         1. Generate RCE OOB payloads
         2. Inject ke parameters
-        3. Poll buat verify callback
+        3. Poll for verify callback
         """
         from core.rate_limiter import rate_limiter
         domain = _domain_of(url)
@@ -773,7 +773,7 @@ class OOBEngine:
 
         if exec_logger:
             exec_logger.add_log("OOB RCE", "START",
-                f"Testing OOB RCE pada {url} | callback: {callback_url}")
+                f"Testing OOB RCE on {url} | callback: {callback_url}")
 
         param_list = [p.strip() for p in params.split(",")] if params else [
             "cmd", "exec", "command", "ping", "host", "ip",
@@ -800,7 +800,7 @@ class OOBEngine:
         # Poll for OOB interaction
         if exec_logger:
             exec_logger.add_log("OOB RCE", "PROCESSING",
-                f"Polling OOB server untuk correlation_id: {cid}")
+                f"Polling OOB server for correlation_id: {cid}")
 
         poll_result = self.poll_logs(cid)
 

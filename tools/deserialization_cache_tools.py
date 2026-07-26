@@ -31,7 +31,7 @@ def _logger():
 @tool("insecure_deserialization_scanner")
 def insecure_deserialization_scanner(url: str, cookies: str = "", headers_json: str = "") -> str:
     """
-    Scan untuk Insecure Deserialization vulnerability.
+    Scan for Insecure Deserialization vulnerability.
     Deteksi serialized object signatures di:
     - PHP: O:8: / a:2: patterns
     - Java: rO0AB (base64 of 0xACED magic bytes)
@@ -45,11 +45,11 @@ def insecure_deserialization_scanner(url: str, cookies: str = "", headers_json: 
     """
     tool_name = "Insecure Deserialization Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting deserialization scan pada {url}")
+    logger.add_log(tool_name, "START", f"Starting deserialization scan on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     approved = require_approval(
-        action=f"Insecure deserialization scan pada {url}",
+        action=f"Insecure deserialization scan on {url}",
         context="Sending serialized object payloads dan menganalisis response",
         risk="medium",
         exec_logger=logger,
@@ -82,7 +82,7 @@ def insecure_deserialization_scanner(url: str, cookies: str = "", headers_json: 
     # ── 1. Detect serialized objects in existing responses ─────────────────────
     logger.add_log(tool_name, "PROCESSING", "Scanning responses for serialized object signatures")
 
-    # Signatures buat detect serialized objects
+    # Signatures for detect serialized objects
     signatures = {
         "PHP Object":       [b"O:", b"a:", b"s:", b"i:"],
         "Java Serialized":  [b"\xac\xed\x00\x05", b"rO0AB"],  # magic bytes + base64
@@ -152,7 +152,7 @@ def insecure_deserialization_scanner(url: str, cookies: str = "", headers_json: 
     # ── 2. Test injection of malformed serialized objects ─────────────────────
     logger.add_log(tool_name, "PROCESSING", "Testing serialized object injection")
 
-    # Malformed/probe payloads buat detect deserialization without triggering RCE
+    # Malformed/probe payloads for detect deserialization without triggering RCE
     probe_payloads = {
         "PHP": [
             'O:8:"stdClass":0:{}',
@@ -250,17 +250,17 @@ def insecure_deserialization_scanner(url: str, cookies: str = "", headers_json: 
 @tool("web_cache_poisoning_scanner")
 def web_cache_poisoning_scanner(url: str) -> str:
     """
-    Scan untuk Web Cache Poisoning vulnerability.
-    Test unkeyed headers yang bisa poison cache:
+    Scan for Web Cache Poisoning vulnerability.
+    Test unkeyed headers that can poison cache:
     - X-Forwarded-Host, X-Forwarded-Scheme, X-Original-URL
     - X-Forwarded-For, X-Real-IP
     - Fat GET (request body in GET)
     - Parameter cloaking
-    url: target URL (sebaiknya pake URL yang kemungkinan di-cache: CSS, JS, atau page statis)
+    url: target URL (sebaiknya pake URL that kemungkinan di-cache: CSS, JS, atau page statis)
     """
     tool_name = "Web Cache Poisoning Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting cache poisoning scan pada {url}")
+    logger.add_log(tool_name, "START", f"Starting cache poisoning scan on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     domain = _domain_of(url)
@@ -384,15 +384,15 @@ def web_cache_poisoning_scanner(url: str) -> str:
 @tool("cache_deception_scanner")
 def cache_deception_scanner(url: str, auth_cookies: str = "") -> str:
     """
-    Scan untuk Web Cache Deception vulnerability.
-    Attack: /profile/nonexistent.css → CDN cache halaman profile dengan data sensitif
+    Scan for Web Cache Deception vulnerability.
+    Attack: /profile/nonexistent.css → CDN cache halaman profile with data sensitif
     Teknik: append fake static extension ke URL dinamis/authenticated.
     url: target base URL
-    auth_cookies: cookies untuk authenticated session (e.g., "session=abc123")
+    auth_cookies: cookies for authenticated session (e.g., "session=abc123")
     """
     tool_name = "Cache Deception Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting cache deception scan pada {url}")
+    logger.add_log(tool_name, "START", f"Starting cache deception scan on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     domain = _domain_of(url)
@@ -408,14 +408,14 @@ def cache_deception_scanner(url: str, auth_cookies: str = "") -> str:
 
     findings = {"vulnerabilities": [], "suspicious": [], "tested_paths": []}
 
-    # Sensitive paths yang mungkin ada data personal
+    # Sensitive paths that mungkin ada data personal
     sensitive_paths = [
         "/profile", "/account", "/dashboard", "/settings",
         "/api/user", "/api/me", "/user/profile", "/my-account",
         "/orders", "/payment", "/billing", "/admin",
     ]
 
-    # Static extensions yang sering di-cache CDN
+    # Static extensions that sering di-cache CDN
     static_extensions = [".css", ".js", ".png", ".jpg", ".ico", ".svg", ".woff", ".gif"]
 
     logger.add_log(tool_name, "PROCESSING", "Testing cache deception paths")
@@ -487,21 +487,21 @@ def cache_deception_scanner(url: str, auth_cookies: str = "") -> str:
 @tool("ssrf_advanced_scanner")
 def ssrf_advanced_scanner(url: str, upload_param: str = "file") -> str:
     """
-    Scan untuk SSRF melalui vector yang sering terlewat:
-    1. SSRF via File Upload (SVG/XML dengan external entity/URL)
-    2. SSRF via PDF/HTML generator (inject URL ke field yang generate PDF)
+    Scan for SSRF melalui vector that sering terlewat:
+    1. SSRF via File Upload (SVG/XML with external entity/URL)
+    2. SSRF via PDF/HTML generator (inject URL ke field that generate PDF)
     3. SSRF via image URL parameter (avatar URL, import URL, webhook URL)
     url: target base URL atau specific endpoint
     upload_param: nama file input parameter (default: "file")
     """
     tool_name = "SSRF Advanced Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting advanced SSRF scan pada {url}")
+    logger.add_log(tool_name, "START", f"Starting advanced SSRF scan on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     approved = require_approval(
-        action=f"Advanced SSRF scan pada {url}",
-        context="Upload SVG/XML files dengan SSRF payloads dan test URL parameters",
+        action=f"Advanced SSRF scan on {url}",
+        context="Upload SVG/XML files with SSRF payloads dan test URL parameters",
         risk="medium",
         exec_logger=logger,
     )
@@ -514,7 +514,7 @@ def ssrf_advanced_scanner(url: str, upload_param: str = "file") -> str:
     base = url.rstrip("/")
     findings = {"vulnerabilities": [], "suspicious": []}
 
-    # Internal IP addresses buat SSRF probe
+    # Internal IP addresses for SSRF probe
     internal_targets = [
         "http://169.254.169.254/latest/meta-data/",          # AWS metadata
         "http://metadata.google.internal/computeMetadata/v1/", # GCP metadata
@@ -577,7 +577,7 @@ def ssrf_advanced_scanner(url: str, upload_param: str = "file") -> str:
         "/convert", "/api/convert", "/html2pdf",
     ]
 
-    # Params yang sering dipakai buat specify URL di PDF generators
+    # Params that sering used for specify URL di PDF generators
     url_params = ["url", "link", "src", "source", "target", "html", "page", "uri"]
 
     for ep in pdf_endpoints[:6]:

@@ -68,7 +68,7 @@ def _detect_graphql(base_url: str) -> list:
             rate_limiter.wait(_domain_of(base_url))
             url = f"{base_url.rstrip('/')}{path}"
 
-            # Coba POST dengan query kosong dulu
+            # Coba POST with query kosong dulu
             resp = auth_post(
                 url,
                 json={"query": "{ __typename }"},
@@ -78,7 +78,7 @@ def _detect_graphql(base_url: str) -> list:
                 verify=False,
             )
 
-            # GraphQL endpoint biasanya return JSON dengan key "data" atau "errors"
+            # GraphQL endpoint biasanya return JSON with key "data" atau "errors"
             if resp.status_code in (200, 400):
                 try:
                     data = resp.json()
@@ -118,7 +118,7 @@ def _test_introspection(endpoint: str) -> dict:
                 if t["name"] and not t["name"].startswith("__")
             ]
 
-            # Cari field yang suspicious
+            # Cari field that suspicious
             sensitive_keywords = [
                 "password", "secret", "token", "key", "admin",
                 "internal", "private", "credential", "auth", "debug"
@@ -153,7 +153,7 @@ def _test_introspection(endpoint: str) -> dict:
 
 
 def _test_batch_query(endpoint: str) -> dict:
-    """Test batch query buat bypass rate limiting."""
+    """Test batch query for bypass rate limiting."""
     try:
         rate_limiter.wait(_domain_of(endpoint))
 
@@ -176,7 +176,7 @@ def _test_batch_query(endpoint: str) -> dict:
                     return {
                         "vulnerable": True,
                         "severity": "Medium",
-                        "detail": f"Server menerima {len(data)} query sekaligus dalam 1 request — bisa dieksploitasi buat bypass rate limiting pada mutation login/register"
+                        "detail": f"Server menerima {len(data)} query sekaligus dalam 1 request — can dieksploitasi for bypass rate limiting on mutation login/register"
                     }
             except Exception:
                 pass
@@ -209,7 +209,7 @@ def _test_deep_nested(endpoint: str) -> dict:
             return {
                 "vulnerable": True,
                 "severity": "Medium",
-                "detail": f"Server memproses nested query dalam {duration:.1f}s — not ada query depth limiting, rentan DoS"
+                "detail": f"Server memproses nested query dalam {duration:.1f}s — not found query depth limiting, rentan DoS"
             }
         elif resp.status_code == 200:
             try:
@@ -235,7 +235,7 @@ def _test_field_suggestion(endpoint: str) -> dict:
     try:
         rate_limiter.wait(_domain_of(endpoint))
 
-        # Query field yang salah sengaja
+        # Query field that salah sengaja
         resp = auth_post(
             endpoint,
             json={"query": "{ usr { passwrd emai } }"},
@@ -252,7 +252,7 @@ def _test_field_suggestion(endpoint: str) -> dict:
             return {
                 "vulnerable": True,
                 "severity": "Low",
-                "detail": f"Server memberikan field suggestion pada error — bisa dieksploitasi buat enumerate schema tanpa introspection",
+                "detail": f"Server memberikan field suggestion on error — can dieksploitasi for enumerate schema tanpa introspection",
                 "error_sample": str(data.get("errors", ""))[:300]
             }
 
@@ -266,7 +266,7 @@ def _test_idor(endpoint: str, query_type: str = "Query") -> dict:
     """Test basic IDOR via GraphQL ID manipulation."""
     findings = []
 
-    # Common query patterns yang sering ada
+    # Common query patterns that sering ada
     idor_queries = [
         '{ user(id: "2") { id email } }',
         '{ user(id: 2) { id email } }',
@@ -296,7 +296,7 @@ def _test_idor(endpoint: str, query_type: str = "Query") -> dict:
                         "type": "Potential IDOR",
                         "severity": "High",
                         "query": query,
-                        "detail": "Query success return data tanpa autentikasi — perlu manual verify apakah data milik user lain bisa diakses"
+                        "detail": "Query success return data tanpa autentikasi — perlu manual verify apakah data milik user lain can diakses"
                     })
                     exec_logger.add_log("GraphQL Tester", "WARNING", f"Potential IDOR: {query[:50]}")
                     break  # Cukup satu finding, sisanya manual
@@ -350,7 +350,7 @@ def _test_subscription(endpoint: str) -> dict:
 
 
 def _test_batch_query_dos(endpoint: str) -> dict:
-    """Test batch query DoS dengan large batch."""
+    """Test batch query DoS with large batch."""
     try:
         rate_limiter.wait(_domain_of(endpoint))
 
@@ -372,7 +372,7 @@ def _test_batch_query_dos(endpoint: str) -> dict:
             try:
                 data = resp.json()
                 if isinstance(data, list) and len(data) > 1:
-                    # Check apakah server memproses semua query
+                    # Check apakah server memproses all query
                     success_count = sum(1 for r in data if isinstance(r, dict) and "data" in r)
                     if success_count > 10:
                         return {
@@ -395,7 +395,7 @@ def _test_batch_query_dos(endpoint: str) -> dict:
 def _test_schema_stitching(endpoint: str) -> dict:
     """Test apakah server expose multiple schemas (schema stitching)."""
     try:
-        # Query untuk detect multiple schemas
+        # Query for detect multiple schemas
         queries = [
             '{ __schema { queryType { name } } }',
             '{ __schema { mutationType { name } } }',
@@ -577,7 +577,7 @@ def _test_injection(endpoint: str) -> dict:
 @tool("graphql_tester")
 def graphql_tester(target_url: str) -> str:
     """
-    Testing implementasi GraphQL pada target untuk menemukan kerentanan:
+    Testing implementasi GraphQL on target for menemukan kerentanan:
     - Introspection enabled (schema disclosure)
     - Batch query attack (rate limit bypass)
     - Deep nested query (DoS)
@@ -590,7 +590,7 @@ def graphql_tester(target_url: str) -> str:
     if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     approved = require_approval(
-        action=f"GraphQL security testing pada {target_url}",
+        action=f"GraphQL security testing on {target_url}",
         context="Test: introspection, batch query, nested DoS, field suggestion, IDOR",
         risk="medium",
         exec_logger=exec_logger,
@@ -598,7 +598,7 @@ def graphql_tester(target_url: str) -> str:
     if not approved:
         return "TEST DIBATALKAN: human-in-the-loop approval rejected atau timeout."
 
-    exec_logger.add_log("GraphQL Tester", "START", f"Starting GraphQL testing pada {target_url}")
+    exec_logger.add_log("GraphQL Tester", "START", f"Starting GraphQL testing on {target_url}")
 
     # Inject auth session jika ada
     from urllib.parse import urlparse
@@ -610,7 +610,7 @@ def graphql_tester(target_url: str) -> str:
     endpoints = _detect_graphql(target_url)
 
     if not endpoints:
-        return f"[+] Not found GraphQL endpoint pada {target_url}. Target kemungkinan pake REST API."
+        return f"[+] Not found GraphQL endpoint on {target_url}. Target kemungkinan pake REST API."
 
     endpoint = endpoints[0]
     exec_logger.add_log("GraphQL Tester", "SUCCESS", f"Testing endpoint: {endpoint}")
@@ -705,9 +705,9 @@ def graphql_tester(target_url: str) -> str:
                 output += f"  Sample: {f['error_sample']}\n"
 
     if not introspection.get("vulnerable") and not all_findings:
-        output += "\n[+] Not found kerentanan GraphQL yang obvious. GraphQL implementation tampak cukup hardened.\n"
+        output += "\n[+] Not found kerentanan GraphQL that obvious. GraphQL implementation tampak cukup hardened.\n"
 
-    output += "\n⚠️  Manual verification tetap required untuk konfirmasi semua findings.\n"
+    output += "\n⚠️  Manual verification tetap required for confirmation all findings.\n"
 
     # ── GRAPHQL-COP CONFIRMATION STEP ─────────────────────────────────────────
     if not check_cancelled(exec_logger):

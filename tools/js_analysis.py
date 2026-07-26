@@ -120,7 +120,7 @@ SECRETS_PATTERNS = {
 @tool
 def analyze_js_deep(url: str) -> str:
     """
-    Analisa JavaScript secara mendalam buat extract endpoint, env leak, dan info sensitif dengan rotasi proxy.
+    Analyze JavaScript in depth for extracting endpoints, env leak, and sensitive info with proxy rotation.
     """
     logger = _logger()
     tool_name = "Deep JS Analyzer"
@@ -136,9 +136,9 @@ def analyze_js_deep(url: str) -> str:
     inject_into_session(SESSION, domain)
 
     if logger:
-        logger.add_log(tool_name, "START", f"Deep JS analysis untuk {url}")
+        logger.add_log(tool_name, "START", f"Deep JS analysis for {url}")
 
-    # ── 1. Collect JS files dari halaman dengan Proxy ────────────────────────
+    # ── 1. Collect JS files from page with Proxy ────────────────────────
     rate_limiter.wait(domain)
     current_proxy = proxy_router.get_proxy()
     try:
@@ -194,7 +194,7 @@ def analyze_js_deep(url: str) -> str:
         "HubSpot": re.compile(r'hubspot\.com|hubspot\.js', re.I),
     }
 
-    # ── 2. Analyze tiap JS file dengan Proxy ─────────────────────────────────
+    # ── 2. Analyze each JS file with Proxy ─────────────────────────────────
     for js_url in filtered_scripts[:15]:
         if check_cancelled(logger):
             break
@@ -208,7 +208,7 @@ def analyze_js_deep(url: str) -> str:
 
             js_content = js_resp.text
 
-            # Source map check dengan Proxy privat baru
+            # Source map check with new private Proxy
             sm_match = SOURCE_MAP_PATTERN.search(js_content[-500:])
             if sm_match:
                 sm_url = sm_match.group(1)
@@ -224,7 +224,7 @@ def analyze_js_deep(url: str) -> str:
                             "js_file": js_url,
                             "source_map": sm_url,
                             "severity": "HIGH",
-                            "impact": "Source map exposed — original source code bisa di-recover",
+                            "impact": "Source map exposed — original source code can be recovered",
                         })
                 except (requests.exceptions.ProxyError, requests.exceptions.Timeout):
                     if sm_proxy:
@@ -247,7 +247,7 @@ def analyze_js_deep(url: str) -> str:
                         "type": leak_type,
                         "file": js_url,
                         "count": len(matches),
-                        "note": "Nilai actual di-redact. Review manual untuk konfirmasi.",
+                        "note": "Actual value di-redact. Manual review untuk konfirmasi.",
                     })
 
             # GraphQL hints

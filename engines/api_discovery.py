@@ -70,7 +70,7 @@ GRAPHQL_PATHS = [
 
 class APIDiscovery:
     """
-    Auto-discover API endpoints dari Swagger/OpenAPI documentation.
+    Auto-discover API endpoints from Swagger/OpenAPI documentation.
     """
 
     def __init__(self):
@@ -78,7 +78,7 @@ class APIDiscovery:
 
     def discover(self, url: str, exec_logger=None) -> Dict[str, Any]:
         """
-        Discover API endpoints dari target.
+        Discover API endpoints from target.
         
         Return:
             {
@@ -185,7 +185,7 @@ class APIDiscovery:
         return result
 
     def _parse_swagger(self, data: Dict, result: Dict):
-        """Parse Swagger/OpenAPI spec untuk extract endpoints."""
+        """Parse Swagger/OpenAPI spec for extracting endpointss."""
         # Try paths
         paths = data.get("paths", {})
 
@@ -227,7 +227,7 @@ class APIDiscovery:
             }
 
     def _analyze_attack_surface(self, result: Dict):
-        """Analyze endpoints buat identify attack surface."""
+        """Analyze endpoints for identify attack surface."""
         attack_surface = []
 
         for endpoint in result["endpoints"]:

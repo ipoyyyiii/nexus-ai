@@ -29,7 +29,7 @@ def _logger():
 @tool("client_side_security_scanner")
 def client_side_security_scanner(url: str) -> str:
     """
-    Scan untuk client-side vulnerabilities:
+    Scan for client-side vulnerabilities:
     - Clickjacking (X-Frame-Options + generate PoC)
     - CSP misconfiguration analysis
     - SRI (Subresource Integrity) missing
@@ -38,7 +38,7 @@ def client_side_security_scanner(url: str) -> str:
     """
     tool_name = "Client-Side Security Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting client-side security scan pada {url}")
+    logger.add_log(tool_name, "START", f"Starting client-side security scan on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     domain = _domain_of(url)
@@ -216,13 +216,13 @@ def client_side_security_scanner(url: str) -> str:
 @tool("prototype_pollution_scanner")
 def prototype_pollution_scanner(url: str, params: str = "") -> str:
     """
-    Scan untuk JavaScript Prototype Pollution vulnerability.
+    Scan for JavaScript Prototype Pollution vulnerability.
     Test injecting __proto__, constructor.prototype via query params dan POST JSON.
     params: comma-separated parameter names (opsional)
     """
     tool_name = "Prototype Pollution Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting prototype pollution scan pada {url}")
+    logger.add_log(tool_name, "START", f"Starting prototype pollution scan on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     domain = _domain_of(url)

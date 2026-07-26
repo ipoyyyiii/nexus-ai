@@ -54,7 +54,7 @@ REDIRECT_PARAMS = [
 # ── REDIRECT BYPASS PAYLOADS ──────────────────────────────────────────────────
 def _generate_bypass_payloads(legitimate_domain: str) -> list:
     """
-    Generate redirect bypass payloads berdasarkan legitimate domain.
+    Generate redirect bypass payloads based on legitimate domain.
     Return list of (payload, bypass_type, expected_redirect_domain)
     """
     parsed = urlparse(legitimate_domain)

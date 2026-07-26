@@ -1,7 +1,7 @@
 """
 SMART PAYLOAD GENERATOR — AI-Powered Payload Generation
 =========================================================
-Generate custom payloads berdasarkan tech stack target using LLM.
+Generate custom payloads based on tech stack target using LLM.
 
 Usage:
     from engines.payload_generator import payload_generator
@@ -80,7 +80,7 @@ DB_SIGNATURES = {
 
 class PayloadGenerator:
     """
-    AI-powered payload generator berdasarkan tech stack target.
+    AI-powered payload generator based on tech stack target.
     """
 
     def __init__(self):
@@ -88,7 +88,7 @@ class PayloadGenerator:
 
     def detect_tech_stack(self, url: str) -> Dict[str, str]:
         """
-        Detect tech stack dari target URL berdasarkan response headers dan body.
+        Detect tech stack from target URL based on response headers dan body.
         """
         import requests
         logger = _logger()
@@ -140,15 +140,15 @@ class PayloadGenerator:
         exec_logger=None,
     ) -> List[Dict[str, str]]:
         """
-        Generate custom payloads berdasarkan context.
+        Generate custom payloads based on context.
 
         Args:
             vuln_type: "sqli", "xss", "ssti", "cmdi", "lfi", "idor"
-            url: Target URL (optional, buat detect tech stack)
+            url: Target URL (optional, for detect tech stack)
             framework: Tech framework (optional)
             database: Database type (optional)
             context: Additional context (optional)
-            count: Jumlah payload yang diinginkan
+            count: Jumlah payload that diinginkan
 
         Returns:
             List of {"payload": str, "description": str, "severity": str}
@@ -165,7 +165,7 @@ class PayloadGenerator:
             if not database:
                 database = tech.get("database", "unknown")
 
-        # Generate payloads berdasarkan vuln_type dan context
+        # Generate payloads based on vuln_type dan context
         payloads = self._generate_for_type(vuln_type, framework, database, context, count)
 
         if exec_logger:
@@ -183,7 +183,7 @@ class PayloadGenerator:
         count: int,
     ) -> List[Dict[str, str]]:
         """
-        Internal: generate payloads berdasarkan type dan context.
+        Internal: generate payloads based on type dan context.
         """
         generators = {
             "sqli": self._gen_sqli,

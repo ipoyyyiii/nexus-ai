@@ -25,7 +25,7 @@ def _domain_of(url: str) -> str:
 @tool("cors_tester")
 def cors_tester(target_url: str) -> str:
     """
-    Testing implementasi CORS pada target untuk menemukan misconfiguration:
+    Testing implementasi CORS on target for menemukan misconfiguration:
     - Arbitrary origin reflection
     - Null origin accepted
     - Subdomain wildcard bypass
@@ -38,20 +38,20 @@ def cors_tester(target_url: str) -> str:
     if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     approved = require_approval(
-        action=f"CORS misconfiguration test pada {target_url}",
-        context="Sending request dengan berbagai Origin header untuk test CORS policy",
+        action=f"CORS misconfiguration test on {target_url}",
+        context="Sending request with berbagai Origin header for test CORS policy",
         risk="low",
         exec_logger=exec_logger,
     )
     if not approved:
         return "TEST DIBATALKAN: human-in-the-loop approval rejected atau timeout."
 
-    exec_logger.add_log("CORS Tester", "START", f"Starting CORS testing pada {target_url}")
+    exec_logger.add_log("CORS Tester", "START", f"Starting CORS testing on {target_url}")
 
     domain = _domain_of(target_url)
     auth_kwargs = get_auth_kwargs(domain)
 
-    # Payload origins yang akan ditest
+    # Payload origins that will ditest
     test_origins = [
         # Arbitrary domain
         ("https://evil.com", "Arbitrary Origin"),
@@ -63,7 +63,7 @@ def cors_tester(target_url: str) -> str:
         (f"https://{domain}.evil.com", "Domain Prefix Bypass"),
         # HTTP downgrade
         (f"http://{domain}", "HTTPS to HTTP Downgrade"),
-        # Trusted domain dengan typo
+        # Trusted domain with typo
         (f"https://{domain}evil.com", "Domain Suffix Bypass"),
     ]
 
@@ -76,7 +76,7 @@ def cors_tester(target_url: str) -> str:
         try:
             rate_limiter.wait(domain)
 
-            # Test GET request dengan origin
+            # Test GET request with origin
             resp = auth_get(
                 target_url,
                 headers={
@@ -106,19 +106,19 @@ def cors_tester(target_url: str) -> str:
                 if acac.lower() == "true" and acao != "*":
                     finding["detail"] = (
                         f"CORS misconfiguration KRITIS: Origin '{origin}' di-reflect "
-                        f"dengan Access-Control-Allow-Credentials: true — "
-                        f"attacker bisa baca response authenticated request korban"
+                        f"with Access-Control-Allow-Credentials: true — "
+                        f"attacker can baca response authenticated request korban"
                     )
                 elif acao == "*":
                     finding["severity"] = "Medium"
                     finding["detail"] = (
-                        f"Wildcard CORS (*) — semua domain bisa akses resource ini. "
+                        f"Wildcard CORS (*) — all domain can access this resource. "
                         f"Berbahaya kalau endpoint return data sensitif."
                     )
                 else:
                     finding["detail"] = (
                         f"Origin '{origin}' di-reflect di ACAO header tanpa credentials — "
-                        f"medium risk, bisa eskalasi kalau ada sensitive data"
+                        f"medium risk, can eskalasi kalau ada sensitive data"
                     )
 
                 findings.append(finding)
@@ -134,7 +134,7 @@ def cors_tester(target_url: str) -> str:
     output = f"=== CORS MISCONFIGURATION TEST RESULTS FOR {target_url} ===\n\n"
 
     if not findings:
-        output += "[✅] CORS policy tampak aman. Not ada origin bypass yang success.\n"
+        output += "[✅] CORS policy tampak aman. Not ada origin bypass that success.\n"
         return output
 
     critical = [f for f in findings if f["severity"] == "Critical"]
@@ -164,6 +164,6 @@ def cors_tester(target_url: str) -> str:
             output += f"  ▸ {f['test']}\n"
             output += f"    Detail         : {f['detail']}\n\n"
 
-    output += "⚠️  Manual verification required untuk konfirmasi impact sebenarnya.\n"
+    output += "⚠️  Manual verification required for confirmation impact sebenarnya.\n"
 
     return output

@@ -24,14 +24,14 @@ def safe_except(
     return_value: Any = None,
 ) -> Any:
     """
-    Standardized error handler buat replace bare except: pass.
+    Standardized error handler for replace bare except: pass.
     
     Args:
-        tool_name: Nama tool yang error
-        message: Error message buat log
+        tool_name: Nama tool that error
+        message: Error message for log
         logger: exec_logger instance (optional)
         level: Log level (WARNING, ERROR, INFO)
-        return_value: Value buat di-return
+        return_value: Value for di-return
     
     Returns:
         return_value (default: None)
@@ -59,7 +59,7 @@ def safe_except(
 def safe_except_silent(tool_name: str, logger=None) -> None:
     """
     Minimal silent error handler — log error tapi gak return apa-apa.
-    Dipakai buat error yang gak kritis tapi perlu diketahui.
+    Used for non-critical errors that need to be known.
     """
     import sys
     exc_type, exc_value, _ = sys.exc_info()

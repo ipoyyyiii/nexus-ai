@@ -1,9 +1,9 @@
 """
 CSRF EXPLOIT, MASS ASSIGNMENT & HTTP METHOD TAMPERING SCANNER
 ==============================================================
-3 tools baru buat nutup gap vulnerability coverage.
+3 tools baru for nutup gap vulnerability coverage.
 
-1. csrf_exploit_scanner — test state-changing requests tanpa/dengan token palsu
+1. csrf_exploit_scanner — test state-changing requests tanpa/with token palsu
 2. mass_assignment_scanner — test extra params (admin=true, price=0)
 3. http_method_tampering_scanner — PUT/PATCH/DELETE + _method override
 """
@@ -42,29 +42,29 @@ def _logger():
 @tool("csrf_exploit_scanner")
 def csrf_exploit_scanner(url: str, method: str = "POST", body: str = "", params: str = "") -> str:
     """
-    Test CSRF protection pada state-changing endpoints.
-    Kirim request TANPA token, dengan token palsu, dan dengan method override.
+    Test CSRF protection on state-changing endpoints.
+    Kirim request TANPA token, with token palsu, dan with method override.
 
     Yang di-test:
     - Request tanpa CSRF token sama sekali
-    - Request dengan CSRF token palsu/random
-    - Request dengan token dari session lain
+    - Request with CSRF token palsu/random
+    - Request with token from session lain
     - Cookie-based CSRF bypass (SameSite=None)
     - Referer/Origin header bypass
 
     url: target endpoint (e.g., https://target.com/api/change-password)
     method: HTTP method (POST/PUT/DELETE)
     body: request body (e.g., '{"new_password":"hacked123"}')
-    params: comma-separated param names yang mungkin berisi CSRF token
+    params: comma-separated param names that mungkin berisi CSRF token
     """
     tool_name = "CSRF Exploit Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting CSRF exploit test pada {url}")
+    logger.add_log(tool_name, "START", f"Starting CSRF exploit test on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     approved = require_approval(
-        action=f"CSRF exploit test pada {url}",
-        context=f"Testing state-changing request tanpa/dengan token palsu. Method: {method}",
+        action=f"CSRF exploit test on {url}",
+        context=f"Testing state-changing request tanpa/with token palsu. Method: {method}",
         risk="medium",
         exec_logger=logger,
     )
@@ -110,8 +110,8 @@ def csrf_exploit_scanner(url: str, method: str = "POST", body: str = "", params:
         baseline_status = 0
         baseline_len = 0
 
-    # ── 2. Request dengan token palsu ─────────────────────────────────────────
-    logger.add_log(tool_name, "PROCESSING", "Testing request dengan CSRF token palsu")
+    # ── 2. Request with token palsu ─────────────────────────────────────────
+    logger.add_log(tool_name, "PROCESSING", "Testing request with CSRF token palsu")
     for param in token_params[:5]:
         if check_cancelled(logger): break
         try:
@@ -130,14 +130,14 @@ def csrf_exploit_scanner(url: str, method: str = "POST", body: str = "", params:
                     timeout=8, verify=False
                 )
 
-            # Jika response SAMA dengan baseline (gak rejected), mungkin vulnerable
+            # Jika response SAMA with baseline (gak rejected), mungkin vulnerable
             if resp.status_code == baseline_status and abs(len(resp.text) - baseline_len) < 100:
                 # Cek apakah request success (200/301/302) — token gak validated
                 if resp.status_code in [200, 201, 202, 301, 302]:
                     findings.append({
                         "type": "CSRF Token Not Validated",
                         "severity": "High",
-                        "detail": f"Request dengan fake token '{param}={fake_token}' received (status {resp.status_code})",
+                        "detail": f"Request with fake token '{param}={fake_token}' received (status {resp.status_code})",
                         "token_param": param,
                         "evidence": f"Baseline: {baseline_status}, With fake token: {resp.status_code}"
                     })
@@ -193,7 +193,7 @@ def csrf_exploit_scanner(url: str, method: str = "POST", body: str = "", params:
                 findings.append({
                     "type": "SameSite=None Cookie",
                     "severity": "Medium",
-                    "detail": "Cookies using SameSite=None — bisa sent dari cross-origin",
+                    "detail": "Cookies using SameSite=None — can sent from cross-origin",
                 })
     except Exception:
         pass
@@ -227,7 +227,7 @@ def csrf_exploit_scanner(url: str, method: str = "POST", body: str = "", params:
                 findings.append({
                     "type": f"CSRF {header_name} Not Validated",
                     "severity": "Medium",
-                    "detail": f"Request received dengan {header_name}: {bypass_headers[header_name]}",
+                    "detail": f"Request received with {header_name}: {bypass_headers[header_name]}",
                     "evidence": f"Status: {resp.status_code}"
                 })
                 logger.add_log(tool_name, "WARNING", f"CSRF: {header_name} gak validated")
@@ -252,8 +252,8 @@ def csrf_exploit_scanner(url: str, method: str = "POST", body: str = "", params:
 @tool("mass_assignment_scanner")
 def mass_assignment_scanner(url: str, body: str = "", params: str = "") -> str:
     """
-    Test untuk Mass Assignment / Over-Posting vulnerability.
-    Kirim request dengan extra parameters yang gak seharusnya bisa di-set user.
+    Test for Mass Assignment / Over-Posting vulnerability.
+    Kirim request with extra parameters that gak seharusnya can set user.
 
     Yang di-test:
     - Role escalation (admin=true, role=admin)
@@ -263,16 +263,16 @@ def mass_assignment_scanner(url: str, body: str = "", params: str = "") -> str:
 
     url: target API endpoint
     body: original request body (JSON)
-    params: comma-separated original param names (biar tau mana yang boleh di-change)
+    params: comma-separated original param names (biar tau mana that boleh di-change)
     """
     tool_name = "Mass Assignment Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting mass assignment test pada {url}")
+    logger.add_log(tool_name, "START", f"Starting mass assignment test on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     approved = require_approval(
-        action=f"Mass assignment test pada {url}",
-        context=f"Sending request dengan extra sensitive parameters ke API endpoint",
+        action=f"Mass assignment test on {url}",
+        context=f"Sending request with extra sensitive parameters ke API endpoint",
         risk="medium",
         exec_logger=logger,
     )
@@ -293,7 +293,7 @@ def mass_assignment_scanner(url: str, body: str = "", params: str = "") -> str:
 
     allowed_params = [p.strip() for p in params.split(",")] if params else list(body_dict.keys())
 
-    # ── Payloads: sensitive fields yang bisa di-inject ────────────────────────
+    # ── Payloads: sensitive fields that can di-inject ────────────────────────
     mass_assignment_payloads = [
         # Role/privilege escalation
         {"field": "admin", "values": [True, "true", 1, "1", "yes"], "category": "privilege"},
@@ -336,7 +336,7 @@ def mass_assignment_scanner(url: str, body: str = "", params: str = "") -> str:
         if check_cancelled(logger): break
         field = payload_config["field"]
 
-        # Skip kalau field ini emang di-allow
+        # Skip kalau field this emang di-allow
         if field in allowed_params:
             continue
 
@@ -355,10 +355,10 @@ def mass_assignment_scanner(url: str, body: str = "", params: str = "") -> str:
                 total_tested += 1
 
                 # Deteksi apakah field received:
-                # - Response beda dari baseline (gak ada field = ignore)
+                # - Response beda from baseline (gak ada field = ignore)
                 # - Response sukses (200/201) padahal field gak seharusnya ada
                 if resp.status_code in [200, 201, 202]:
-                    # Cek apakah response body berisi field yang di-inject
+                    # Cek apakah response body berisi field that di-inject
                     try:
                         resp_json = resp.json()
                         if field in resp_json:
@@ -385,7 +385,7 @@ def mass_assignment_scanner(url: str, body: str = "", params: str = "") -> str:
                                 "injected_value": value,
                                 "category": payload_config["category"],
                                 "response_status": resp.status_code,
-                                "evidence": f"Request dengan {field}={value} gak menghasilkan error",
+                                "evidence": f"Request with {field}={value} gak menghasilkan error",
                             })
                             break
 
@@ -398,7 +398,7 @@ def mass_assignment_scanner(url: str, body: str = "", params: str = "") -> str:
         "total_tested": total_tested,
         "findings": findings,
         "categories_tested": ["privilege", "financial", "account", "idor", "internal"],
-        "note": "Mass assignment vulnerable kalau server menerima dan menyimpan field yang gak di-allow."
+        "note": "Mass assignment vulnerable kalau server menerima dan menyimpan field that gak di-allow."
     }
     logger.add_log(tool_name, "SUCCESS", f"Mass assignment test selesai. Tested: {total_tested}, Findings: {len(findings)}")
     return json.dumps(result, indent=2)
@@ -413,7 +413,7 @@ def http_method_tampering_scanner(url: str) -> str:
     Test HTTP Method Tampering dan Method Override vulnerabilities.
 
     Yang di-test:
-    - PUT/PATCH/DELETE di endpoints yang seharusnya GET/POST
+    - PUT/PATCH/DELETE di endpoints that seharusnya GET/POST
     - _method override (POST + _method=DELETE)
     - X-HTTP-Method-Override header
     - X-HTTP-Method header
@@ -424,11 +424,11 @@ def http_method_tampering_scanner(url: str) -> str:
     """
     tool_name = "HTTP Method Tampering Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting HTTP method tampering test pada {url}")
+    logger.add_log(tool_name, "START", f"Starting HTTP method tampering test on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     approved = require_approval(
-        action=f"HTTP method tampering test pada {url}",
+        action=f"HTTP method tampering test on {url}",
         context="Testing PUT/PATCH/DELETE + method override headers",
         risk="low",
         exec_logger=logger,
@@ -527,7 +527,7 @@ def http_method_tampering_scanner(url: str) -> str:
             if check_cancelled(logger): break
             try:
                 rate_limiter.wait(domain)
-                # POST dengan _method=DELETE di body
+                # POST with _method=DELETE di body
                 resp = auth_post(
                     url,
                     json={override_field: target_method},
@@ -626,7 +626,7 @@ def http_method_tampering_scanner(url: str) -> str:
         "target": url,
         "findings": findings,
         "methods_tested": methods_to_test + ["POST+_method", "POST+header_override"],
-        "note": "Method tampering bisa lead to unauthorized CRUD operations, data deletion, atau privilege escalation."
+        "note": "Method tampering can lead to unauthorized CRUD operations, data deletion, atau privilege escalation."
     }
     logger.add_log(tool_name, "SUCCESS", f"HTTP method tampering test selesai. Findings: {len(findings)}")
     return json.dumps(result, indent=2)

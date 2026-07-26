@@ -46,7 +46,7 @@ async def _get_browser():
 
 
 async def _new_page(browser, timeout_ms: int = 15000):
-    """Buat page baru dengan stealth settings dasar."""
+    """Buat page baru with stealth settings dasar."""
     proxy_dict = proxy_router.get_proxy()
     proxy_server = proxy_dict["http"] if proxy_dict else None
 
@@ -92,7 +92,7 @@ def _domain_of(url: str) -> str:
 
 
 def _run_async(coro):
-    """Run async coroutine dari sync tool context."""
+    """Run async coroutine from sync tool context."""
     try:
         loop = asyncio.get_event_loop()
         if loop.is_running():
@@ -126,13 +126,13 @@ def browser_screenshot(url: str) -> str:
     Buka URL di headless browser, ambil screenshot full-page, dan extract
     informasi dasar (title, meta, visible text snippet).
     Berguna buat: verify target accessible, detect login wall, lihat struktur
-    halaman, nemuin error message atau debug info yang exposed.
+    halaman, nemuin error message atau debug info that exposed.
 
     Args:
-        url: URL target yang mau di-screenshot
+        url: URL target that mau di-screenshot
     Returns:
         JSON string berisi title, meta description, visible text (500 char),
-        dan screenshot base64 (untuk analisis visual oleh LLM).
+        dan screenshot base64 (for analisis visual oleh LLM).
     """
     logger = _logger()
     tool_name = "Browser Screenshot"
@@ -333,7 +333,7 @@ def login_automator(
 ) -> str:
     """
     Automated login using Playwright. Login ke target, capture session
-    cookies, dan simpen ke auth_store buat dipake tools lain.
+    cookies, dan simpen ke auth_store for dipake tools lain.
 
     Flow:
     1. Buka login page
@@ -344,14 +344,14 @@ def login_automator(
 
     Args:
         url: Login page URL (e.g., https://target.com/login)
-        username: Username/email untuk login
-        password: Password untuk login
-        username_selector: CSS selector untuk input username (auto-detect kalau kosong)
-        password_selector: CSS selector untuk input password (auto-detect kalau kosong)
-        submit_selector: CSS selector untuk tombol submit (auto-detect kalau kosong)
-        success_indicator: Text/URL yang muncul kalau login success (opsional)
+        username: Username/email for login
+        password: Password for login
+        username_selector: CSS selector for input username (auto-detect kalau kosong)
+        password_selector: CSS selector for input password (auto-detect kalau kosong)
+        submit_selector: CSS selector for tombol submit (auto-detect kalau kosong)
+        success_indicator: Text/URL that muncul kalau login success (opsional)
     Returns:
-        JSON berisi status login, cookies yang didapat, dan session info
+        JSON berisi status login, cookies that didapat, dan session info
     """
     logger = _logger()
     tool_name = "Login Automator"
@@ -366,7 +366,7 @@ def login_automator(
     from core.checkpoint import require_approval
     approved = require_approval(
         action=f"Automated login ke {url}",
-        context=f"Username: {username[:3]}***. Login ke {url} untuk authenticated scanning.",
+        context=f"Username: {username[:3]}***. Login ke {url} for authenticated scanning.",
         risk="medium",
         exec_logger=logger,
     )
@@ -515,7 +515,7 @@ def login_automator(
             cookies = await page.context.cookies()
             cookie_dict = {c["name"]: c["value"] for c in cookies if c.get("domain", "").endswith(domain.replace(".", ""))}
 
-            # Juga capture dari semua cookies (fallback)
+            # Juga capture from all cookies (fallback)
             if not cookie_dict:
                 cookie_dict = {c["name"]: c["value"] for c in cookies}
 
@@ -533,7 +533,7 @@ def login_automator(
                     f"Login success! Cookies saved: {len(cookie_dict)} cookies")
             elif not login_success:
                 logger.add_log(tool_name, "WARNING",
-                    "Login failed — not ada success indicator yang terdeteksi")
+                    "Login failed — not found success indicator that terdeteksi")
 
             result = {
                 "status": "SUCCESS" if login_success else "FAILED",
@@ -563,22 +563,22 @@ def login_automator(
 @tool("inject_session")
 def inject_session(url: str, cookies: str, headers: str = "") -> str:
     """
-    Inject session cookies/headers ke auth_store. Dipakai ketika user kasih
-    session manual (misal setelah login manual + MFA).
+    Inject session cookies/headers to auth_store. Used when user provides
+    session manual (misal sealready login manual + MFA).
 
     Flow:
     1. User login manual di browser
-    2. User copy cookies dari DevTools/Burp
+    2. User copy cookies from DevTools/Burp
     3. User paste ke tool ini
-    4. Cookies saved ke auth_store → tools lain bisa pake
+    4. Cookies saved ke auth_store → tools lain can pake
 
     Args:
-        url: Target URL (buat extract domain)
+        url: Target URL (for extract domain)
         cookies: Raw cookie string (e.g., "session=abc123; token=xyz; csrftoken=123")
                  ATAU JSON string: {"session": "abc123", "token": "xyz"}
         headers: Optional JSON string of headers (e.g., '{"Authorization": "Bearer xyz"}')
     Returns:
-        JSON berisi status dan info session yang saved
+        JSON berisi status dan info session that saved
     """
     logger = _logger()
     tool_name = "Session Injector"
@@ -589,7 +589,7 @@ def inject_session(url: str, cookies: str, headers: str = "") -> str:
         return "DIBATALKAN: job di-cancel oleh user."
 
     domain = _domain_of(url)
-    logger.add_log(tool_name, "START", f"Injecting session untuk {domain}")
+    logger.add_log(tool_name, "START", f"Injecting session for {domain}")
 
     # Parse cookies
     cookie_dict = {}
@@ -628,7 +628,7 @@ def inject_session(url: str, cookies: str, headers: str = "") -> str:
     auth_store.save_session(domain, auth_session)
 
     logger.add_log(tool_name, "SUCCESS",
-        f"Session saved untuk {domain}: {len(cookie_dict)} cookies, {len(header_dict)} headers")
+        f"Session saved for {domain}: {len(cookie_dict)} cookies, {len(header_dict)} headers")
 
     result = {
         "status": "SUCCESS",
@@ -649,17 +649,17 @@ def inject_session(url: str, cookies: str, headers: str = "") -> str:
 @tool
 def browser_extract_surface(url: str) -> str:
     """
-    Buka halaman di headless browser dan extract semua attack surface:
+    Buka halaman di headless browser dan extract all attack surface:
     - Semua link (internal & eksternal)
     - Semua form (action URL, method, input fields)
-    - Semua input element dengan name/id/type
+    - Semua input element with name/id/type
     - Script src URLs (JS files)
-    - API-like URLs yang kedeteksi dari href/action
+    - API-like URLs that kedeteksi from href/action
     Berguna buat: mapping attack surface senot yet scanning, nemuin endpoint
-    tersembunyi yang cuma muncul setelah browser render JS.
+    tersembunyi that cuma muncul sealready browser render JS.
 
     Args:
-        url: URL halaman yang mau di-extract
+        url: URL halaman that mau di-extract
     Returns:
         JSON berisi links, forms, inputs, scripts, dan api_endpoints
     """
@@ -698,7 +698,7 @@ def browser_extract_surface(url: str) -> str:
                 }))
             """)
 
-            # Extract all inputs (termasuk yang di luar form)
+            # Extract all inputs (termasuk that di luar form)
             inputs = await page.evaluate("""
                 () => Array.from(document.querySelectorAll('input,select,textarea'))
                     .map(i => ({name: i.name, id: i.id, type: i.type, placeholder: i.placeholder}))
@@ -754,7 +754,7 @@ def browser_extract_surface(url: str) -> str:
 @tool("browser_cookie_inspector")
 def browser_cookie_inspector(url: str) -> str:
     """
-    Inspect semua cookies yang di-set oleh halaman target.
+    Inspect all cookies that set oleh halaman target.
     Cek security flags (HttpOnly, Secure, SameSite) dan analisa
     potensi cookie-based attacks (session fixation, CSRF, dll).
     """
@@ -853,11 +853,11 @@ def browser_cookie_inspector(url: str) -> str:
 @tool("browser_storage_inspector")
 def browser_storage_inspector(url: str) -> str:
     """
-    Inspect localStorage dan sessionStorage buat nemuin:
+    Inspect localStorage dan sessionStorage for nemuin:
     - Sensitive data (tokens, API keys, PII)
     - Insecure storage patterns
     - Client-side auth tokens
-    - Debug info yang exposed
+    - Debug info that exposed
     """
     logger = _logger()
     tool_name = "Browser Storage Inspector"
@@ -957,15 +957,15 @@ def browser_storage_inspector(url: str) -> str:
 @tool("browser_js_debugger")
 def browser_js_debugger(url: str) -> str:
     """
-    Load halaman dan intercept semua JavaScript output:
+    Load halaman dan intercept all JavaScript output:
     - console.log/error/warn
     - JavaScript errors
     - Unhandled promise rejections
     - eval() calls
     - document.write calls
     - window.location changes
-    Berguna buat debug client-side logic dan nemuin info sensitif
-    yang di-expose via console.
+    Berguna for debug client-side logic dan nemuin info sensitif
+    that di-expose via console.
     """
     logger = _logger()
     tool_name = "Browser JS Debugger"
@@ -1059,10 +1059,10 @@ def browser_js_debugger(url: str) -> str:
 @tool("browser_network_modifier")
 def browser_network_modifier(url: str, modify_headers: str = "") -> str:
     """
-    Load halaman dengan modified headers. Berguna buat:
+    Load halaman with modified headers. Berguna buat:
     - Test bypass via custom headers (X-Forwarded-For, X-Original-URL)
     - Inject auth tokens ke request
-    - Test CORS dengan custom Origin
+    - Test CORS with custom Origin
     modify_headers: JSON string {"header_name": "value", ...}
     """
     logger = _logger()
@@ -1133,15 +1133,15 @@ def browser_network_modifier(url: str, modify_headers: str = "") -> str:
 @tool
 def browser_intercept_requests(url: str) -> str:
     """
-    Load halaman di browser sambil intercept SEMUA network request yang created
+    Load halaman di browser sambil intercept SEMUA network request that created
     — termasuk XHR, fetch, WebSocket handshake, dan asset requests.
-    Ini cara terbaik nemuin hidden API endpoints yang cuma dipanggil pas
-    JS jalan di browser, bukan dari HTML source.
+    Ini cara terbaik nemuin hidden API endpoints that cuma dipanggil pas
+    JS jalan di browser, bukan from HTML source.
 
     Args:
-        url: URL halaman yang mau dimonitor request-nya
+        url: URL halaman that mau dimonitor request-nya
     Returns:
-        JSON berisi semua request yang tertangkap (URL, method, headers, type)
+        JSON berisi all request that tertangkap (URL, method, headers, type)
     """
     logger = _logger()
     tool_name = "Browser Intercept Requests"
@@ -1168,17 +1168,17 @@ def browser_intercept_requests(url: str) -> str:
 
         try:
             await page.goto(url, wait_until="networkidle")
-            await page.wait_for_timeout(3000)  # Extra wait buat lazy-loaded requests
+            await page.wait_for_timeout(3000)  # Extra wait for lazy-loaded requests
 
-            # Scroll ke bawah buat trigger lazy load
+            # Scroll ke bawah for trigger lazy load
             await page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
             await page.wait_for_timeout(1000)
 
-            # Filter yang interesting (exclude assets statis)
+            # Filter that interesting (exclude assets statis)
             interesting_types = {"xhr", "fetch", "websocket", "document"}
             api_requests = [r for r in captured if r["resource_type"] in interesting_types]
 
-            # Juga flag request yang URL-nya API-looking
+            # Juga flag request that URL-nya API-looking
             api_pattern = re.compile(r'/api/|/v\d+/|/graphql|/rest/|\.json|/data/', re.I)
             flagged = [r for r in captured if api_pattern.search(r["url"])]
 
@@ -1217,9 +1217,9 @@ def browser_intercept_requests(url: str) -> str:
 @tool
 def browser_extract_js_secrets(url: str) -> str:
     """
-    Download dan scan semua file JavaScript dari halaman target.
-    Nyari: API keys yang hardcoded, endpoint tersembunyi, token, config values,
-    internal URL, dan credential yang sering nyangkut di JS bundle.
+    Download dan scan all file JavaScript from halaman target.
+    Nyari: API keys that hardcoded, endpoint tersembunyi, token, config values,
+    internal URL, dan credential that sering nyangkut di JS bundle.
 
     Args:
         url: URL halaman awal (bukan JS file langsung)
@@ -1234,7 +1234,7 @@ def browser_extract_js_secrets(url: str) -> str:
 
     rate_limiter.wait(_domain_of(url))
 
-    # Pattern buat deteksi secrets & endpoints di JS
+    # Pattern for deteksi secrets & endpoints di JS
     SECRET_PATTERNS = {
         "api_key": re.compile(r'(?:api[_-]?key|apikey)\s*[:=]\s*["\']([A-Za-z0-9_\-]{20,})["\']', re.I),
         "token": re.compile(r'(?:token|secret|password)\s*[:=]\s*["\']([A-Za-z0-9_\-]{10,})["\']', re.I),
@@ -1250,7 +1250,7 @@ def browser_extract_js_secrets(url: str) -> str:
         page, ctx = await _new_page(browser)
 
         try:
-            # Ambil daftar JS files dari halaman
+            # Ambil daftar JS files from halaman
             await page.goto(url, wait_until="domcontentloaded")
             script_urls = await page.evaluate("""
                 () => Array.from(document.querySelectorAll('script[src]'))
@@ -1265,7 +1265,7 @@ def browser_extract_js_secrets(url: str) -> str:
                 if check_cancelled(logger):
                     break
 
-                # Cuma scan JS dari domain yang sama (atau CDN-nya)
+                # Cuma scan JS from domain that sama (atau CDN-nya)
                 js_domain = _domain_of(js_url)
                 rate_limiter.wait(js_domain)
 
@@ -1295,7 +1295,7 @@ def browser_extract_js_secrets(url: str) -> str:
                 "js_files_scanned": len(script_urls[:10]),
                 "js_files_with_findings": len(findings),
                 "findings": findings,
-                "note": "Nilai actual di-redact. Review file JS secara manual untuk konfirmasi.",
+                "note": "Actual value di-redact. Review file JS secara manual for konfirmasi.",
                 "status": "success" if not check_cancelled(logger) else "cancelled"
             }
 
@@ -1323,14 +1323,14 @@ def browser_extract_js_secrets(url: str) -> str:
 @tool
 def browser_check_security_headers(url: str) -> str:
     """
-    Load halaman dan analisa security headers yang ada/not ada.
+    Load halaman dan analisa security headers that ada/not ada.
     Cek: CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy,
     Permissions-Policy, CORS headers, cookies security flags.
 
     Args:
         url: URL target
     Returns:
-        JSON berisi header analysis dengan severity per missing/misconfigured header
+        JSON berisi header analysis with severity per missing/misconfigured header
     """
     logger = _logger()
     tool_name = "Browser Security Headers"
@@ -1455,18 +1455,18 @@ def browser_check_security_headers(url: str) -> str:
 def browser_simulate_form(url: str, form_data: str) -> str:
     """
     Isi dan submit form di halaman target using headless browser.
-    Berguna buat: test login form, test search input dengan XSS payload,
-    test upload form, atau interact dengan form multi-step.
+    Berguna buat: test login form, test search input with XSS payload,
+    test upload form, atau interact with form multi-step.
 
     CATATAN: This tool butuh HITL approval karena mengirim data ke target.
 
     Args:
-        url: URL halaman yang berisi form
+        url: URL halaman that berisi form
         form_data: JSON string berisi {selector: value} pairs.
                    Contoh: '{"#username": "test", "#password": "test123"}'
                    Bisa juga: '{"input[name=q]": "<script>alert(1)</script>"}'
     Returns:
-        JSON berisi: response URL setelah submit, title, visible text, dan
+        JSON berisi: response URL sealready submit, title, visible text, dan
         apakah payload ter-reflect di response
     """
     logger = _logger()
@@ -1475,7 +1475,7 @@ def browser_simulate_form(url: str, form_data: str) -> str:
     if check_cancelled(logger):
         return "DIBATALKAN: job di-cancel oleh user."
 
-    # HITL approval senot yet interact dengan form
+    # HITL approval senot yet interact with form
     from core.checkpoint import require_approval
     approved = require_approval(
         action=f"Simulate form interaction di {url}",
@@ -1498,7 +1498,7 @@ def browser_simulate_form(url: str, form_data: str) -> str:
             try:
                 fields = json.loads(form_data)
             except Exception:
-                return json.dumps({"error": "form_data harus berupa JSON string valid"})
+                return json.dumps({"error": "form_data must berupa JSON string valid"})
 
             # Isi tiap field
             for selector, value in fields.items():
@@ -1576,14 +1576,14 @@ def browser_simulate_form(url: str, form_data: str) -> str:
 @tool
 def browser_find_open_redirect(url: str) -> str:
     """
-    Test semua link dan parameter di halaman target untuk open redirect vulnerability.
-    Open redirect sering valid di H1 karena bisa dipake buat phishing dan
+    Test all link dan parameter di halaman target for open redirect vulnerability.
+    Open redirect sering valid di H1 karena can dipake for phishing dan
     bypass referrer-based access control.
 
     Args:
-        url: URL halaman yang mau dites
+        url: URL halaman that mau dites
     Returns:
-        JSON berisi list parameter/URL yang vulnerable terhadap open redirect
+        JSON berisi list parameter/URL that vulnerable terhadap open redirect
     """
     logger = _logger()
     tool_name = "Browser Open Redirect Finder"
@@ -1593,7 +1593,7 @@ def browser_find_open_redirect(url: str) -> str:
 
     rate_limiter.wait(_domain_of(url))
 
-    # OOB canary domain dari private interactsh server
+    # OOB canary domain from private interactsh server
     from engines.oob_engine import oob_engine
     redirect_cid = oob_engine.generate_correlation_id("redirect")
     CANARY = f"{redirect_cid}.{oob_engine.domain}"
@@ -1604,7 +1604,7 @@ def browser_find_open_redirect(url: str) -> str:
         f"https://example.com@{CANARY}",
     ]
 
-    # Parameter name yang sering dipake buat redirect
+    # Parameter name that sering dipake for redirect
     REDIRECT_PARAMS = [
         "next", "redirect", "redirect_to", "redirect_url", "url",
         "return", "return_url", "returnTo", "goto", "go", "target",
@@ -1651,7 +1651,7 @@ def browser_find_open_redirect(url: str) -> str:
                 "payloads_used": REDIRECT_PAYLOADS[:2],
                 "findings": findings,
                 "vulnerable": len(findings) > 0,
-                "note": f"Ganti CANARY_DOMAIN di playwright_tools.py ke domain yang lo kontrol buat hasil akurat.",
+                "note": f"Ganti CANARY_DOMAIN di playwright_tools.py ke domain that lo kontrol for hasil akurat.",
                 "status": "success" if not check_cancelled(logger) else "cancelled"
             }
 

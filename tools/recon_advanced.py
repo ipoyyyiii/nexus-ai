@@ -37,7 +37,7 @@ def recon_advanced(domain: str) -> str:
     """
     tool_name = "Advanced Recon"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting advanced recon untuk {domain}")
+    logger.add_log(tool_name, "START", f"Starting advanced recon for {domain}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     findings = {
@@ -354,14 +354,14 @@ def recon_advanced(domain: str) -> str:
 @tool("email_header_injection_scanner")
 def email_header_injection_scanner(url: str, params: str = "") -> str:
     """
-    Scan untuk Email Header Injection via contact forms / feedback forms.
-    Attacker bisa inject CC/BCC/From headers untuk spam atau phishing.
-    url: URL yang berisi contact form atau email submission endpoint
+    Scan for Email Header Injection via contact forms / feedback forms.
+    Attacker can inject CC/BCC/From headers for spam atau phishing.
+    url: URL that berisi contact form atau email submission endpoint
     params: comma-separated param names to test (biasanya "email", "name", "subject")
     """
     tool_name = "Email Header Injection Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting email header injection scan pada {url}")
+    logger.add_log(tool_name, "START", f"Starting email header injection scan on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     domain = _domain_of(url)

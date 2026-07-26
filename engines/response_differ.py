@@ -1,7 +1,7 @@
 """
 RESPONSE DIFFER — Semantic Response Comparison
 ===============================================
-Bandingin baseline vs test response dengan cerdas.
+Bandingin baseline vs test response with cerdas.
 Bukan cuma length diff — tapi semantic diff.
 
 Usage:
@@ -21,7 +21,7 @@ from urllib.parse import urlparse
 
 class ResponseDiffer:
     """
-    Smart response differ buat detect vulnerability indicators.
+    Smart response differ for detect vulnerability indicators.
     
     Bandingin baseline vs test response pake multiple signals:
     - Status code changes
@@ -33,10 +33,10 @@ class ResponseDiffer:
     """
 
     def __init__(self):
-        # Error patterns yang spesifik — generic patterns dihapus buat kurangi FP
+        # Error patterns that spesifik — generic patterns deleted for kurangi FP
         self.error_patterns = {
             "sql": [
-                r"sql\s+syntax\s+error",  # harus spesifik "syntax error"
+                r"sql\s+syntax\s+error",  # must spesifik "syntax error"
                 r"unquoted\s+string",
                 r"mysql_fetch",
                 r"pg_query",
@@ -48,15 +48,15 @@ class ResponseDiffer:
                 r"you\s+have\s+an\s+error\s+in\s+your\s+sql\s+syntax",
             ],
             "xss": [
-                r"<script[^>]*>.*?</script>",  # harus full tag
-                r"alert\(['\"]",  # harus ada argument
+                r"<script[^>]*>.*?</script>",  # must full tag
+                r"alert\(['\"]",  # must ada argument
                 r"onerror\s*=",  # event handler
                 r"onload\s*=",
                 r"javascript\s*:",  # protocol handler
                 r"<img[^>]+onerror\s*=",
             ],
             "lfi": [
-                r"root:x:0:0:.*:/bin/",  # harus full /etc/passwd line
+                r"root:x:0:0:.*:/bin/",  # must full /etc/passwd line
                 r"bin/bash\s*$",
                 r"\[boot loader\]",  # Windows boot.ini
                 r"Warning.*fopen\(",
@@ -82,7 +82,7 @@ class ResponseDiffer:
                 r"syntax.*error.*template",
             ],
             "rce": [
-                r"uid=\d+\(.*\)\s+gid=\d+",  # harus full id output
+                r"uid=\d+\(.*\)\s+gid=\d+",  # must full id output
                 r"groups?=.*root",
                 r"/bin/sh:\s+\d+:",
                 r"sh:\s+\d+:\s+not\s+found",
@@ -96,7 +96,7 @@ class ResponseDiffer:
             ],
         }
 
-        # Patterns yang menandakan input di-reflect
+        # Patterns that menandwill input di-reflect
         self.reflection_indicators = [
             r"<script[^>]*>.*?</script>",
             r"on\w+\s*=",  # event handlers
@@ -111,7 +111,7 @@ class ResponseDiffer:
             "laravel_500": {
                 "size_range": (9800, 10100),
                 "must_contain": ["whoops", "laravel", "stacktrace", "vendor"],
-                "penalty": 0.8,  # kurangi score sebanyak ini kalau match
+                "penalty": 0.8,  # kurangi score sebanyak this kalau match
             },
             "laravel_404": {
                 "size_range": (9800, 10100),
@@ -154,7 +154,7 @@ class ResponseDiffer:
             "Sucuri": [r"x-sucuri-id"],
         }
 
-        # Severity adjustment berdasarkan endpoint context
+        # Severity adjustment based on endpoint context
         self.endpoint_risk_profiles = {
             "admin": {"multiplier": 1.5, "keywords": ["admin", "dashboard", "manage"]},
             "api": {"multiplier": 0.8, "keywords": ["/api/", "json"]},
@@ -243,9 +243,9 @@ class ResponseDiffer:
 
     def capture_baseline(self, url: str, method: str = "GET", snapshots: int = 1, **kwargs) -> Dict[str, Any]:
         """
-        Capture baseline response dari target URL.
-        snapshots: jumlah baseline snapshot (untuk consistency check)
-        Return dict yang bisa dipake buat compare.
+        Capture baseline response from target URL.
+        snapshots: jumlah baseline snapshot (for consistency check)
+        Return dict that can dipake for compare.
         """
         import requests
         import time
@@ -287,7 +287,7 @@ class ResponseDiffer:
         result["_snapshots"] = snapshots_data  # Store all snapshots
         self._baseline_snapshots = snapshots_data
 
-        # Scan baseline buat detect error patterns yang udah ada
+        # Scan baseline for detect error patterns that udah ada
         baseline_body = result.get("body", "").lower()
         self._baseline_patterns = set()
         for category, patterns in self.error_patterns.items():
@@ -300,7 +300,7 @@ class ResponseDiffer:
 
     def _detect_error_template(self, body: str, status_code: int) -> tuple:
         """
-        Deteksi apakah response adalah error template yang dikenal.
+        Deteksi apakah response is error template that dikenal.
         Return (is_error_template: bool, template_name: str, penalty: float)
         """
         body_lower = body.lower()
@@ -313,7 +313,7 @@ class ResponseDiffer:
             if not ((min_size - size_tolerance) <= body_len <= (max_size + size_tolerance)):
                 continue
 
-            # Cek required keywords (lebih flexibel - 2 dari 3 harus match)
+            # Cek required keywords (lebih flexibel - 2 from 3 must match)
             keywords = template.get("must_contain", [])
             matches = sum(1 for kw in keywords if kw.lower() in body_lower)
             if matches >= max(2, len(keywords) - 1):  # At least 2 or N-1 keywords
@@ -337,7 +337,7 @@ class ResponseDiffer:
 
     def _detect_framework(self, headers: dict, body: str) -> str:
         """
-        Detect application framework dari response headers dan body.
+        Detect application framework from response headers dan body.
         Return framework name atau "unknown".
         """
         headers_str = str(headers).lower()
@@ -536,8 +536,8 @@ class ResponseDiffer:
 
     def _detect_waf(self, headers: dict) -> list:
         """
-        Deteksi WAF/CDN yang aktif.
-        Return list nama WAF yang terdeteksi.
+        Deteksi WAF/CDN that aktif.
+        Return list nama WAF that terdeteksi.
         """
         detected = []
         headers_lower = {k.lower(): v.lower() for k, v in headers.items()}
@@ -552,7 +552,7 @@ class ResponseDiffer:
 
     def _get_endpoint_risk(self, url: str) -> tuple:
         """
-        Tentukan risk profile berdasarkan URL/endpoint.
+        Determine risk profile based on URL/endpoint.
         Return (profile_name: str, multiplier: float)
         """
         url_lower = url.lower()
@@ -567,7 +567,7 @@ class ResponseDiffer:
         self, baseline_ct: str, test_ct: str, baseline_status: int, test_status: int
     ) -> tuple:
         """
-        Deteksi content-type mismatch yang mengindikasikan app broken.
+        Deteksi content-type mismatch that mengindikasikan app broken.
         Return (is_mismatch: bool, penalty: float, reason: str)
         """
         if not baseline_ct or not test_ct:
@@ -585,7 +585,7 @@ class ResponseDiffer:
         if baseline_ct == "text/html" and test_ct in ("", "text/plain", "application/octet-stream"):
             return True, 0.4, "Content-Type changed to non-HTML"
 
-        # 200 → 500 dengan CT change = error page
+        # 200 → 500 with CT change = error page
         if baseline_status == 200 and test_status == 500 and baseline_ct != test_ct:
             return True, 0.5, "Status 500 with Content-Type change = error page"
 
@@ -593,7 +593,7 @@ class ResponseDiffer:
 
     def _parse_response(self, resp) -> Dict[str, Any]:
         """Parse response object jadi dict."""
-        body = resp.text[:10000]  # Cap body buat performance
+        body = resp.text[:10000]  # Cap body for performance
         return {
             "status_code": resp.status_code,
             "body": body,
@@ -702,10 +702,10 @@ class ResponseDiffer:
                     break
 
         # ── Error pattern detection ────────────────────────────────────────────
-        # Hanya hitung pattern yang BUKAN udah ada di baseline
+        # Hanya hitung pattern that BUKAN udah ada di baseline
         test_body_lower = test_body.lower()
         for category, patterns in self.error_patterns.items():
-            # Skip kalau pattern ini udah ada di baseline
+            # Skip kalau pattern this udah ada di baseline
             if category in self._baseline_patterns:
                 continue
 
@@ -773,7 +773,7 @@ class ResponseDiffer:
 
         # ── Body change gate: high/critical butuh body berubah ────────────────
         # Kalau body IDENTIK sama baseline, score dibatasi max 0.3 (medium)
-        # Kecuali ada payload reflection atau status bypass yang jelas
+        # Kecuali ada payload reflection atau status bypass that jelas
         if not result["body_changed"]:
             has_clear_bypass = (
                 (result["status_changed"] and baseline_status >= 400 and test_status == 200)
@@ -825,7 +825,7 @@ class ResponseDiffer:
         if self._baseline_snapshots:
             consistency = self._check_baseline_consistency(test_body, test_status)
             if not consistency["consistent"]:
-                # Response tidak konsisten = mungkin FP
+                # Response not konsisten = mungkin FP
                 result["vulnerability_score"] = max(0, result["vulnerability_score"] - 0.1)
                 result["indicators"].append(
                     f"Baseline inconsistency: {consistency['matches']}/{consistency['snapshots_checked']} snapshots matched"
@@ -867,7 +867,7 @@ class ResponseDiffer:
         **kwargs,
     ) -> Dict[str, Any]:
         """
-        Konfirmasi deteksi dengan kirim known-safe payload.
+        Konfirmasi deteksi with kirim known-safe payload.
         Kalau safe payload juga trigger vulnerability → false positive.
         
         Return:
@@ -896,7 +896,7 @@ class ResponseDiffer:
                 allow_redirects=True,
             )
 
-            # Compare dengan baseline yang sama
+            # Compare with baseline that sama
             baseline = original_diff.get("_baseline", {})
             if not baseline:
                 # Fallback: capture baru
@@ -915,16 +915,16 @@ class ResponseDiffer:
                     f"(patterns: {confirm_diff['error_patterns_found']}). "
                     f"Kemungkinan false positive."
                 )
-            # Kalau error pattern yang sama muncul di safe payload → FP
+            # Kalau error pattern that sama muncul di safe payload → FP
             elif set(confirm_diff["error_patterns_found"]) & set(original_diff.get("error_patterns_found", [])):
                 is_fp = True
                 overlapping = set(confirm_diff["error_patterns_found"]) & set(original_diff.get("error_patterns_found", []))
                 reason = (
                     f"Error patterns {overlapping} muncul di both payload → "
-                    f"pattern itu memang bagian dari aplikasi, bukan dari injection."
+                    f"pattern that memang bagian from aplikasi, bukan from injection."
                 )
             else:
-                reason = "Detection confirmed — safe payload tidak trigger vulnerability."
+                reason = "Detection confirmed — safe payload not trigger vulnerability."
 
             return {
                 "confirmed": not is_fp,
@@ -940,7 +940,7 @@ class ResponseDiffer:
                 "original_score": original_diff.get("vulnerability_score", 0),
                 "confirmation_score": 0,
                 "is_false_positive": True,
-                "reason": f"Confirmation failed ({e}) — treating as FP untuk safety.",
+                "reason": f"Confirmation failed ({e}) — treating as FP for safety.",
             }
 
 

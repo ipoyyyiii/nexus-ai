@@ -14,13 +14,13 @@ def validate_target(url: str, supabase: Client) -> Tuple[bool, str]:
     Return (allowed: bool, reason: str)
 
     Logic:
-    - Domain harus match minimal satu rule 'allow'
+    - Domain must match at least one rule 'allow'
     - Kalau match rule 'deny' manapun -> langsung rejected, deny menang atas allow
     - Kalau scope_rules kosong sama sekali -> rejected (fail-safe, bukan fail-open)
     """
     domain = extract_domain(url)
     if not domain:
-        return False, f"Failed extract domain dari URL: {url}"
+        return False, f"Failed extract domain from URL: {url}"
 
     try:
         res = supabase.table("scope_rules").select("*").execute()
@@ -30,8 +30,8 @@ def validate_target(url: str, supabase: Client) -> Tuple[bool, str]:
 
     if not rules:
         return False, (
-            "Tabel scope_rules masih kosong. Tambahkan minimal satu allow-rule "
-            "dulu senot yet bisa jalanin pentest (lihat docstring scope.py)."
+            "Scope rules table is empty. Add at least one allow-rule "
+            "dulu senot yet can jalanin pentest (lihat docstring scope.py)."
         )
 
     matched_allow = None

@@ -8,8 +8,8 @@ from tools.custom_tools import exec_logger
 @tool("run_nuclei_scan")
 def run_nuclei_scan(url: str, templates: str = "", severity: str = "", stealth: bool = False) -> str:
     """
-    Melakukan vulnerability scanning using Nuclei dengan template pilihan 
-    (cve, misconfig, exposure, takeover). Sangat efektif untuk mendeteksi CVE terbaru 
+    Melakukan vulnerability scanning using Nuclei with template pilihan 
+    (cve, misconfig, exposure, takeover). Sangat efektif for mendeteksi CVE terbaru 
     dan kesalahan konfigurasi server secara cepat.
     
     Args:
@@ -62,14 +62,14 @@ def run_nuclei_scan(url: str, templates: str = "", severity: str = "", stealth: 
         "-concurrency", "10",
     ])
     
-    exec_logger.add_log("Nuclei Scanner", "START", f"Starting nuclei scan pada {target}")
+    exec_logger.add_log("Nuclei Scanner", "START", f"Starting nuclei scan on {target}")
     exec_logger.add_log("Nuclei Scanner", "PROCESSING", f"Command: {' '.join(cmd)}")
     
     try:
         result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=600)
         
         if not os.path.exists(output_file):
-            return f"Nuclei scan selesai untuk {target}, namun not found kerentanan yang cocok."
+            return f"Nuclei scan completed for {target}, namun not found kerentanan that cocok."
             
         findings = []
         with open(output_file, "r") as f:
@@ -95,7 +95,7 @@ def run_nuclei_scan(url: str, templates: str = "", severity: str = "", stealth: 
         os.remove(output_file)
         
         if not findings:
-            return f"Nuclei scan selesai. Target {target} bersih dari signature template yang ditesting."
+            return f"Nuclei scan selesai. Target {target} bersih from signature template that ditesting."
         
         # ── Sort by severity ──────────────────────────────────────────────────
         severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
@@ -132,7 +132,7 @@ def run_nuclei_scan(url: str, templates: str = "", severity: str = "", stealth: 
     except subprocess.TimeoutExpired:
         if os.path.exists(output_file):
             os.remove(output_file)
-        return f"Error: Scan Nuclei ke {target} stopped karena timeout (lebih dari 10 menit)."
+        return f"Error: Scan Nuclei ke {target} stopped karena timeout (lebih from 10 menit)."
     except Exception as e:
         if os.path.exists(output_file):
             os.remove(output_file)

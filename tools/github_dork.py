@@ -112,8 +112,8 @@ DORK_QUERIES = [
 @tool("github_dorking")
 def github_dorking(target_org: str) -> str:
     """
-    Melakukan GitHub dorking untuk menemukan secret, credential, API key,
-    atau konfigurasi sensitif yang not sengaja ter-push ke repo publik
+    Perform GitHub dorking to find secret, credential, API key,
+    or sensitive configuration that was accidentally pushed to public repo
     milik organisasi/developer target.
     
     Args:
@@ -123,7 +123,7 @@ def github_dorking(target_org: str) -> str:
 
     github_token = os.environ.get("GITHUB_TOKEN")
     if not github_token:
-        return "[-] GITHUB_TOKEN not yet di-set di .env. Tambahkan personal access token GitHub (scope: public_repo) untuk using tool ini."
+        return "[-] GITHUB_TOKEN not yet set di .env. add a personal access token GitHub (scope: public_repo) to use this tool."
 
     headers = {
         "Authorization": f"token {github_token}",
@@ -131,7 +131,7 @@ def github_dorking(target_org: str) -> str:
     }
 
     org = target_org.strip().lstrip("@")
-    exec_logger.add_log("GitHub Dorking", "START", f"Starting dorking untuk org/user: {org}")
+    exec_logger.add_log("GitHub Dorking", "START", f"Starting dorking for org/user: {org}")
 
     all_findings = []
 
@@ -187,7 +187,7 @@ def github_dorking(target_org: str) -> str:
             time.sleep(2)
 
         except requests.Timeout:
-            exec_logger.add_log("GitHub Dorking", "WARNING", f"Timeout untuk query: {query_keyword}")
+            exec_logger.add_log("GitHub Dorking", "WARNING", f"Timeout for query: {query_keyword}")
             continue
         except Exception as e:
             exec_logger.add_log("GitHub Dorking", "ERROR", f"Query error: {str(e)}")
@@ -195,14 +195,14 @@ def github_dorking(target_org: str) -> str:
 
     # Build output
     if not all_findings:
-        exec_logger.add_log("GitHub Dorking", "SUCCESS", "Not ada secret yang found")
-        return f"[+] GitHub dorking selesai untuk {org}. Not ada credential/secret yang ter-expose di repo publik."
+        exec_logger.add_log("GitHub Dorking", "SUCCESS", "No secrets found")
+        return f"[+] GitHub dorking completed for {org}. No credentials/secrets exposed in public repo."
 
     exec_logger.add_log("GitHub Dorking", "SUCCESS", f"Total findings: {len(all_findings)}")
 
     output = f"=== GITHUB DORKING RESULTS FOR {org} ===\n"
     output += f"Total potential findings: {len(all_findings)}\n\n"
-    output += "⚠️  MANUAL VERIFICATION REQUIRED — ini hasil search, bukan confirmed vuln.\n\n"
+    output += "⚠️  MANUAL VERIFICATION REQUIRED — this is search, not a confirmed vulnerability.\n\n"
 
     # Group by keyword
     by_keyword = {}

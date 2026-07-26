@@ -30,7 +30,7 @@ def _logger():
 @tool("twofa_bypass_scanner")
 def twofa_bypass_scanner(url: str, login_url: str = "", username: str = "", password: str = "") -> str:
     """
-    Scan untuk 2FA (Two-Factor Authentication) bypass vulnerabilities:
+    Scan for 2FA (Two-Factor Authentication) bypass vulnerabilities:
     - 2FA endpoint rate limiting (brute force OTP)
     - OTP code reuse (same code usable multiple times)
     - 2FA skip/bypass via direct navigation
@@ -38,11 +38,11 @@ def twofa_bypass_scanner(url: str, login_url: str = "", username: str = "", pass
     - OTP length/entropy check
     url: target base URL
     login_url: login endpoint (e.g., /login)
-    username/password: credentials untuk test (opsional — test tanpa auth juga dilakukan)
+    username/password: credentials for test (opsional — test tanpa auth juga dilakukan)
     """
     tool_name = "2FA Bypass Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting 2FA bypass scan pada {url}")
+    logger.add_log(tool_name, "START", f"Starting 2FA bypass scan on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     domain = _domain_of(url)
@@ -71,12 +71,12 @@ def twofa_bypass_scanner(url: str, login_url: str = "", username: str = "", pass
         except Exception:
             pass
 
-    # ── 2. Rate limiting check pada 2FA endpoint ──────────────────────────────
+    # ── 2. Rate limiting check on 2FA endpoint ──────────────────────────────
     logger.add_log(tool_name, "PROCESSING", "Checking rate limiting on 2FA endpoints")
     for endpoint in found_endpoints[:2]:
         if check_cancelled(logger): break
         responses = []
-        # Send 10 rapid requests dengan wrong OTP
+        # Send 10 rapid requests with wrong OTP
         for i in range(10):
             try:
                 rate_limiter.wait(domain)
@@ -89,7 +89,7 @@ def twofa_bypass_scanner(url: str, login_url: str = "", username: str = "", pass
             except Exception:
                 pass
 
-        # Jika not ada 429 atau lockout setelah 10 attempts = no rate limiting
+        # Jika not found 429 atau lockout sealready 10 attempts = no rate limiting
         has_lockout = any(s in [429, 423, 403] for s in responses)
         if not has_lockout and len(responses) >= 8:
             findings["vulnerabilities"].append({
@@ -283,19 +283,19 @@ def twofa_bypass_scanner(url: str, login_url: str = "", username: str = "", pass
 @tool("credential_stuffing_scanner")
 def credential_stuffing_scanner(url: str, login_url: str = "") -> str:
     """
-    Scan untuk credential stuffing exposure — apakah login endpoint
+    Scan for credential stuffing exposure — apakah login endpoint
     rentan terhadap serangan credential stuffing:
     - No rate limiting
     - No account lockout
     - No CAPTCHA
     - No IP-based blocking
-    - Response timing yang konsisten (username enumeration)
+    - Response timing that konsisten (username enumeration)
     url: target base URL
     login_url: login endpoint path (e.g., /login, /api/auth)
     """
     tool_name = "Credential Stuffing Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting credential stuffing scan pada {url}")
+    logger.add_log(tool_name, "START", f"Starting credential stuffing scan on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     domain = _domain_of(url)
@@ -444,7 +444,7 @@ def credential_stuffing_scanner(url: str, login_url: str = "") -> str:
     total_time = _time.monotonic() - start_time
     status_codes = [r["status"] for r in responses]
     has_rate_limit = any(s in [429, 423, 503] for s in status_codes)
-    has_lockout = 403 in status_codes[5:]  # lockout setelah beberapa attempt
+    has_lockout = 403 in status_codes[5:]  # lockout sealready beberapa attempt
 
     if not has_rate_limit and not has_lockout and len(responses) >= 10:
         findings["vulnerabilities"].append({
@@ -533,14 +533,14 @@ def credential_stuffing_scanner(url: str, login_url: str = "") -> str:
 @tool("mixed_content_scanner")
 def mixed_content_scanner(url: str) -> str:
     """
-    Scan untuk Mixed Content vulnerability.
-    HTTPS page yang load HTTP resources (scripts, images, iframes)
+    Scan for Mixed Content vulnerability.
+    HTTPS page that load HTTP resources (scripts, images, iframes)
     rentan terhadap MITM dan content injection.
     url: HTTPS URL target
     """
     tool_name = "Mixed Content Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting mixed content scan pada {url}")
+    logger.add_log(tool_name, "START", f"Starting mixed content scan on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     domain = _domain_of(url)
@@ -631,19 +631,19 @@ def mixed_content_scanner(url: str) -> str:
 @tool("idor_uuid_scanner")
 def idor_uuid_scanner(url: str, cookies: str = "", auth_header: str = "") -> str:
     """
-    Scan untuk IDOR using UUID/Hash manipulation:
+    Scan for IDOR using UUID/Hash manipulation:
     - Sequential UUID prediction
     - Hash-based ID bruteforce hints
     - UUID v1 (timestamp-based) predictability
     - Weak hash patterns (MD5, SHA1 of integer)
     - API endpoint ID enumeration
-    url: target URL yang mengandung ID (e.g., /api/user/550e8400-e29b-41d4-a716-446655440000)
+    url: target URL that mengandung ID (e.g., /api/user/550e8400-e29b-41d4-a716-446655440000)
     cookies: optional session cookies
     auth_header: optional Authorization header value
     """
     tool_name = "IDOR UUID Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting IDOR UUID scan pada {url}")
+    logger.add_log(tool_name, "START", f"Starting IDOR UUID scan on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     domain = _domain_of(url)
@@ -795,7 +795,7 @@ def idor_uuid_scanner(url: str, cookies: str = "", auth_header: str = "") -> str
 @tool("postmessage_vulnerability_scanner")
 def postmessage_vulnerability_scanner(url: str) -> str:
     """
-    Scan untuk postMessage vulnerability:
+    Scan for postMessage vulnerability:
     - window.addEventListener('message') tanpa origin check
     - Insecure postMessage usage di JavaScript
     - Cross-origin message injection potential
@@ -803,7 +803,7 @@ def postmessage_vulnerability_scanner(url: str) -> str:
     """
     tool_name = "PostMessage Vulnerability Scanner"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting postMessage scan pada {url}")
+    logger.add_log(tool_name, "START", f"Starting postMessage scan on {url}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     domain = _domain_of(url)
@@ -913,14 +913,14 @@ def postmessage_vulnerability_scanner(url: str) -> str:
 @tool("asn_ip_mapper")
 def asn_ip_mapper(domain_or_ip: str) -> str:
     """
-    Map ASN (Autonomous System Number) dan IP ranges untuk target.
-    Berguna buat expand attack surface — temukan semua IP/subnet yang dimiliki
-    organisasi target (bisa ada server lain yang gak diketahui).
+    Map ASN (Autonomous System Number) dan IP ranges for target.
+    Berguna for expand attack surface — temukan all IP/subnet that dimiliki
+    organisasi target (can ada server lain that gak diketahui).
     domain_or_ip: target domain atau IP address (e.g., "example.com" atau "93.184.216.34")
     """
     tool_name = "ASN IP Mapper"
     logger = _logger()
-    logger.add_log(tool_name, "START", f"Starting ASN mapping untuk {domain_or_ip}")
+    logger.add_log(tool_name, "START", f"Starting ASN mapping for {domain_or_ip}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
     import socket

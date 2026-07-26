@@ -33,9 +33,9 @@ def _domain_of(url: str) -> str:
 
 def _validate_params_exist(url: str, params: list, logger=None) -> list:
     """
-    Validasi parameter mana yang benar-benar diterima endpoint.
+    Validasi parameter mana that benar-benar received endpoint.
     Kirim benign value (angka 1) ke setiap parameter.
-    Parameter yang bikin response beda dari baseline = ada, sisanya skip.
+    Parameter that bikin response beda from baseline = ada, sisanya skip.
     """
     tool_name = "SSRF Param Validator"
     valid_params = []
@@ -46,7 +46,7 @@ def _validate_params_exist(url: str, params: list, logger=None) -> list:
         baseline_body = baseline_resp.text
         baseline_status = baseline_resp.status_code
     except Exception:
-        # Kalau baseline gagal, return semua parameter (fallback)
+        # Kalau baseline gagal, return all parameter (fallback)
         return params
 
     for param in params:
@@ -87,7 +87,7 @@ def _logger():
 # SSRF SCANNER
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Cloud metadata endpoints yang sering jadi target SSRF
+# Cloud metadata endpoints that sering jadi target SSRF
 CLOUD_METADATA_URLS = [
     "http://169.254.169.254/latest/meta-data/",           # AWS IMDSv1
     "http://169.254.169.254/latest/meta-data/iam/",       # AWS IAM role
@@ -96,7 +96,7 @@ CLOUD_METADATA_URLS = [
     "http://100.100.100.200/latest/meta-data/",           # Alibaba Cloud
 ]
 
-# Parameter names yang sering dipake buat SSRF
+# Parameter names that sering dipake for SSRF
 SSRF_PARAMS = [
     "url", "uri", "link", "src", "source", "href",
     "path", "dest", "destination", "redirect", "proxy",
@@ -106,7 +106,7 @@ SSRF_PARAMS = [
     "endpoint", "api", "service", "webhook",
 ]
 
-# Header injection points buat SSRF
+# Header injection points for SSRF
 SSRF_HEADERS = [
     "X-Forwarded-For",
     "X-Forwarded-Host",
@@ -122,7 +122,7 @@ SSRF_HEADERS = [
 @tool
 def scan_ssrf(url: str, canary_domain: str = "") -> str:
     """
-    Test target untuk Server-Side Request Forgery (SSRF) vulnerability dengan proteksi rotasi proxy.
+    Test target for Server-Side Request Forgery (SSRF) vulnerability with proteksi rotasi proxy.
     """
     logger = _logger()
     tool_name = "SSRF Scanner"
@@ -131,7 +131,7 @@ def scan_ssrf(url: str, canary_domain: str = "") -> str:
         return "DIBATALKAN: job di-cancel oleh user."
 
     approved = require_approval(
-        action=f"SSRF scan pada {url}",
+        action=f"SSRF scan on {url}",
         context=f"Test {len(SSRF_PARAMS)} parameter + cloud metadata endpoints + header injection",
         risk="medium",
         exec_logger=logger,
@@ -154,7 +154,7 @@ def scan_ssrf(url: str, canary_domain: str = "") -> str:
     if logger:
         logger.add_log(tool_name, "PROCESSING", "Phase 1: Parameter-based SSRF test")
 
-    # Validasi parameter sebelum test — skip param yang gak ada di endpoint
+    # Validasi parameter senot yet test — skip param that gak ada di endpoint
     valid_params = _validate_params_exist(url, SSRF_PARAMS, logger)
     if not valid_params:
         if logger:
@@ -174,7 +174,7 @@ def scan_ssrf(url: str, canary_domain: str = "") -> str:
             test_url = f"{url}{'&' if '?' in url else '?'}{param}={payload}"
             rate_limiter.wait(domain)
 
-            # [SUNTIK PROXY] Ambil proxy acak khusus untuk request ini
+            # [SUNTIK PROXY] Ambil proxy acak khusus for request ini
             current_proxy = proxy_router.get_proxy()
 
             try:
@@ -188,12 +188,12 @@ def scan_ssrf(url: str, canary_domain: str = "") -> str:
                 body = resp.text[:2000]
 
                 # ── OOB VERIFICATION MANDATORY ─────────────────────────────
-                # Jangan flag SSRF cuma berdasarkan HTTP response.
+                # Jangan flag SSRF cuma based on HTTP response.
                 # Harus ada callback ke OOB server dulu.
                 oob_verified = False
                 oob_evidence = ""
 
-                # Cek OOB server untuk callback yang masuk
+                # Cek OOB server for callback that masuk
                 try:
                     from engines.oob_engine import oob_engine
                     # Poll OOB server selama 5 detik
@@ -226,7 +226,7 @@ def scan_ssrf(url: str, canary_domain: str = "") -> str:
                     )
 
             except (requests.exceptions.ProxyError, requests.exceptions.Timeout):
-                # Bersihkan proxy sampah dari pool memori jika RTO/Error
+                # Bersihkan proxy sampah from pool memori jika RTO/Error
                 if current_proxy:
                     proxy_router.remove_dead_proxy(current_proxy)
                 continue
@@ -380,16 +380,16 @@ def scan_ssrf(url: str, canary_domain: str = "") -> str:
 # IDOR SCANNER
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Patterns buat deteksi ID di URL
+# Patterns for deteksi ID di URL
 ID_PATTERNS = [
     re.compile(r'/(\d+)(?:/|$|\?)'),           # numeric: /123 atau /123/
     re.compile(r'/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})'),  # UUID
     re.compile(r'[?&](?:id|user_id|account_id|record_id|doc_id|item_id|order_id)=(\w+)'),  # query param
 ]
 
-# ID values buat dicoba (sequential + common test values)
+# ID values for dicoba (sequential + common test values)
 def _generate_test_ids(original_id: str) -> list:
-    """Generate ID candidates berdasarkan format original."""
+    """Generate ID candidates based on format original."""
     candidates = []
 
     if original_id.isdigit():
@@ -424,7 +424,7 @@ def _generate_test_ids(original_id: str) -> list:
 @tool
 def scan_idor(url: str, cookies: str = "", auth_header: str = "") -> str:
     """
-    Test target untuk Insecure Direct Object Reference (IDOR) vulnerability dengan proteksi rotasi proxy.
+    Test target for Insecure Direct Object Reference (IDOR) vulnerability with proteksi rotasi proxy.
     """
     logger = _logger()
     tool_name = "IDOR Scanner"
@@ -433,7 +433,7 @@ def scan_idor(url: str, cookies: str = "", auth_header: str = "") -> str:
         return "DIBATALKAN: job di-cancel oleh user."
 
     approved = require_approval(
-        action=f"IDOR scan pada {url}",
+        action=f"IDOR scan on {url}",
         context=f"Enumerate resource IDs dan test access control. Cookies: {'ada' if cookies else 'not ada'}",
         risk="medium",
         exec_logger=logger,
@@ -464,14 +464,14 @@ def scan_idor(url: str, cookies: str = "", auth_header: str = "") -> str:
     if not extracted_ids:
         return json.dumps({
             "url": url,
-            "message": "Not ada ID yang terdeteksi di URL ini. Coba URL yang spesifik punya resource ID, contoh: /api/users/123 atau /profile?id=456",
+            "message": "Not ada ID that terdeteksi di URL ini. Coba URL that spesifik punya resource ID, contoh: /api/users/123 atau /profile?id=456",
             "status": "no_ids_found"
         })
 
     if logger:
         logger.add_log(tool_name, "PROCESSING", f"Found {len(extracted_ids)} ID di URL: {[i['original'] for i in extracted_ids]}")
 
-    # Baseline Request dengan Proxy
+    # Baseline Request with Proxy
     rate_limiter.wait(domain)
     current_proxy = proxy_router.get_proxy()
     try:
@@ -486,13 +486,13 @@ def scan_idor(url: str, cookies: str = "", auth_header: str = "") -> str:
     except Exception as e:
         return json.dumps({"error": f"Failed request baseline: {str(e)}", "status": "error"})
 
-    # Fuzzing Variant ID dengan Proxy
+    # Fuzzing Variant ID with Proxy
     for id_info in extracted_ids:
         original_id = id_info["original"]
         test_ids = _generate_test_ids(original_id)
 
         if logger:
-            logger.add_log(tool_name, "PROCESSING", f"Testing ID '{original_id}' dengan {len(test_ids)} variants")
+            logger.add_log(tool_name, "PROCESSING", f"Testing ID '{original_id}' with {len(test_ids)} variants")
 
         for test_id in test_ids[:8]:
             if check_cancelled(logger):
@@ -530,16 +530,16 @@ def scan_idor(url: str, cookies: str = "", auth_header: str = "") -> str:
                     for pii_pattern in pii_patterns:
                         if re.search(pii_pattern, resp_body, re.I) and not re.search(pii_pattern, baseline_body, re.I):
                             is_interesting = True
-                            evidence.append("PII pattern detected di response yang not ada di baseline")
+                            evidence.append("PII pattern detected di response that not found di baseline")
                             break
 
                 if baseline_status == 403 and resp.status_code == 200:
                     is_interesting = True
-                    evidence.append("Access control bypass: 403 → 200 setelah ID manipulation")
+                    evidence.append("Access control bypass: 403 → 200 sealready ID manipulation")
 
                 if baseline_status == 401 and resp.status_code == 200:
                     is_interesting = True
-                    evidence.append("Auth bypass: 401 → 200 setelah ID manipulation")
+                    evidence.append("Auth bypass: 401 → 200 sealready ID manipulation")
 
                 if is_interesting:
                     findings.append({
@@ -565,7 +565,7 @@ def scan_idor(url: str, cookies: str = "", auth_header: str = "") -> str:
                 if logger:
                     logger.add_log(tool_name, "WARNING", f"Error test ID {test_id}: {str(e)[:100]}")
 
-    # Query Param ID Fuzzing dengan Proxy
+    # Query Param ID Fuzzing with Proxy
     if not check_cancelled(logger):
         common_id_params = ["id", "user_id", "account_id", "record_id", "uid", "userid"]
         for param in common_id_params:
