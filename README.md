@@ -134,9 +134,24 @@ npm run dev
 | `POST` | `/checkpoint/respond` | Approve/reject HITL |
 | `POST` | `/auth/respond` | Submit credentials |
 | `GET` | `/sessions` | List sessions |
+| `POST` | `/sessions` | Create setup wizard session |
+| `GET` | `/sessions/{session_id}/context` | Load target, goal, scope, and TargetState |
+| `POST` | `/sessions/{session_id}/messages` | Send a natural-language chat message |
 | `POST` | `/scope-rules` | Create scope rule |
+| `GET` | `/sessions/{session_id}/workflow` | Load workflow state |
+| `POST` | `/sessions/{session_id}/workflow/plan` | Generate evidence-driven next-step proposal |
+| `POST` | `/sessions/{session_id}/workflow/actions/{action_id}/approve` | Approve a proposed action |
+| `POST` | `/sessions/{session_id}/workflow/actions/{action_id}/reject` | Reject a proposed action |
+| `GET` | `/sessions/{session_id}/workflow/progress` | Read objective progress |
+| `POST` | `/sessions/{session_id}/workflow/evidence` | Store redacted evidence |
+| `POST` | `/sessions/{session_id}/workflow/cleanup` | Register cleanup work |
+| `POST` | `/sessions/{session_id}/workflow/retest` | Start finding retest |
+| `POST` | `/sessions/{session_id}/workflow/retest/result` | Record bounded retest result |
+| `POST` | `/sessions/{session_id}/workflow/impact-proof` | Propose bounded impact proof |
+| `POST` | `/sessions/{session_id}/workflow/impact-proof/result` | Record impact-proof evidence |
+| `GET` | `/sessions/{session_id}/workflow/report` | Generate evidence-linked report |
+| `GET` | `/sessions/{session_id}/jobs/latest` | Restore latest durable job |
 
-> All endpoints require `X-API-Key` header.
 
 ## Architecture
 
@@ -221,6 +236,3 @@ Reports available in 3 formats:
 - **PDF** — Via fpdf2 library
 - **DOCX** — Via python-docx library
 
-## License
-
-MIT License

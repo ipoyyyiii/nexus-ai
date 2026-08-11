@@ -113,6 +113,14 @@ MODEL_REGISTRY = [
         "slug": "openai/minimax-m3",  
         "description": "Super cepat dan responsif versi TokenHub. Good for live-streaming chat interface di dashboard.",
     },
+    {
+        "id": "tokenhub-mimo-v2.5-pro",
+        "label": "Mimo v2.5 Pro (TokenHub)",
+        "provider": "Tencent-TokenHub",
+        "tier": "paid",
+        "slug": "openai/mimo-v2.5-pro",  
+        "description": "Super cepat dan responsif versi TokenHub. Good for live-streaming chat interface di dashboard.",
+    },
 
     # ── FREE ──────────────────────────────────────────────────
     {
@@ -278,6 +286,29 @@ def build_llm(preferred_model_id: Optional[str] = None):
         temperature=0.2,
         max_tokens=4096,
         fallbacks=fallback_names,
+    )
+
+
+def build_chat_llm(preferred_model_id: Optional[str] = None):
+    """Return an OpenRouter chat model for conversational turns."""
+    if not os.environ.get("OPENROUTER_API_KEY"):
+        raise RuntimeError("OPENROUTER_API_KEY not set in the backend environment.")
+
+    selected = _find(preferred_model_id) if preferred_model_id else None
+    model = selected or next((item for item in MODEL_REGISTRY if item["tier"] == "free"), MODEL_REGISTRY[0])
+    if model["id"].startswith("tokenhub-"):
+        return ChatOpenAI(
+            model=model["slug"],
+            api_key=os.environ.get("TOKENHUB_API_KEY"),
+            base_url=os.environ.get("TOKENHUB_API_BASE"),
+            temperature=0.3,
+        )
+    return ChatOpenAI(
+        model=model["slug"],
+        api_key=os.environ.get("OPENROUTER_API_KEY"),
+        base_url=OPENROUTER_BASE,
+        temperature=0.3,
+        default_headers=OPENROUTER_HEADERS,
     )
 
 

@@ -2,6 +2,8 @@ import os
 import uuid
 import asyncio
 import json
+from core.target_state import create_target_state, get_target_state, set_target_state
+from core.interactive_flow import run_phase1, run_phase2_interactive, run_phase3
 import secrets
 import threading
 from datetime import datetime
@@ -34,7 +36,20 @@ from tools.js_analysis import analyze_js_deep
 from core.session_memory import SessionMemory, MEMORY_TABLE_SQL
 from core.scope import validate_target
 from core.checkpoint import checkpoint_store, current_job_id
-from core.model_registry import build_llm, list_available_models, chain_summary
+from core.model_registry import build_llm, build_chat_llm, list_available_models, chain_summary
+from core.session_store import SessionStore, SESSION_CONTEXT_SQL
+from core.chat_orchestrator import ChatOrchestrator
+from core.workflow_planner import WorkflowPlanner
+from core.execution_guard import ExecutionGuard
+from core.evidence_service import EvidenceService
+from core.lifecycle_service import LifecycleService
+from core.workflow_dispatch import WorkflowDispatcher
+from core.tool_adapter import ToolOutputAdapter
+from core.chain_planner import ChainPlanner
+from core.impact_service import ImpactService
+from core.cleanup_registry import cleanup_registry
+from core.retest_service import RetestService
+from core.workflow_report import WorkflowReport
 from core.cancellation import cancellation_store, current_job_id as cancel_job_id
 from tools.nuclei_tool import run_nuclei_scan
 from tools.subdomain_takeover import detect_subdomain_takeover
@@ -97,6 +112,17 @@ url: str = os.environ.get("SUPABASE_URL")
 key: str = os.environ.get("SUPABASE_KEY")
 supabase: Client = create_client(url, key)
 memory = SessionMemory(supabase)
+session_store = SessionStore(supabase)
+chat_orchestrator = ChatOrchestrator(session_store, supabase)
+workflow_planner = WorkflowPlanner(session_store)
+execution_guard = ExecutionGuard(session_store)
+evidence_service = EvidenceService(session_store)
+lifecycle_service = LifecycleService(session_store)
+tool_adapter = ToolOutputAdapter()
+chain_planner = ChainPlanner(session_store)
+impact_service = ImpactService(session_store, chain_planner)
+retest_service = RetestService(session_store, evidence_service)
+workflow_report = WorkflowReport(session_store)
 
 app = FastAPI(title="Nexus AI Pentest API", version="6.1 - Hardened Edition")
 
@@ -175,6 +201,7 @@ app.add_middleware(
 # Di production ganti with Redis.
 # ============================================================
 jobs: Dict[str, Dict[str, Any]] = {}
+workflow_dispatcher = WorkflowDispatcher(session_store, execution_guard, jobs)
 
 class JobQueueState:
     def __init__(self):
@@ -282,6 +309,90 @@ class PentestRequest(BaseModel):
     # Scan configuration — phases mana that mau running
     scan_config: Optional[Dict[str, Any]] = None
 
+class SessionSetupRequest(BaseModel):
+    target: str
+    goal: str
+    scope_rules: list[Dict[str, Any]]
+    authorization_confirmed: bool
+    model_id: Optional[str] = None
+
+
+class ChatMessageRequest(BaseModel):
+    content: str
+    model_id: Optional[str] = None
+    message_id: Optional[str] = None
+    parent_message_id: Optional[str] = None
+
+
+class ChatCancelRequest(BaseModel):
+    message_id: str
+
+
+class WorkflowPlanRequest(BaseModel):
+    request: str = ""
+
+
+class WorkflowTransitionRequest(BaseModel):
+    phase: str
+
+
+class WorkflowDecisionRequest(BaseModel):
+    reviewer_note: str = ""
+    dispatch: bool = True
+
+
+class CleanupRequest(BaseModel):
+    description: str
+    action: str
+    source_action_id: str = ""
+
+
+class CleanupCompleteRequest(BaseModel):
+    result: str
+    success: bool
+
+
+class RetestStartRequest(BaseModel):
+    finding_id: str
+
+
+class ChainPlanRequest(BaseModel):
+    objective: str = ""
+
+
+class EvidenceReviewRequest(BaseModel):
+    confirmed: bool
+
+
+class ImpactResultRequest(BaseModel):
+    action_id: str
+    before: str
+    after: str
+    success: bool
+
+
+class CleanupExecuteRequest(BaseModel):
+    handler_name: str
+    context: Dict[str, Any] = {}
+
+
+class RetestRecordRequest(BaseModel):
+    status: str
+    comparison: str
+    evidence: Dict[str, Any] = {}
+
+
+class EvidenceRequest(BaseModel):
+    source: str
+    summary: str
+    target_url: str = ""
+    method: str = "GET"
+    request: str = ""
+    response: str = ""
+    confidence: str = "medium"
+    tool_run_id: str = ""
+
+
 class ImageRequest(BaseModel):
     image_data: str
     session_id: Optional[str] = None
@@ -321,6 +432,26 @@ def update_job(job_id: str, **kwargs):
     if job_id in jobs:
         jobs[job_id].update(kwargs)
         jobs[job_id]["updated_at"] = datetime.now().isoformat()
+        try:
+            session_store.save_job(jobs[job_id])
+        except Exception as persist_err:
+            print(f"[WORKFLOW] Job persistence warning: {persist_err}")
+
+
+def _ingest_phase_result(session_id: str, target: str, phase: str, output: str, run_id: str):
+    try:
+        result = tool_adapter.adapt(phase, target, output, run_id)
+        ingested = evidence_service.ingest_adapter_result(session_id, result)
+        state = session_store.load_state(session_id)
+        for endpoint in result.endpoints:
+            if endpoint not in {item.url for item in state.endpoints}:
+                from core.target_state import EndpointInfo
+                state.endpoints.append(EndpointInfo(url=endpoint))
+        session_store.save_state(session_id, state)
+        return ingested
+    except Exception as exc:
+        print(f"[WORKFLOW] Phase result ingestion skipped: {exc}")
+        return None
 
 
 # ============================================================
@@ -430,160 +561,75 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
         llm_eksekutor = build_llm(agent_models.get("eksekutor"))
         llm_assessor = build_llm(agent_models.get("assessor"))
 
-        # Determine which phases to run
-        phases = []
-        if scan_config.get("recon", True):
-            phases.append("recon")
-        if scan_config.get("exploitation", True):
-            phases.extend(["analis", "eksekutor"])
-        if scan_config.get("assessor", True):
-            phases.append("assessor")
-        if not phases:
-            phases = ["recon", "analis", "eksekutor", "assessor"]
+        # ── Initialize Target State ────────────────────────────────────────────
+        target_state = create_target_state(url=target, goal=goal)
+        target_state.scan_start = datetime.now().isoformat()
 
-        # ── Phase-by-phase execution ──────────────────────────────────────────
+        # ── Phase 1: Automated Data Gathering (Recon & Vuln) ─────────────────
         all_results = {}
         all_reports = []
-        phase_names = {"recon": "Reconnaissance", "analis": "Vulnerability Analysis", "eksekutor": "Exploitation", "assessor": "Risk Assessment"}
+        
+        phase1_success = run_phase1(
+            job_id=job_id,
+            session_id=session_id,
+            target=target,
+            goal=goal,
+            memory_context=memory_context,
+            llm_recon=llm_recon,
+            llm_analis=llm_analis,
+            all_results=all_results,
+            all_reports=all_reports,
+            auto_pilot=auto_pilot,
+            cancellation_store=cancellation_store,
+            continue_store=continue_store,
+            update_job=update_job,
+            save_message=save_message,
+            phase_filter=scan_config.get("phase_filter"),
+            result_handler=lambda phase, output, run_id: _ingest_phase_result(session_id, target, phase, output, run_id)
+        )
+        
+        if not phase1_success:
+            update_job(job_id, status="cancelled", message="Phase 1 cancelled by user.")
+            save_message(session_id, "agent", "JOB CANCELLED by user during Phase 1.")
+            return
 
-        for phase_idx, phase in enumerate(phases):
-            if cancellation_store.is_cancelled(job_id):
-                break
+        # ── Phase 2: Interactive Consultation (Co-Pilot Chat) ─────────────────
+        phase2_success = run_phase2_interactive(
+            job_id=job_id,
+            session_id=session_id,
+            target=target,
+            auto_pilot=auto_pilot,
+            cancellation_store=cancellation_store,
+            continue_store=continue_store,
+            update_job=update_job,
+            save_message=save_message,
+            jobs=jobs
+        )
+        
+        if not phase2_success:
+            update_job(job_id, status="cancelled", message="Phase 2 cancelled by user.")
+            save_message(session_id, "agent", "JOB CANCELLED by user during Phase 2.")
+            return
 
-            is_last_phase = (phase_idx == len(phases) - 1)
-            update_job(job_id, status="running", message=f"Phase {phase_idx+1}/{len(phases)}: {phase_names.get(phase, phase)}...")
-
-            if phase == "recon":
-                agent = Agent(
-                    role="Advanced Reconnaissance & Intel Gatherer",
-                    goal="Deep recon: infrastruktur, tech-stack, WAF, DNS, SSL, browser-based surface mapping.",
-                    backstory="Intel Red Team level elit." + (f"\n{memory_context}" if memory_context else ""),
-                    llm=llm_recon,
-                    tools=[langchain_to_crewai(t) for t in [
-                        recon_target, enumerate_dns_subdomains, analyze_ssl_tls,
-                        browser_screenshot, browser_extract_surface,
-                        browser_intercept_requests, browser_check_security_headers,
-                        browser_extract_js_secrets, analyze_js_deep,
-                        param_discovery_get, param_discovery_headers,
-                        detect_subdomain_takeover, report_new_endpoint, wayback_scraper, github_dorking,
-                        recon_advanced, misconfiguration_scanner,
-                        client_side_security_scanner, mixed_content_scanner, asn_ip_mapper,
-                        postmessage_vulnerability_scanner, shodan_scanner, censys_scanner,
-                    ]],
-                    verbose=True
-                )
-                task = Task(
-                    description=f"Active Recon target: {target}. Petwill ports, tech-stack, WAF, DNS, SSL, cloud assets, JS secrets.",
-                    expected_output="Laporan intelijen infrastruktur lengkap dalam format GFM markdown.",
-                    agent=agent
-                )
-            elif phase == "analis":
-                agent = Agent(
-                    role="Senior Vulnerability Strategist",
-                    goal="Rancang payload presisi based on intel recon.",
-                    backstory="Mastermind eksploitasi. Payload-nya surgical, WAF-aware.",
-                    llm=llm_analis,
-                    tools=[langchain_to_crewai(t) for t in [
-                        baca_log_burp, scan_sql_injection, detect_xss_csrf,
-                        scan_lfi_rfi, test_header_injection,
-                        browser_simulate_form, browser_find_open_redirect,
-                        param_discovery_post, run_nuclei_scan,
-                        report_new_endpoint, graphql_tester, cors_tester, ssti_tester,
-                        blind_sqli_scanner, nosql_injection_scanner,
-                        ldap_injection_scanner, xpath_injection_scanner,
-                        stored_xss_scanner, dom_xss_scanner, jsonp_injection_scanner,
-                        access_control_scanner,
-                        csrf_exploit_scanner, mass_assignment_scanner, http_method_tampering_scanner,
-                        command_injection_scanner, log_injection_scanner, csv_injection_scanner,
-                        prototype_pollution_scanner,
-                        web_cache_poisoning_scanner, cache_deception_scanner, idor_uuid_scanner,
-                        # New scanners (2026 Benchmark)
-                        html_injection_scanner, ssi_injection_scanner, hpp_scanner,
-                    ]],
-                    verbose=True
-                )
-                recon_ctx = all_results.get("recon", "")[:1000]
-                task = Task(
-                    description=f"Target: {target} | Goal: {goal}\nBerdasarkan recon:\n{recon_ctx}\n\nTest all injection vectors: SQLi, XSS, LFI, Header Injection.",
-                    expected_output="Daftar vulnerabilities dalam format GFM markdown.",
-                    agent=agent
-                )
-            elif phase == "eksekutor":
-                agent = Agent(
-                    role="Active Exploit Executor",
-                    goal="Eksekusi payload, test API, SSRF, IDOR.",
-                    backstory="Eksekutor berdarah dingin. Expert di SSRF dan IDOR.",
-                    llm=llm_eksekutor,
-                    tools=[langchain_to_crewai(t) for t in [
-                        tembak_payload, test_api_security, analyze_password_strength,
-                        scan_ssrf, scan_idor, test_jwt_weakness, test_auth_rate_limiting,
-                        report_new_endpoint, oauth_flow_tester, xxe_tester,
-                        session_management_scanner, password_reset_tester,
-                        host_header_injection_scanner, race_condition_scanner,
-                        file_upload_scanner, http_request_smuggling_scanner,
-                        websocket_security_scanner, email_header_injection_scanner,
-                        insecure_deserialization_scanner, ssrf_advanced_scanner,
-                        twofa_bypass_scanner, credential_stuffing_scanner,
-                        # New scanners (2026 Benchmark)
-                        password_storage_analyzer, credential_reuse_scanner,
-                    ]],
-                    verbose=True
-                )
-                analis_ctx = all_results.get("analis", "")[:1000]
-                task = Task(
-                    description=f"Target: {target}\nEksekusi attack vectors from Analis:\n{analis_ctx}\n\nTest API endpoints, SSRF, IDOR, auth bypass.",
-                    expected_output="Log eksekusi dalam format GFM markdown.",
-                    agent=agent
-                )
-            elif phase == "assessor":
-                agent = Agent(
-                    role="Chief Information Security Officer (CISO)",
-                    goal="Risk assessment dan laporan eksekutif.",
-                    backstory="Ahli CIA Triad + CVSS scoring.",
-                    llm=llm_assessor,
-                    verbose=True
-                )
-                prev_ctx = "\n\n".join([
-                    f"### Recon:\n{all_results.get('recon', 'N/A')[:500]}",
-                    f"### Analysis:\n{all_results.get('analis', 'N/A')[:500]}",
-                    f"### Exploitation:\n{all_results.get('eksekutor', 'N/A')[:500]}",
-                ])
-                task = Task(
-                    description=f"Analisis all findings for {target}:\n{prev_ctx}\n\nBuat laporan GFM markdown. Jangan gunwill ASCII art. Setiap vulnerability must punya section terpisah with metadata lengkap (CWE-ID, CVSS vector, severity, steps to reproduce, PoC). Gunwill tabel markdown, bullet points, dan blockquote (>).",
-                    expected_output="Laporan eksekutif risk assessment dalam format GFM markdown.",
-                    agent=agent
-                )
-
-            # Run single agent
-            try:
-                crew = Crew(agents=[agent], tasks=[task], verbose=True)
-                result = crew.kickoff()
-                result_str = str(result)
-                all_results[phase] = result_str
-                all_reports.append(f"## Phase: {phase_names.get(phase, phase)}\n\n{result_str}")
-                save_message(session_id, "agent", f"[Phase {phase_idx+1}/{len(phases)} - {phase_names.get(phase, phase)} Selesai]\n\n{result_str[:2000]}")
-                update_job(job_id, message=f"Phase {phase_idx+1}/{len(phases)} selesai: {phase_names.get(phase, phase)}")
-            except Exception as phase_err:
-                update_job(job_id, message=f"Error di phase {phase}: {phase_err}")
-                all_results[phase] = f"Error: {phase_err}"
-
-            # Pause between phases (skip if auto_pilot)
-            if not is_last_phase and not cancellation_store.is_cancelled(job_id):
-                if auto_pilot:
-                    update_job(job_id, status="running", message=f"Phase {phase_names.get(phase, phase)} selesai. Auto-Pilot: continuing...")
-                    # Auto-approve, no pause
-                else:
-                    update_job(job_id, status="waiting_continue", message=f"Phase {phase_names.get(phase, phase)} selesai. Klik 'Continue' for lanjut.")
-                    approved = continue_store.request_continue(job_id)
-                    if not approved:
-                        update_job(job_id, status="cancelled", message="Cancelled oleh user.")
-                        save_message(session_id, "agent", "JOB DIBATALKAN oleh user.")
-                        return
+        # ── Phase 3: Automated Synthesis & Reporting ─────────────────────────
+        if scan_config.get("assessor", True):
+            run_phase3(
+                job_id=job_id,
+                session_id=session_id,
+                target=target,
+                all_results=all_results,
+                all_reports=all_reports,
+                llm_assessor=llm_assessor,
+                cancellation_store=cancellation_store,
+                update_job=update_job,
+                save_message=save_message
+            )
 
         # ── Finalize ──────────────────────────────────────────────────────────
-        raw_report = "\n\n---\n\n".join(all_reports) if all_reports else "Not ada results."
+        target_state.scan_end = datetime.now().isoformat()
+        raw_report = "\n\n---\n\n".join(all_reports) if all_reports else "No results."
 
-        # Post-process: generate full professional report from phase results
+        # Post-process: generate full professional report
         try:
             from tools.report_generator import ReportGenerator
             gen = ReportGenerator()
@@ -598,23 +644,24 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
         logs_data = get_execution_logs()
 
         if cancellation_store.is_cancelled(job_id):
-            save_message(session_id, "agent", "JOB DIBATALKAN oleh user.")
-            update_job(job_id, status="cancelled", message="Cancelled oleh user.", logs=logs_data["logs"], summary=logs_data["summary"])
+            save_message(session_id, "agent", "JOB CANCELLED by user.")
+            update_job(job_id, status="cancelled", message="Cancelled by user.", logs=logs_data["logs"], summary=logs_data["summary"])
         else:
             save_message(session_id, "agent", report)
-            update_job(job_id, status="done", message="Selesai.", report=report, logs=logs_data["logs"], summary=logs_data["summary"])
+            update_job(job_id, status="done", message="Complete.", report=report, logs=logs_data["logs"], summary=logs_data["summary"])
 
             # ── Save scan history ─────────────────────────────────────────────
             try:
                 scan_history.save(
                     target=target,
-                    findings=[],  # Findings from phase results
+                    findings=[item.__dict__ for item in session_store.load_state(session_id).workflow.findings],
                     session_id=session_id,
                     summary={"waf": waf_result.get("waf", "Unknown"), "phases": list(all_results.keys())},
                 )
             except Exception as hist_err:
                 print(f"[HISTORY] Save failed (non-critical): {hist_err}")
 
+            # ── Save to memory ────────────────────────────────────────────────
             # ── Save to memory ────────────────────────────────────────────────
             try:
                 memory.save_findings_from_report(target, report, session_id)
@@ -646,6 +693,434 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
 # ============================================================
 # ENDPOINTS
 # ============================================================
+
+@app.post("/sessions")
+async def create_interactive_session(req: SessionSetupRequest, _: bool = Depends(require_api_key)):
+    try:
+        return session_store.create(
+            target_url=req.target,
+            goal=req.goal,
+            scope_rules=req.scope_rules,
+            authorization_confirmed=req.authorization_confirmed,
+            model_id=req.model_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/sessions/{session_id}/context")
+async def get_session_context(session_id: str, _: bool = Depends(require_api_key)):
+    context = session_store.get(session_id)
+    if not context:
+        raise HTTPException(status_code=404, detail="Session setup not found.")
+    return context
+
+
+@app.get("/sessions/{session_id}/jobs/latest")
+async def get_latest_session_job(session_id: str, _: bool = Depends(require_api_key)):
+    try:
+        session_store.require(session_id)
+        return {"job": jobs.get(next((job_id for job_id, item in jobs.items() if item.get("session_id") == session_id), "")) or session_store.latest_job(session_id)}
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@app.get("/sessions/{session_id}/workflow")
+async def get_session_workflow(session_id: str, _: bool = Depends(require_api_key)):
+    try:
+        context = session_store.require(session_id)
+        state = session_store.load_state(session_id)
+        return {"session_id": session_id, "phase": context.get("phase", state.workflow.phase), "workflow": state.workflow.to_dict()}
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@app.post("/sessions/{session_id}/workflow/plan")
+async def create_workflow_plan(session_id: str, req: WorkflowPlanRequest, _: bool = Depends(require_api_key)):
+    try:
+        return {"session_id": session_id, **workflow_planner.propose(session_id, req.request)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/sessions/{session_id}/workflow/transition")
+async def transition_workflow(session_id: str, req: WorkflowTransitionRequest, _: bool = Depends(require_api_key)):
+    try:
+        return {"session_id": session_id, **workflow_planner.transition(session_id, req.phase)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/sessions/{session_id}/workflow/chain")
+async def propose_workflow_chain(session_id: str, req: ChainPlanRequest, _: bool = Depends(require_api_key)):
+    try:
+        return {"session_id": session_id, **chain_planner.propose_next(session_id, req.objective)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/sessions/{session_id}/workflow/evidence/{evidence_id}/review")
+async def review_workflow_evidence(session_id: str, evidence_id: str, req: EvidenceReviewRequest, _: bool = Depends(require_api_key)):
+    try:
+        state = session_store.load_state(session_id)
+        if evidence_id not in {item.evidence_id for item in state.workflow.evidence}:
+            raise ValueError("Evidence not found.")
+        matched = [item for item in state.workflow.findings if evidence_id in item.evidence_ids]
+        for finding in matched:
+            finding.status = "validated" if req.confirmed else "disproven"
+        state.workflow.record_event("evidence_reviewed", evidence_id=evidence_id, confirmed=req.confirmed)
+        session_store.save_state(session_id, state)
+        return {"ok": True, "findings": [item.__dict__ for item in matched]}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/sessions/{session_id}/workflow/progress")
+async def workflow_progress(session_id: str, _: bool = Depends(require_api_key)):
+    try:
+        return evidence_service.objective_progress(session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@app.post("/sessions/{session_id}/workflow/actions/{action_id}/approve")
+async def approve_workflow_action(
+    session_id: str,
+    action_id: str,
+    req: WorkflowDecisionRequest,
+    background_tasks: BackgroundTasks,
+    _: bool = Depends(require_api_key),
+):
+    try:
+        proposal = execution_guard.approve(session_id, action_id, req.reviewer_note)
+        result = {"ok": True, "proposal": proposal.__dict__}
+        if req.dispatch:
+            dispatch = workflow_dispatcher.dispatch(session_id, action_id)
+            context = session_store.require(session_id)
+            background_tasks.add_task(
+                run_pentest_job,
+                dispatch["job_id"],
+                context["target_url"],
+                context["attack_goal"],
+                session_id,
+                {},
+                None,
+                dispatch["scan_config"],
+            )
+            result.update({"job_id": dispatch["job_id"], "stream_token": dispatch["stream_token"]})
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/sessions/{session_id}/workflow/actions/{action_id}/reject")
+async def reject_workflow_action(session_id: str, action_id: str, req: WorkflowDecisionRequest, _: bool = Depends(require_api_key)):
+    try:
+        proposal = execution_guard.reject(session_id, action_id, req.reviewer_note)
+        return {"ok": True, "proposal": proposal.__dict__}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/sessions/{session_id}/workflow/evidence")
+async def add_workflow_evidence(session_id: str, req: EvidenceRequest, _: bool = Depends(require_api_key)):
+    try:
+        evidence = evidence_service.add(
+            session_id=session_id,
+            source=req.source,
+            summary=req.summary,
+            target_url=req.target_url,
+            method=req.method,
+            request=req.request,
+            response=req.response,
+            confidence=req.confidence,
+            tool_run_id=req.tool_run_id,
+        )
+        return {"ok": True, "evidence": evidence.__dict__}
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@app.post("/sessions/{session_id}/workflow/impact-proof")
+async def propose_impact_proof(session_id: str, req: ChainPlanRequest, _: bool = Depends(require_api_key)):
+    try:
+        return {"session_id": session_id, **impact_service.propose(session_id, req.objective)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/sessions/{session_id}/workflow/impact-proof/result")
+async def record_impact_proof(session_id: str, req: ImpactResultRequest, _: bool = Depends(require_api_key)):
+    try:
+        return impact_service.record_result(session_id, req.action_id, req.before, req.after, req.success)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/sessions/{session_id}/workflow/cleanup-handlers")
+async def list_cleanup_handlers(session_id: str, _: bool = Depends(require_api_key)):
+    session_store.require(session_id)
+    return {"handlers": cleanup_registry.available()}
+
+
+@app.post("/sessions/{session_id}/workflow/cleanup/{cleanup_id}/execute")
+async def execute_workflow_cleanup(session_id: str, cleanup_id: str, req: CleanupExecuteRequest, _: bool = Depends(require_api_key)):
+    try:
+        item = lifecycle_service.execute_cleanup(session_id, cleanup_id, req.handler_name, req.context)
+        return {"ok": True, "cleanup": item.__dict__}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.get("/sessions/{session_id}/workflow/report")
+async def get_workflow_report(session_id: str, _: bool = Depends(require_api_key)):
+    try:
+        return workflow_report.generate(session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@app.get("/sessions/{session_id}/workflow/lifecycle")
+async def workflow_lifecycle(session_id: str, _: bool = Depends(require_api_key)):
+    try:
+        return lifecycle_service.summary(session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@app.post("/sessions/{session_id}/workflow/cleanup")
+async def register_workflow_cleanup(session_id: str, req: CleanupRequest, _: bool = Depends(require_api_key)):
+    try:
+        item = lifecycle_service.register_cleanup(session_id, req.description, req.action, req.source_action_id)
+        return {"ok": True, "cleanup": item.__dict__}
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@app.post("/sessions/{session_id}/workflow/cleanup/{cleanup_id}")
+async def complete_workflow_cleanup(session_id: str, cleanup_id: str, req: CleanupCompleteRequest, _: bool = Depends(require_api_key)):
+    try:
+        item = lifecycle_service.complete_cleanup(session_id, cleanup_id, req.result, req.success)
+        return {"ok": True, "cleanup": item.__dict__}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/sessions/{session_id}/workflow/retest")
+async def start_workflow_retest(session_id: str, req: RetestStartRequest, _: bool = Depends(require_api_key)):
+    try:
+        retest = lifecycle_service.start_retest(session_id, req.finding_id)
+        return {"ok": True, "retest": retest.__dict__, "procedure": retest_service.prepare(session_id, req.finding_id)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/sessions/{session_id}/workflow/retest/result")
+async def record_workflow_retest(session_id: str, req: RetestRecordRequest, _: bool = Depends(require_api_key)):
+    try:
+        finding_id = req.evidence.get("finding_id", "")
+        if not finding_id:
+            raise ValueError("evidence.finding_id is required.")
+        return retest_service.record(session_id, finding_id, req.status, req.comparison, req.evidence)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/sessions/{session_id}/messages/stream")
+async def stream_session_message(session_id: str, req: ChatMessageRequest, _: bool = Depends(require_api_key)):
+    from core.chat_runtime import new_message_id
+
+    content = req.content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Message cannot be empty.")
+    message_id = req.message_id or new_message_id()
+    session_store.require(session_id)
+    session_store.save_chat_message(session_id, {
+        "role": "user",
+        "content": content,
+        "message_id": message_id,
+        "status": "complete",
+        "parent_message_id": req.parent_message_id,
+        "metadata": {"model": req.model_id},
+    })
+
+    async def event_generator():
+        assistant_parts: list[str] = []
+        intent = chat_orchestrator.classify_intent(content)
+        if intent in {"plan", "proposal"}:
+            plan = workflow_planner.propose(session_id, content)
+            reply = "I prepared a workflow proposal for your review. No active job has started."
+            proposal_event = {
+                "event": "tool_proposal",
+                "message_id": message_id,
+                "session_id": session_id,
+                "status": "proposal_pending",
+                "content": reply,
+                "metadata": {"proposals": plan["proposals"], "workflow": plan["workflow"], "phase": plan["phase"]},
+            }
+            yield f"data: {json.dumps(proposal_event)}\\n\\n"
+            session_store.save_chat_message(session_id, {
+                "role": "agent", "content": reply, "message_id": message_id,
+                "status": "complete", "metadata": {"decision": "tool_proposal"},
+            })
+            yield f"data: {json.dumps({**proposal_event, 'event': 'done', 'status': 'complete'})}\\n\\n"
+            return
+        for event in chat_orchestrator.stream(session_id, content, message_id, req.model_id):
+            if event.get("event") == "delta":
+                assistant_parts.append(event.get("delta", ""))
+            if event.get("event") == "done":
+                answer = event.get("content", "".join(assistant_parts))
+                session_store.save_chat_message(session_id, {
+                    "role": "agent",
+                    "content": answer,
+                    "message_id": message_id,
+                    "status": "complete",
+                    "parent_message_id": message_id,
+                    "metadata": event.get("metadata", {}),
+                })
+                chat_orchestrator.update_summary(session_id)
+            yield f"data: {json.dumps(event)}\\n\\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+    })
+
+
+@app.post("/sessions/{session_id}/messages/{message_id}/cancel")
+async def cancel_session_message(session_id: str, message_id: str, _: bool = Depends(require_api_key)):
+    try:
+        session_store.require(session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    from core.chat_runtime import chat_cancellation
+    return {"ok": chat_cancellation.cancel(message_id), "message_id": message_id}
+
+
+@app.post("/sessions/{session_id}/messages")
+async def send_session_message(
+    session_id: str,
+    req: ChatMessageRequest,
+    background_tasks: BackgroundTasks,
+    _: bool = Depends(require_api_key),
+):
+    content = req.content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Message cannot be empty.")
+    try:
+        context = session_store.require(session_id)
+        save_message(session_id, "user", content)
+        intent = chat_orchestrator.classify_intent(content)
+
+        if intent == "plan":
+            plan = workflow_planner.propose(session_id, content)
+            reply = "I prepared an evidence-driven next-step plan for review. No scanner has started yet."
+            save_message(session_id, "agent", reply)
+            return {
+                "session_id": session_id,
+                "role": "agent",
+                "content": reply,
+                "phase": plan["phase"],
+                "workflow": plan["workflow"],
+                "proposals": plan["proposals"],
+            }
+
+        if intent == "proposal":
+            plan = workflow_planner.propose(session_id, content)
+            reply = "I understand this as a request to inspect the target. I prepared a proposal for your review; no job has started."
+            session_store.save_chat_message(session_id, {
+                "role": "agent",
+                "content": reply,
+                "message_id": req.message_id or str(uuid.uuid4()),
+                "status": "complete",
+                "metadata": {"decision": "tool_proposal", "proposal_count": len(plan["proposals"])},
+            })
+            return {
+                "session_id": session_id,
+                "role": "agent",
+                "content": reply,
+                "phase": plan["phase"],
+                "workflow": plan["workflow"],
+                "proposals": plan["proposals"],
+            }
+
+        if intent in {"recon", "analysis"}:
+            valid, reason = session_store.validate_active_scope(session_id, context["target_url"])
+            if not valid:
+                reply = f"I can't start that job because the session scope is invalid: {reason}"
+                save_message(session_id, "agent", reply)
+                return {"session_id": session_id, "role": "agent", "content": reply, "phase": context.get("phase", "SETUP")}
+
+            job_id = str(uuid.uuid4())
+            stream_token = secrets.token_urlsafe(32)
+            scan_config = {
+                "recon": intent == "recon",
+                "exploitation": intent == "analysis",
+                "assessor": False,
+                "auto_pilot": False,
+                "stealth_mode": False,
+            }
+            jobs[job_id] = {
+                "job_id": job_id,
+                "session_id": session_id,
+                "target": context["target_url"],
+                "goal": context["attack_goal"],
+                "status": "queued",
+                "message": "Queued from interactive chat.",
+                "report": None,
+                "logs": [],
+                "summary": {},
+                "stream_token": stream_token,
+                "created_at": datetime.now().isoformat(),
+                "updated_at": datetime.now().isoformat(),
+            }
+            try:
+                session_store.save_job(jobs[job_id])
+            except Exception as persist_err:
+                print(f"[WORKFLOW] Job persistence warning: {persist_err}")
+            queued_reply = (
+                f"I queued {intent} for `{context['target_domain']}`. "
+                "The job will stay within this session's scope; I'll show progress in the execution stream."
+            )
+            save_message(session_id, "agent", queued_reply)
+            background_tasks.add_task(
+                run_pentest_job,
+                job_id,
+                context["target_url"],
+                context["attack_goal"],
+                session_id,
+                {"recon": req.model_id, "analis": req.model_id},
+                None,
+                scan_config,
+            )
+            return {
+                "session_id": session_id,
+                "role": "agent",
+                "content": queued_reply,
+                "phase": "RECON" if intent == "recon" else "ANALYSIS",
+                "job_id": job_id,
+                "stream_token": stream_token,
+            }
+
+        reply = chat_orchestrator.reply(session_id, content, req.model_id)
+        save_message(session_id, "agent", reply)
+        return {
+            "session_id": session_id,
+            "role": "agent",
+            "content": reply,
+            "phase": context.get("phase", "SETUP"),
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
 
 @app.get("/sessions")
 async def get_sessions(_: bool = Depends(require_api_key)):

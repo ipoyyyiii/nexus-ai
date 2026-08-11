@@ -7,16 +7,19 @@
 - For web security testing, focus on web applications only; skip mobile app and desktop app testing. Confidence: 0.70
 
 # workflow
-- Before making code changes, read and understand all existing code and file relationships in the repository first. Confidence: 0.70
-- Before making assessments or judgments about code quality/completeness, read all relevant code files thoroughly first — do not evaluate based on a subset. Confidence: 0.75
-- Execute vulnerability scanning agents in sequential phases (recon → analysis → exploitation → assessment) with user pause/continue between each phase. Confidence: 0.70
-
+See [workflow/taste.md](workflow/taste.md)
 # code-style
 - AI agent reports must use Github Flavored Markdown (GFM) format only; no ASCII art decorations or manual borders. Confidence: 0.75
 - All code, comments, tool output, and documentation (including README) must be in English for GitHub accessibility. Confidence: 0.95
 
 # communication
-- Communicate with the user using casual Indonesian language (e.g., "kocak", "men", "gue", "lu", "bentar dulu"). Confidence: 0.80
+See [communication/taste.md](communication/taste.md)
+# architecture
+- Design multi-agent pipelines with a centralized TargetState memory layer that aggregates outputs from each phase and is dynamically injected into LLM prompts. Confidence: 0.80
+- Implement an interactive co-pilot mode where automated scanning pauses after reconnaissance/analysis, allowing the user to ask questions and request custom payloads before proceeding to exploitation/reporting. Confidence: 0.85
+- Start each new pentesting session with a setup wizard that collects the target/domain, attack goal, authorization, and allow/deny scope rules before entering the chat interface. Confidence: 0.95
+- Make the agent chat-first and session-scoped: each message should use persistent TargetState tied to its session rather than triggering an autonomous full scan or relying on global target state. Confidence: 0.95
+- Use a 3-phase architecture: (1) Automated Data Gathering, (2) Interactive Consultation, (3) Automated Synthesis & Reporting — with each phase feeding data into a shared state store. Confidence: 0.82
 
 # pentesting
 See [pentesting/taste.md](pentesting/taste.md)

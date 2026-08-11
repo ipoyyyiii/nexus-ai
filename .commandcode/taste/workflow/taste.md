@@ -1,0 +1,15 @@
+# workflow
+- Prefers using Command Code slash commands such as `/plans` to access and manage reusable implementation plans. Confidence: 0.88
+- Before implementing substantial changes, prepare a concrete implementation plan for the user to review and approve; do not modify code while the work is still in plan-review mode. Once the plan is explicitly approved, begin implementation directly in YOLO mode when requested, prioritizing the main workflow gaps before secondary hardening. Confidence: 0.97
+- Prioritize making the AI agent feel like a polished, highly adaptive Claude/GPT-style conversational assistant before expanding pentesting/scanning capabilities. Focus first on natural multi-turn chat, streaming, durable context/memory, robust model fallback, and conversational tool proposals. Confidence: 0.96
+- Before making code changes, read and understand all existing code and file relationships in the repository first. Confidence: 0.70
+- Before making assessments or judgments about code quality/completeness, read all relevant code files thoroughly first — do not evaluate based on a subset. Confidence: 0.75
+- Execute vulnerability scanning agents in sequential phases (recon → analysis → exploitation → assessment) with user pause/continue between each phase. Confidence: 0.70
+- After initial assessment/audit, implement all required changes comprehensively in one shot — do not ask for piecemeal confirmation between sub-tasks. Confidence: 0.65
+- When completing any change, immediately apply it to Docker (Dockerfile + docker-compose) and verify the full stack runs end-to-end — changes are not "done" until they work in the container. Confidence: 0.85
+- Install and integrate all relevant external tools into the Dockerfile in a single session; do not split tool installation across multiple sessions. Confidence: 0.80
+- After any session of code changes, rebuild and run Docker to verify everything works before finishing. Confidence: 0.80
+- For testing AI pipelines, prefers avoiding paid model usage and validating the failure path when credits are unavailable; paid models should not be consumed implicitly. Confidence: 0.88
+- Frontend layouts must remain fully usable at the default 100% browser zoom, with configuration controls such as Stealth Mode visible without requiring users to zoom out. Confidence: 0.92
+- Treat Supabase schema migrations as one-time SQL Editor setup steps, not actions repeated on each login or session; clearly state when a migration is complete and whether a restart/rebuild is actually required. Confidence: 0.92
+- When handing work off to another coding/AI provider, create a reusable Markdown roadmap plus a copy-paste implementation prompt tailored to the repository, goals, and remaining context rather than relying on conversational context alone. Confidence: 0.93
