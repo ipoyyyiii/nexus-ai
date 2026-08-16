@@ -22,8 +22,8 @@ services:
     build:
       context: ./frontend-pentest 
       args:
-        - NEXT_PUBLIC_API_URL=http://48.193.45.254:8000
-        - NEXT_PUBLIC_NEXUS_API_KEY=882de194f469afb00b7eeeefdd299a8820a2315d7260ea193373bef7a46dd9b4
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        - NEXT_PUBLIC_NEXUS_API_KEY=${NEXUS_API_KEY}
     ports:
       - "3000:3000"
     restart: always

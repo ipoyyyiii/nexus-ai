@@ -112,3 +112,6 @@ from tools.ssi_injection_scanner import ssi_injection_scanner
 from tools.hpp_scanner import hpp_scanner
 from tools.password_storage_analyzer import password_storage_analyzer
 from tools.credential_reuse_scanner import credential_reuse_scanner
+
+# ── Hunter Pipeline (bug bounty 1:1) ───────────────────────────────────────
+from tools.hunter_pipeline import httpx_probe, naabu_scan, gowitness_shot, gau_urls, hakrawler_crawl, amass_enum

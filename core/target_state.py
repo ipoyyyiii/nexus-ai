@@ -133,6 +133,10 @@ class TargetState:
 
         from core.workflow_models import WorkflowState
         self.workflow = WorkflowState()
+        self.pages_visited: List[Dict[str, Any]] = []
+        self.interaction_log: List[Dict[str, Any]] = []
+        self.attack_surface: Dict[str, Any] = {}
+        self.exploit_plans: List[Dict[str, Any]] = []
     
     def _extract_domain(self, url: str) -> str:
         """Extract domain from URL."""
@@ -492,6 +496,31 @@ class TargetState:
             context_parts.append(f"MFA: {'Yes' if self.auth_info.has_mfa else 'No'}")
             context_parts.append("")
         
+        # Business invariants (global understanding)
+        try:
+            from core.business_inference import infer_invariants
+            invs = infer_invariants(getattr(self, "pages_visited", []), getattr(self, "attack_surface", {}))
+            if invs:
+                context_parts.append("=== BUSINESS INVARIANTS (inferred) ===")
+                for inv in invs[:8]:
+                    context_parts.append(f"  - {inv}")
+                context_parts.append("")
+        except Exception:
+            pass
+        if getattr(self, "attack_surface", None):
+            context_parts.append("=== ATTACK SURFACE ===")
+            for n in self.attack_surface.get("nodes", [])[:12]:
+                context_parts.append(f"  {n.get('kind')}: {n.get('url')} risk {n.get('risk')}")
+            context_parts.append("")
+        # Recent evidence (dynamic verification)
+        recent_ev = getattr(self, "workflow", None)
+        if recent_ev and getattr(recent_ev, "evidence", None):
+            context_parts.append("=== RECENT EVIDENCE (last 2) ===")
+            for ev in recent_ev.evidence[-2:]:
+                summ = getattr(ev, "summary", "") if hasattr(ev, "summary") else ev.get("summary","")
+                context_parts.append(f"  {summ[:400]}")
+            context_parts.append("")
+        
         # Scan Summary
         context_parts.append("=== SCAN SUMMARY ===")
         context_parts.append(f"Phases completed: {', '.join(self.phases_completed)}")
@@ -528,6 +557,10 @@ class TargetState:
             "raw_recon": self.raw_recon,
             "raw_vuln": self.raw_vuln,
             "raw_exploit": self.raw_exploit,
+            "pages_visited": self.pages_visited,
+            "interaction_log": self.interaction_log,
+            "attack_surface": self.attack_surface,
+            "exploit_plans": self.exploit_plans,
             "workflow": self.workflow.to_dict(),
         }
     
@@ -557,6 +590,10 @@ class TargetState:
         state.raw_recon = data.get("raw_recon", "")
         state.raw_vuln = data.get("raw_vuln", "")
         state.raw_exploit = data.get("raw_exploit", "")
+        state.pages_visited = data.get("pages_visited", [])
+        state.interaction_log = data.get("interaction_log", [])
+        state.attack_surface = data.get("attack_surface", {})
+        state.exploit_plans = data.get("exploit_plans", [])
         from core.workflow_models import WorkflowState
         state.workflow = WorkflowState.from_dict(data.get("workflow"))
         
@@ -583,19 +620,23 @@ class TargetState:
         return summary
 
 
-# Global target state instance
+import threading as _ts_threading
+_target_lock = _ts_threading.Lock()
+# Global target state instance (legacy, now guarded)
 _current_target_state: Optional[TargetState] = None
 
 
 def get_target_state() -> Optional[TargetState]:
-    """Get the current target state."""
-    return _current_target_state
+    """Get the current target state (legacy global, prefer session-scoped load)."""
+    with _target_lock:
+        return _current_target_state
 
 
 def set_target_state(state: TargetState):
-    """Set the current target state."""
+    """Set the current target state (legacy global)."""
     global _current_target_state
-    _current_target_state = state
+    with _target_lock:
+        _current_target_state = state
 
 
 def create_target_state(url: str, goal: str = "") -> TargetState:

@@ -1,4 +1,5 @@
 import os
+import re
 from typing import List, Optional
 from langchain_openai import ChatOpenAI
 from crewai import LLM
@@ -190,23 +191,82 @@ MODEL_REGISTRY = [
 ]
 
 
-def list_available_models() -> List[dict]:
-    if not os.environ.get("OPENROUTER_API_KEY"):
+def _is_local_enabled() -> bool:
+    return os.environ.get("NEXUS_LOCAL_LLM_ENABLED", "").lower() in ("1", "true", "yes", "on")
+
+
+def _local_base_url() -> str:
+    raw = os.environ.get("NEXUS_LOCAL_LLM_BASE_URL", "")
+    raw = raw.strip().strip('"').strip("'")
+    if not raw:
+        return ""
+    if not raw.rstrip("/").endswith("/v1"):
+        raw = raw.rstrip("/") + "/v1"
+    return raw
+
+
+def _local_api_key() -> str:
+    return os.environ.get("NEXUS_LOCAL_LLM_API_KEY") or "EMPTY"
+
+
+def _local_model_ids() -> List[str]:
+    raw = os.environ.get("NEXUS_LOCAL_LLM_MODELS", "")
+    return [m.strip() for m in raw.split(",") if m.strip()]
+
+
+def _local_registry() -> List[dict]:
+    if not _is_local_enabled():
         return []
-    return [
-        {
+    ids = _local_model_ids()
+    if not ids:
+        return []
+    out = []
+    for mid in ids:
+        slug = mid.strip()
+        id_clean = "local-" + re.sub(r"[^a-z0-9-]", "-", slug.lower().replace("/", "-").replace("_", "-"))
+        label_base = slug.split("/")[-1] if "/" in slug else slug
+        out.append({
+            "id": id_clean,
+            "label": f"{label_base} (Local)",
+            "provider": "Local",
+            "tier": "local",
+            "slug": slug,
+            "description": "Local model via Kaggle/Colab ngrok - pilih manual saat credit habis.",
+        })
+    return out
+
+
+def _all_models() -> List[dict]:
+    return MODEL_REGISTRY + _local_registry()
+
+
+def list_available_models() -> List[dict]:
+    has_openrouter = bool(os.environ.get("OPENROUTER_API_KEY"))
+    has_local = _is_local_enabled() and bool(_local_base_url())
+    has_tokenhub = bool(os.environ.get("TOKENHUB_API_KEY") and os.environ.get("TOKENHUB_API_BASE"))
+    if not has_openrouter and not has_local and not has_tokenhub:
+        return []
+
+    models = []
+    for m in _all_models():
+        if m["id"].startswith("local-") and not has_local:
+            continue
+        if m["id"].startswith("tokenhub-") and not has_tokenhub:
+            continue
+        if not m["id"].startswith("local-") and not m["id"].startswith("tokenhub-") and not has_openrouter:
+            continue
+        models.append({
             "id": m["id"],
             "label": m["label"],
             "provider": m["provider"],
             "tier": m["tier"],
             "description": m["description"],
-        }
-        for m in MODEL_REGISTRY
-    ]
+        })
+    return models
 
 
 def _find(model_id: str) -> Optional[dict]:
-    return next((m for m in MODEL_REGISTRY if m["id"] == model_id), None)
+    return next((m for m in _all_models() if m["id"] == model_id), None)
 
 
 def build_llm(preferred_model_id: Optional[str] = None):
@@ -216,8 +276,24 @@ def build_llm(preferred_model_id: Optional[str] = None):
     CrewAI's LLM class properly passes api_key & base_url ke litellm,
     solving the issue where ChatOpenAI's credentials were ignored.
     """
-    if not os.environ.get("OPENROUTER_API_KEY"):
-        raise RuntimeError("OPENROUTER_API_KEY not yet set di .env backend.")
+    if not os.environ.get("OPENROUTER_API_KEY") and not _is_local_enabled():
+        raise RuntimeError("OPENROUTER_API_KEY / NEXUS_LOCAL_LLM_BASE_URL not set di .env.")
+
+    # Direct local path - no fallback mixing
+    if preferred_model_id and preferred_model_id.startswith("local-"):
+        base_url = _local_base_url()
+        if not base_url:
+            raise RuntimeError("NEXUS_LOCAL_LLM_BASE_URL belum diisi untuk model local.")
+        info = _find(preferred_model_id)
+        slug = info["slug"] if info else preferred_model_id.replace("local-", "")
+        return LLM(
+            model=slug,
+            api_key=_local_api_key(),
+            base_url=base_url,
+            temperature=0.2,
+            max_tokens=4096,
+            additional_params={"extra_headers": {"ngrok-skip-browser-warning": "true"}},
+        )
 
     ordered: List[dict] = []
 
@@ -246,12 +322,10 @@ def build_llm(preferred_model_id: Optional[str] = None):
 
     # ── ROUTING ENGINE: CREWAI LLM CLASS ──
 
-    # Cek apakah model pertama is TokenHub
-    is_tokenhub = final_chain[0]["id"].startswith("tokenhub-")
+    is_tokenhub = final_chain[0]["id"].startswith("tokenhub-") if final_chain else False
 
     if is_tokenhub:
         # TokenHub: return langsung TANPA fallback ke OpenRouter
-        # (credentials berbeda, gak can fallback)
         return LLM(
             model=final_chain[0]["slug"],
             api_key=os.getenv("TOKENHUB_API_KEY"),
@@ -260,9 +334,12 @@ def build_llm(preferred_model_id: Optional[str] = None):
             max_tokens=4096,
         )
 
-    # Untuk OpenRouter: can pake fallback antar OpenRouter models
+    # Untuk OpenRouter: pass only OpenRouter models to fallback list
     instances: List[LLM] = []
+    fallback_names: List[str] = []
     for m in final_chain:
+        if m["id"].startswith("local-") or m["id"].startswith("tokenhub-"):
+            continue
         instances.append(
             LLM(
                 model=m["slug"],
@@ -272,30 +349,58 @@ def build_llm(preferred_model_id: Optional[str] = None):
                 max_tokens=4096,
             )
         )
+        fallback_names.append(m["slug"])
+
+    if not instances:
+        raise RuntimeError("No available OpenRouter models configured.")
 
     if len(instances) == 1:
         return instances[0]
 
-    # Fallback antar OpenRouter models — pass model names, not LLM objects
+    # Fallback antar OpenRouter models - pass model names, not LLM objects
     primary = instances[0]
-    fallback_names = [m["slug"] for m in final_chain[1:]]
     return LLM(
         model=primary.model,
         api_key=os.environ.get("OPENROUTER_API_KEY"),
         base_url="https://openrouter.ai/api/v1",
         temperature=0.2,
         max_tokens=4096,
-        fallbacks=fallback_names,
+        fallbacks=fallback_names[1:],
     )
 
 
 def build_chat_llm(preferred_model_id: Optional[str] = None):
-    """Return an OpenRouter chat model for conversational turns."""
-    if not os.environ.get("OPENROUTER_API_KEY"):
-        raise RuntimeError("OPENROUTER_API_KEY not set in the backend environment.")
+    """Return a chat model instance (OpenRouter, TokenHub, or Local)."""
+    # Local prefix takes priority - direct routing
+    if preferred_model_id and preferred_model_id.startswith("local-"):
+        base_url = _local_base_url()
+        if not base_url:
+            raise RuntimeError("NEXUS_LOCAL_LLM_BASE_URL belum diisi untuk model local.")
+        info = _find(preferred_model_id)
+        slug = info["slug"] if info else preferred_model_id.replace("local-", "")
+        return ChatOpenAI(
+            model=slug,
+            api_key=_local_api_key(),
+            base_url=base_url,
+            temperature=0.3,
+            default_headers={"ngrok-skip-browser-warning": "true"},
+        )
 
     selected = _find(preferred_model_id) if preferred_model_id else None
-    model = selected or next((item for item in MODEL_REGISTRY if item["tier"] == "free"), MODEL_REGISTRY[0])
+    model = selected or next((item for item in _all_models() if item["tier"] in ("free", "local")), MODEL_REGISTRY[0])
+
+    if model["id"].startswith("local-"):
+        base_url = _local_base_url()
+        if not base_url:
+            raise RuntimeError("NEXUS_LOCAL_LLM_BASE_URL belum diisi untuk model local.")
+        return ChatOpenAI(
+            model=model["slug"],
+            api_key=_local_api_key(),
+            base_url=base_url,
+            temperature=0.3,
+            default_headers={"ngrok-skip-browser-warning": "true"},
+        )
+
     if model["id"].startswith("tokenhub-"):
         return ChatOpenAI(
             model=model["slug"],
@@ -303,6 +408,22 @@ def build_chat_llm(preferred_model_id: Optional[str] = None):
             base_url=os.environ.get("TOKENHUB_API_BASE"),
             temperature=0.3,
         )
+
+    if not os.environ.get("OPENROUTER_API_KEY"):
+        # Jika tidak ada key OpenRouter tapi local aktif, pakai local
+        if _is_local_enabled() and _local_base_url():
+            local_models = _local_registry()
+            if local_models:
+                m = local_models[0]
+                return ChatOpenAI(
+                    model=m["slug"],
+                    api_key=_local_api_key(),
+                    base_url=_local_base_url(),
+                    temperature=0.3,
+                    default_headers={"ngrok-skip-browser-warning": "true"},
+                )
+        raise RuntimeError("OPENROUTER_API_KEY not set in the backend environment.")
+
     return ChatOpenAI(
         model=model["slug"],
         api_key=os.environ.get("OPENROUTER_API_KEY"),
@@ -313,7 +434,7 @@ def build_chat_llm(preferred_model_id: Optional[str] = None):
 
 
 def chain_summary(preferred_model_id: Optional[str] = None) -> List[str]:
-    """Return urutan model di chain — for logging di api.py."""
+    """Return urutan model di chain - for logging di api.py."""
     ordered: List[dict] = []
     if preferred_model_id:
         preferred = _find(preferred_model_id)
@@ -324,6 +445,9 @@ def chain_summary(preferred_model_id: Optional[str] = None) -> List[str]:
             ordered.append(m)
     for m in MODEL_REGISTRY:
         if m["tier"] == "free" and m not in ordered:
+            ordered.append(m)
+    for m in _local_registry():
+        if m not in ordered:
             ordered.append(m)
     seen, result = set(), []
     for m in ordered:

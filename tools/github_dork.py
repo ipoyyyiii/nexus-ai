@@ -109,6 +109,33 @@ DORK_QUERIES = [
     'eyJ',
 ]
 
+def _domain_to_org_candidates(domain_or_org: str) -> list:
+    """Derive GitHub org candidates from domain or direct org input."""
+    raw = domain_or_org.strip().lower()
+    # Strip URL parts if given full url
+    raw = raw.replace("https://", "").replace("http://", "").split("/")[0]
+    candidates = []
+    # Direct org/user as-is
+    candidates.append(raw)
+    # Domain-derived: example.co.id -> example, example-co-id, exampleid
+    base = raw.split(".")[0]
+    if "." in raw:
+        candidates.append(base)
+        candidates.append(raw.replace(".", "-"))
+        candidates.append(raw.replace(".", ""))
+        # Second-level for co.id style: example.co.id -> example
+        parts = raw.split(".")
+        if len(parts) >= 3:
+            candidates.append(parts[0])
+    # Dedupe preserve order
+    seen = set()
+    out = []
+    for c in candidates:
+        if c and c not in seen and len(c) >= 2:
+            seen.add(c)
+            out.append(c)
+    return out[:4]
+
 @tool("github_dorking")
 def github_dorking(target_org: str) -> str:
     """
@@ -117,7 +144,8 @@ def github_dorking(target_org: str) -> str:
     milik organisasi/developer target.
     
     Args:
-        target_org: nama organisasi atau username GitHub target (contoh: 'google' atau 'john-dev')
+        target_org: domain (example.com) atau nama organisasi/username GitHub target (contoh: 'google' atau 'john-dev')
+                    Akan auto-map domain -> org candidates dan dual query.
     """
     if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
@@ -130,16 +158,25 @@ def github_dorking(target_org: str) -> str:
         "Accept": "application/vnd.github.v3+json",
     }
 
-    org = target_org.strip().lstrip("@")
-    exec_logger.add_log("GitHub Dorking", "START", f"Starting dorking for org/user: {org}")
+    candidates = _domain_to_org_candidates(target_org)
+    org = candidates[0]
+    exec_logger.add_log("GitHub Dorking", "START", f"Starting dorking for candidates: {candidates}")
 
     all_findings = []
+    seen_urls = set()
 
     for query_keyword in DORK_QUERIES:
         if check_cancelled(exec_logger):
             break
 
-        search_query = f"{query_keyword} org:{org}"
+        # Dual query: org:candidate + fallback freetext domain
+        queries = [f"{query_keyword} org:{c}" for c in candidates[:2]]
+        if "." in target_org:
+            queries.append(f'"{target_org.strip().lower()}" {query_keyword}')
+        for search_query in queries:
+            if search_query in seen_urls:
+                continue
+            seen_urls.add(search_query)
 
         try:
             exec_logger.add_log("GitHub Dorking", "PROCESSING", f"Searching: {search_query}")

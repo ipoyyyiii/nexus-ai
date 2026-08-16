@@ -13,7 +13,12 @@ class ChainPlanner:
     def propose_next(self, session_id: str, objective: str = "") -> Dict[str, Any]:
         context = self.sessions.require(session_id)
         state = self.sessions.load_state(session_id)
-        validated = [item for item in state.workflow.findings if item.status == RecordStatus.VALIDATED.value]
+        sev_rank = {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0}
+        validated = sorted(
+            [item for item in state.workflow.findings if item.status == RecordStatus.VALIDATED.value],
+            key=lambda x: (sev_rank.get(x.severity.lower(), 0), len(x.evidence_ids)),
+            reverse=True,
+        )
         if not validated:
             return {
                 "status": "blocked",

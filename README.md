@@ -25,8 +25,8 @@ Nexus AI is an autonomous penetration testing platform that runs **4 AI agents**
 | **Backend** | Python 3.11, FastAPI, CrewAI, LangChain |
 | **Frontend** | Next.js 16, React 19, TypeScript, Tailwind CSS |
 | **Database** | Supabase (PostgreSQL) |
-| **Browser** | Playwright (headless Chromium) |
-| **AI Models** | GLM 5.2, DeepSeek V4, Claude, GPT via OpenRouter |
+| **Browser** | Playwright (headless Chromium) + mitmproxy passive |
+| **AI Models** | GLM 5.2, DeepSeek V4, Claude, GPT via OpenRouter + Local (Kaggle/Colab ngrok) |
 | **Infrastructure** | Docker, docker-compose |
 
 ## External Tools Integrated
@@ -47,6 +47,13 @@ Nexus AI is an autonomous penetration testing platform that runs **4 AI agents**
 | **katana** | Web crawling | `web_crawler.py` |
 | **graphql-cop** | GraphQL security testing | `graphql_tester.py` |
 | **subfinder** | Subdomain enumeration | `recon_advanced.py` |
+| **httpx** | Live host probe | `hunter_pipeline.py` |
+| **naabu** | Port scanning (fast) | `hunter_pipeline.py` |
+| **gowitness** | Screenshot utility | `hunter_pipeline.py` |
+| **gau** | Historical URL gathering | `hunter_pipeline.py` |
+| **hakrawler** | JS endpoint crawling | `hunter_pipeline.py` |
+| **amass** | Asset discovery | `hunter_pipeline.py` |
+| **mitmproxy** | Passive traffic capture | `mitm_passive.py` |
 | **nmap** | Port scanning | `recon_advanced.py` |
 
 ## Vulnerability Coverage
@@ -117,6 +124,10 @@ npm run dev
 | `CENSYS_PAT` | ❌ | Censys Personal Access Token |
 | `GITHUB_TOKEN` | ❌ | GitHub token for secret dorking |
 | `TOKENHUB_API_KEY` | ❌ | Tencent TokenHub API key |
+| `NEXUS_LOCAL_LLM_ENABLED` | ❌ | `true` to enable local model |
+| `NEXUS_LOCAL_LLM_BASE_URL` | ❌ | ngrok URL for local LLM |
+| `NEXUS_LOCAL_LLM_API_KEY` | ❌ | dummy key for local |
+| `NEXUS_LOCAL_LLM_MODELS` | ❌ | comma-separated local model slugs |
 | `STEALTH_MODE` | ❌ | `1` for evasive mode (0.5 req/s) |
 | `AUTO_PILOT` | ❌ | `1` to skip HITL approval |
 

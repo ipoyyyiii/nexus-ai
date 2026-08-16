@@ -11,7 +11,7 @@ _ALLOWED: Dict[str, Set[str]] = {
     WorkflowPhase.MAPPING.value: {WorkflowPhase.THREAT_MODEL.value, WorkflowPhase.HYPOTHESIS.value},
     WorkflowPhase.THREAT_MODEL.value: {WorkflowPhase.HYPOTHESIS.value},
     WorkflowPhase.HYPOTHESIS.value: {WorkflowPhase.VALIDATION.value, WorkflowPhase.RECON.value},
-    WorkflowPhase.VALIDATION.value: {WorkflowPhase.CHAINING.value, WorkflowPhase.HYPOTHESIS.value, WorkflowPhase.CLEANUP.value},
+    WorkflowPhase.VALIDATION.value: {WorkflowPhase.CHAINING.value, WorkflowPhase.HYPOTHESIS.value},
     WorkflowPhase.CHAINING.value: {WorkflowPhase.IMPACT_PROOF.value, WorkflowPhase.VALIDATION.value, WorkflowPhase.CLEANUP.value},
     WorkflowPhase.IMPACT_PROOF.value: {WorkflowPhase.CLEANUP.value},
     WorkflowPhase.CLEANUP.value: {WorkflowPhase.REPORT.value, WorkflowPhase.VALIDATION.value},

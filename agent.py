@@ -19,6 +19,7 @@ from tools.ssrf_idor_tools import scan_ssrf, scan_idor
 from tools.param_discovery import param_discovery_get, param_discovery_post, param_discovery_headers
 from tools.js_analysis import analyze_js_deep
 from core.model_registry import build_llm, chain_summary
+from tools.human_recon_crawl import human_recon_crawl
 from core.scope import validate_target
 from tools.nuclei_tool import run_nuclei_scan
 from tools.subdomain_takeover import detect_subdomain_takeover
@@ -60,6 +61,11 @@ from tools.auth_recon_tools import (
     postmessage_vulnerability_scanner, asn_ip_mapper
 )
 from tools.shodan_censys_tools import shodan_scanner, censys_scanner
+from tools.html_injection_scanner import html_injection_scanner
+from tools.ssi_injection_scanner import ssi_injection_scanner
+from tools.hpp_scanner import hpp_scanner
+from tools.password_storage_analyzer import password_storage_analyzer
+from tools.credential_reuse_scanner import credential_reuse_scanner
 
 # ==========================================
 # 1. LOAD ENV
@@ -193,23 +199,7 @@ if __name__ == "__main__":
             'Jago temuin exposed cloud buckets, subdomain takeover, dan leaked secrets di JS.'
         ),
         llm=llm_recon,
-        tools=[langchain_to_crewai(t) for t in [
-            # Core recon
-            recon_target, enumerate_dns_subdomains, analyze_ssl_tls,
-            # Browser-based
-            browser_screenshot, browser_extract_surface,
-            browser_intercept_requests, browser_check_security_headers,
-            browser_extract_js_secrets, analyze_js_deep,
-            # Parameter & endpoint discovery
-            param_discovery_get, param_discovery_headers,
-            detect_subdomain_takeover, report_new_endpoint,
-            wayback_scraper, github_dorking,
-            # Advanced recon
-            recon_advanced, misconfiguration_scanner,
-            asn_ip_mapper, mixed_content_scanner,
-            client_side_security_scanner, postmessage_vulnerability_scanner,
-            shodan_scanner, censys_scanner,
-        ]],
+        tools=[langchain_to_crewai(human_recon_crawl)],
         verbose=True
     )
 

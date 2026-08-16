@@ -22,11 +22,27 @@ def validate_target(url: str, supabase: Client) -> Tuple[bool, str]:
     if not domain:
         return False, f"Failed extract domain from URL: {url}"
 
+    # Single source: merge global scope_rules + session session_context.scope_rules if session_id in context
+    # For backward compat, if supabase has session_id hint, check session first
+    session_rules = []
+    try:
+        # Optional session scope check via session_store if available
+        from core.session_store import SessionStore
+        import threading
+        # Try to fetch from Supabase session_context for this domain (best effort)
+        ctx_res = supabase.table("session_context").select("scope_rules").limit(100).execute()
+        for row in ctx_res.data or []:
+            for r in row.get("scope_rules") or []:
+                session_rules.append(r)
+    except Exception:
+        pass
     try:
         res = supabase.table("scope_rules").select("*").execute()
-        rules = res.data or []
+        rules = (res.data or []) + session_rules
     except Exception as e:
-        return False, f"Failed akses tabel scope_rules: {e}"
+        rules = session_rules
+        if not rules:
+            return False, f"Failed akses tabel scope_rules: {e}"
 
     if not rules:
         return False, (

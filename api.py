@@ -654,7 +654,7 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
             try:
                 scan_history.save(
                     target=target,
-                    findings=[item.__dict__ for item in session_store.load_state(session_id).workflow.findings],
+                    findings=[{**item.__dict__, "fingerprint": getattr(item, "fingerprint", "")} for item in session_store.load_state(session_id).workflow.findings if getattr(item, "status", "") in ("validated","impact_proven")],
                     session_id=session_id,
                     summary={"waf": waf_result.get("waf", "Unknown"), "phases": list(all_results.keys())},
                 )

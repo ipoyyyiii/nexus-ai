@@ -14,6 +14,40 @@ import json
 from typing import List, Dict, Optional
 from urllib.parse import urlparse
 
+# Creative payload via LLM + fetched public corpora
+def _creative_payloads(vuln_type: str, url: str, tech: str, error_msg: str, waf_hint: str, count: int = 5) -> List[Dict[str, str]]:
+    # 1. Try fetched PayloadsAllTheThings cache
+    try:
+        from core.payload_fetcher import load_cached
+        cached = load_cached(vuln_type)
+        if cached:
+            return [{"payload": p, "description": f"Fetched {vuln_type}", "severity": "High"} for p in cached[:count]]
+    except Exception:
+        pass
+    # 2. LLM generate new payload based on context (like senior hacker)
+    try:
+        from core.model_registry import build_chat_llm
+        from langchain_core.messages import HumanMessage, SystemMessage
+        import os
+        pref = None
+        if os.environ.get("NEXUS_LOCAL_LLM_ENABLED", "").lower() in ("1", "true"):
+            from core.model_registry import _local_registry
+            lr = _local_registry()
+            if lr:
+                pref = lr[0]["id"]
+        llm = build_chat_llm(pref)
+        prompt = f"Generate {count} novel {vuln_type} payloads for {tech} at {url}. WAF: {waf_hint[:200]} Last error: {error_msg[:300]}. Return JSON: [{{\"payload\":\"...\",\"description\":\"...\"}}]"
+        resp = llm.invoke([SystemMessage(content="You are payload generator. Output JSON only."), HumanMessage(content=prompt)])
+        import json, re
+        m = re.search(r"\[.*\]", str(resp.content), re.DOTALL)
+        if m:
+            data = json.loads(m.group(0))
+            if isinstance(data, list):
+                return [{"payload": d.get("payload",""), "description": d.get("description","creative"), "severity": "High"} for d in data[:count] if d.get("payload")]
+    except Exception:
+        pass
+    return []
+
 
 def _domain_of(url: str) -> str:
     try:
@@ -198,7 +232,19 @@ class PayloadGenerator:
         }
 
         generator = generators.get(vuln_type, self._gen_generic)
-        return generator(framework, database, context, count)
+        base = generator(framework, database, context, count)
+        # Append creative payloads (fetched + LLM-generated) for senior-level creativity
+        try:
+            creative = _creative_payloads(vuln_type, url, framework, context, "", max(3, count // 4))
+            # Dedupe by payload string
+            seen = {p["payload"] for p in base}
+            for c in creative:
+                if c["payload"] not in seen:
+                    base.append(c)
+                    seen.add(c["payload"])
+        except Exception:
+            pass
+        return base[:count + 5]
 
     def _gen_sqli(self, framework: str, database: str, context: str, count: int) -> List[Dict[str, str]]:
         payloads = []

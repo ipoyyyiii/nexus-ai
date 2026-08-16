@@ -21,6 +21,7 @@ def build_phase1_agents(target: str, goal: str, memory_context: str,
     Build Phase 1 agents for automated data gathering.
     Returns list of (agent, task, phase_name) tuples.
     """
+    from tools.human_recon_crawl import human_recon_crawl
     from tools import (
         recon_target, enumerate_dns_subdomains, analyze_ssl_tls,
         browser_screenshot, browser_extract_surface,
@@ -77,21 +78,12 @@ def build_phase1_agents(target: str, goal: str, memory_context: str,
         goal="Deep recon: infrastructure, tech-stack, WAF, DNS, SSL, browser-based surface mapping.",
         backstory="Elite Intel Red Team level." + (f"\n{memory_context}" if memory_context else ""),
         llm=llm_recon,
-        tools=[langchain_to_crewai(t) for t in [
-            recon_target, enumerate_dns_subdomains, analyze_ssl_tls,
-            browser_screenshot, browser_extract_surface,
-            browser_intercept_requests, browser_check_security_headers,
-            browser_extract_js_secrets, analyze_js_deep,
-            param_discovery_get, param_discovery_headers,
-            detect_subdomain_takeover, report_new_endpoint, wayback_scraper, github_dorking,
-            recon_advanced, misconfiguration_scanner,
-            client_side_security_scanner, mixed_content_scanner, asn_ip_mapper,
-            postmessage_vulnerability_scanner, shodan_scanner, censys_scanner,
-        ]],
+        tools=[langchain_to_crewai(t) for t in [human_recon_crawl]],
+
         verbose=True
     )
     recon_task = Task(
-        description=f"Active Recon target: {target}. Find ports, tech-stack, WAF, DNS, SSL, cloud assets, JS secrets.",
+        description=f"Active Recon target: {target}. Use human_recon_crawl with url={target}, goal={goal} and session context. It will click one-by-one and capture XHR/JS.",
         expected_output="Complete infrastructure intelligence report in GFM markdown format.",
         agent=recon_agent
     )
@@ -121,9 +113,41 @@ def build_phase1_agents(target: str, goal: str, memory_context: str,
         ]],
         verbose=True
     )
-    recon_ctx = all_results.get("recon", "")[:1000]
+    # Wire attack surface + dynamic smart selector (filter 34 -> 5-8 kontekstual)
+    vuln_tools_filtered = None
+    try:
+        from dataclasses import asdict as _asdict
+        from core.attack_surface import build_graph
+        from core.target_state import get_target_state
+        from engines.smart_selector import smart_selector
+        ts = get_target_state()
+        if ts:
+            ts.attack_surface = build_graph(ts).to_dict()
+            tech = _asdict(ts.tech_stack) if hasattr(ts.tech_stack, "__dict__") else {}
+            selected = smart_selector.select_tools(tech, phase='analis')
+            # Dynamic: inject only top 8 relevant tools into agent (keep full power breadth via planner chains)
+            import tools as _tools
+            name_to_tool = {t.name: t for t in [
+                _tools.baca_log_burp, _tools.scan_sql_injection, _tools.detect_xss_csrf,
+                _tools.scan_lfi_rfi, _tools.test_header_injection, _tools.run_nuclei_scan,
+            ] if hasattr(t, 'name')}
+            # For now keep vuln_agent tools as configured but add advisor note with dynamic selection
+            advisor_note = f"Dynamic advisor (tech {tech.get('language')}/{tech.get('framework')}): prioritize {selected[:6]}"
+            # Rebuild vuln_agent with filtered subset if advisor suggests subset
+            if len(selected) >= 3 and len(selected) < 15:
+                filtered = [t for t in [baca_log_burp, scan_sql_injection, detect_xss_csrf, scan_lfi_rfi, test_header_injection, run_nuclei_scan, blind_sqli_scanner, nosql_injection_scanner] if t.name in selected]
+                if filtered:
+                    vuln_tools_filtered = filtered
+        else:
+            advisor_note = ""
+    except Exception:
+        advisor_note = ""
+    recon_ctx = all_results.get("recon", "")[:4000]
+    # If filtered, update agent tools dynamically
+    if vuln_tools_filtered:
+        vuln_agent.tools = [langchain_to_crewai(t) for t in vuln_tools_filtered + [report_new_endpoint]]
     vuln_task = Task(
-        description=f"Target: {target} | Goal: {goal}\nBased on recon:\n{recon_ctx}\n\nTest all injection vectors: SQLi, XSS, LFI, Header Injection.",
+        description=f"Target: {target} | Goal: {goal}\nBased on recon:\n{recon_ctx}\n{advisor_note}\n\nTest injection vectors dynamically prioritized: explore goal-relevant vulns first, then pivot if score low.",
         expected_output="List of vulnerabilities in GFM markdown format.",
         agent=vuln_agent
     )
@@ -171,10 +195,18 @@ def build_phase3_agent(target: str, all_results: dict, target_state: TargetState
     
     # Build comprehensive context
     target_context = target_state.to_llm_context()
+    # Also inject exploit plans if available
+    try:
+        from core.exploit_planner import propose_plans
+        plans = propose_plans(target_state.goal, getattr(target_state, "attack_surface", {}), target_state.tech_stack.__dict__ if hasattr(target_state.tech_stack, "__dict__") else {})
+        target_context += "\n=== EXPLOIT PLANS (goal-conditioned) ===\n" + "\n".join(p.get("title","") + ": " + ",".join(p.get("chain",[])) for p in plans)
+        target_state.exploit_plans = plans
+    except Exception:
+        pass
     prev_ctx = "\n\n".join([
-        f"### Recon:\n{all_results.get('recon', 'N/A')[:500]}",
-        f"### Analysis:\n{all_results.get('analis', 'N/A')[:500]}",
-        f"### Exploitation:\n{all_results.get('eksekutor', 'N/A')[:500]}",
+        f"### Recon:\n{all_results.get('recon', 'N/A')[:4000]}",
+        f"### Analysis:\n{all_results.get('analis', 'N/A')[:4000]}",
+        f"### Exploitation:\n{all_results.get('eksekutor', 'N/A')[:4000]}",
     ])
     
     full_context = f"=== TARGET STATE ===\n{target_context}\n\n=== PHASE RESULTS ===\n{prev_ctx}"
@@ -221,7 +253,7 @@ def run_phase1(job_id: str, session_id: str, target: str, goal: str,
             if result_handler:
                 result_handler(phase_name, result_str, job_id)
             all_reports.append(f"## Phase: {display_name}\n\n{result_str}")
-            save_message(session_id, "agent", f"[Phase 1 - {display_name} Complete]\n\n{result_str[:2000]}")
+            save_message(session_id, "agent", f"[Phase 1 - {display_name} Complete]\n\n{result_str[:8000]}")
             update_job(job_id, message=f"Phase 1 - {display_name} complete")
             
             # Update Target State

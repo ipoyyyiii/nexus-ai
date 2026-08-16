@@ -11,18 +11,10 @@ from core.workflow_models import (
     RecordStatus,
 )
 
-_SECRET_PATTERNS = [
-    re.compile(r"(?i)(authorization\s*:\s*bearer\s+)[^\s]+"),
-    re.compile(r"(?i)(cookie\s*:\s*)[^\n]+"),
-    re.compile(r"(?i)(password|passwd|token|secret)\s*[=:]\s*[^\s]+"),
-]
+from core.redact import redact as _global_redact
 
-
-def redact(value: str, limit: int = 4000) -> str:
-    result = value or ""
-    for pattern in _SECRET_PATTERNS:
-        result = pattern.sub(r"\1[REDACTED]", result)
-    return result[:limit]
+def redact(value: str, limit: int = 8000) -> str:
+    return _global_redact(value or "")[:limit]
 
 
 class EvidenceService:

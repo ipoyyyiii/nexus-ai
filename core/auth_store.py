@@ -19,7 +19,7 @@ Structure:
 import threading
 import time
 import requests
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Set
 from urllib.parse import urlparse
 from datetime import datetime, timedelta
 
@@ -124,6 +124,22 @@ class AuthStore:
         """Delete session for domain."""
         with self._lock:
             self._sessions.pop(domain, None)
+
+    _job_domains: Dict[str, Set[str]] = {}
+
+    def track_job_domain(self, job_id: str, domain: str):
+        with self._lock:
+            self._job_domains.setdefault(job_id, set()).add(domain)
+
+    def clear_for_job(self, job_id: str):
+        """Scoped cleanup: remove only domains touched by this job."""
+        with self._lock:
+            domains = self._job_domains.pop(job_id, set())
+            for d in domains:
+                self._sessions.pop(d, None)
+            if not domains:
+                # fallback if tracking missed: no-op instead of clear_all
+                pass
 
     def clear_all(self):
         """Delete all session (dipanggil pas job selesai)."""

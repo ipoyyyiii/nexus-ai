@@ -150,7 +150,13 @@ class SessionStore:
             url=context["target_url"], goal=context["attack_goal"]
         )
 
-    def save_state(self, session_id: str, state: TargetState, phase: Optional[str] = None) -> None:
+    def save_state(self, session_id: str, state: TargetState, phase: Optional[str] = None, expected_version: Optional[int] = None) -> None:
+        # Optimistic locking: check conversation_summary_version if provided
+        if expected_version is not None:
+            current = self.get(session_id)
+            cur_ver = current.get("conversation_summary_version", 0) if current else 0
+            if cur_ver != expected_version:
+                raise ValueError(f"Version conflict: expected {expected_version}, got {cur_ver}")
         values: Dict[str, Any] = {
             "target_state": state.to_dict(),
             "workflow_state": state.workflow.to_dict(),

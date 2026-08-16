@@ -77,14 +77,30 @@ RUN wget -q https://github.com/projectdiscovery/katana/releases/download/v1.1.0/
 RUN git clone --depth 1 https://github.com/dolevf/graphql-cop.git /opt/graphql-cop \
     && ln -s /opt/graphql-cop/graphql-cop.py /usr/local/bin/graphql-cop
 
+RUN pip install --no-cache-dir mitmproxy
+
 # Install subfinder
 RUN wget -q https://github.com/projectdiscovery/subfinder/releases/download/v2.6.3/subfinder_2.6.3_linux_amd64.zip \
     && unzip -o subfinder_2.6.3_linux_amd64.zip \
     && mv subfinder /usr/local/bin/ \
     && rm subfinder_2.6.3_linux_amd64.zip
 
-# Install wordlists
-RUN git clone --depth 1 https://github.com/danielmiessler/SecLists.git /opt/wordlists/SecLists
+# Install hunter pipeline: httpx / naabu / gowitness / gau / hakrawler / amass
+RUN wget -q https://github.com/projectdiscovery/httpx/releases/download/v1.6.0/httpx_1.6.0_linux_amd64.zip \
+    && unzip -o httpx_1.6.0_linux_amd64.zip && mv httpx /usr/local/bin/ && rm httpx_1.6.0_linux_amd64.zip || echo "httpx install skipped"
+RUN wget -q https://github.com/projectdiscovery/naabu/releases/download/v2.3.1/naabu_2.3.1_linux_amd64.zip \
+    && unzip -o naabu_2.3.1_linux_amd64.zip && mv naabu /usr/local/bin/ && rm naabu_2.3.1_linux_amd64.zip || echo "naabu install skipped"
+RUN wget -q https://github.com/sensepost/gowitness/releases/download/2.4.2/gowitness-2.4.2-linux-amd64 -O /usr/local/bin/gowitness \
+    && chmod +x /usr/local/bin/gowitness || echo "gowitness install skipped"
+RUN wget -q https://github.com/lc/gau/releases/download/v2.2.4/gau_2.2.4_linux_amd64.tar.gz \
+    && tar -xzf gau_2.2.4_linux_amd64.tar.gz && mv gau /usr/local/bin/ && rm gau_2.2.4_linux_amd64.tar.gz || echo "gau install skipped"
+RUN wget -q https://github.com/hakluke/hakrawler/releases/download/2.1/hakrawler -O /usr/local/bin/hakrawler \
+    && chmod +x /usr/local/bin/hakrawler || echo "hakrawler install skipped"
+RUN wget -q https://github.com/owasp-amass/amass/releases/download/v4.2.0/amass_linux_amd64.zip \
+    && unzip -o amass_linux_amd64.zip && mv amass_linux_amd64/amass /usr/local/bin/ 2>/dev/null || mv amass /usr/local/bin/ 2>/dev/null; rm -rf amass_linux_amd64.zip amass_linux_amd64 || echo "amass install skipped"
+
+# Install wordlists (with retry for flaky networks)
+RUN for i in 1 2 3; do git clone --depth 1 --single-branch https://github.com/danielmiessler/SecLists.git /opt/wordlists/SecLists && break || { echo "SecLists clone attempt $i failed"; rm -rf /opt/wordlists/SecLists; sleep 5; }; done
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip \
