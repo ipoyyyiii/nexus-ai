@@ -27,6 +27,8 @@ create table if not exists session_context (
 alter table session_context add column if not exists workflow_state jsonb not null default '{}'::jsonb;
 alter table session_context add column if not exists conversation_summary text not null default '';
 alter table session_context add column if not exists conversation_summary_version integer not null default 0;
+alter table session_context add column if not exists scan_preset text not null default 'full';
+alter table session_context add column if not exists scan_vuln_types jsonb not null default '[]'::jsonb;
 
 create table if not exists workflow_jobs (
     job_id uuid primary key,

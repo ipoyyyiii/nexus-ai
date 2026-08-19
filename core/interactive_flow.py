@@ -16,7 +16,7 @@ from core.target_state import TargetState, create_target_state, get_target_state
 
 
 def build_phase1_agents(target: str, goal: str, memory_context: str, 
-                         llm_recon, llm_analis, all_results: dict):
+                         llm_recon, llm_analis, all_results: dict, scan_preset: str = "full"):
     """
     Build Phase 1 agents for automated data gathering.
     Returns list of (agent, task, phase_name) tuples.
@@ -89,6 +89,10 @@ def build_phase1_agents(target: str, goal: str, memory_context: str,
     )
     phases.append(("recon", recon_agent, recon_task, "Reconnaissance"))
     
+    # Respect scan preset: recon-only skips vuln agent entirely
+    if scan_preset == "recon-only":
+        return phases
+
     # ── Vulnerability Analysis Agent ──────────────────────────────────────────
     vuln_agent = Agent(
         role="Senior Vulnerability Strategist",
@@ -146,8 +150,19 @@ def build_phase1_agents(target: str, goal: str, memory_context: str,
     # If filtered, update agent tools dynamically
     if vuln_tools_filtered:
         vuln_agent.tools = [langchain_to_crewai(t) for t in vuln_tools_filtered + [report_new_endpoint]]
+    # Respect user-selected vuln_types (empty = all via advisor)
+    selected_vulns = []
+    try:
+        from api import session_store as _ss
+        # Try session preset first (from api create), fallback to global
+        sess = _ss.get(all_results.get("_session_id")) if "_session_id" in all_results else None
+        if sess and sess.get("scan_vuln_types"):
+            selected_vulns = sess["scan_vuln_types"]
+    except Exception:
+        pass
+    vuln_scope = f" Focus only on: {', '.join(selected_vulns)}." if selected_vulns else ""
     vuln_task = Task(
-        description=f"Target: {target} | Goal: {goal}\nBased on recon:\n{recon_ctx}\n{advisor_note}\n\nTest injection vectors dynamically prioritized: explore goal-relevant vulns first, then pivot if score low.",
+        description=f"Target: {target} | Goal: {goal}\nBased on recon:\n{recon_ctx}\n{advisor_note}{vuln_scope}\n\nTest injection vectors dynamically prioritized: explore goal-relevant vulns first, then pivot if score low.",
         expected_output="List of vulnerabilities in GFM markdown format.",
         agent=vuln_agent
     )
@@ -221,11 +236,11 @@ def build_phase3_agent(target: str, all_results: dict, target_state: TargetState
 
 
 def run_phase1(job_id: str, session_id: str, target: str, goal: str,
-                memory_context: str, llm_recon, llm_analis, 
-                all_results: dict, all_reports: list,
-                auto_pilot: bool, cancellation_store, continue_store,
-                update_job, save_message, phase_filter: Optional[List[str]] = None,
-                result_handler=None) -> bool:
+                 memory_context: str, llm_recon, llm_analis, 
+                 all_results: dict, all_reports: list,
+                 auto_pilot: bool, cancellation_store, continue_store,
+                 update_job, save_message, phase_filter: Optional[List[str]] = None,
+                 result_handler=None, scan_preset: str = "full") -> bool:
     """
     Run Phase 1: Automated Data Gathering.
     Returns True if completed successfully, False if cancelled.

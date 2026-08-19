@@ -10,6 +10,10 @@ services:
     environment:
       - STEALTH_MODE=${STEALTH_MODE:-0}
       - AUTO_PILOT=${AUTO_PILOT:-0}
+      - OOB_DOMAIN=${OOB_DOMAIN:-}
+      - OOB_SERVER_IP=${OOB_SERVER_IP:-}
+      - OOB_LOGS_ENDPOINT=${OOB_LOGS_ENDPOINT:-}
+      - OOB_AUTH_TOKEN=${OOB_AUTH_TOKEN:-}
       - PYTHONUNBUFFERED=1
     restart: always
     volumes:
@@ -23,9 +27,11 @@ services:
       context: ./frontend-pentest 
       args:
         - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
-        - NEXT_PUBLIC_NEXUS_API_KEY=${NEXUS_API_KEY}
     ports:
       - "3000:3000"
+    environment:
+      - BACKEND_API_URL=${BACKEND_API_URL:-http://pentest-ai-backend:8000}
+      - NEXUS_API_KEY=${NEXUS_API_KEY}
     restart: always
 
 volumes:

@@ -3,11 +3,7 @@ OOB ENGINE — Out-of-Band Interaction Engine
 ============================================
 Private interactsh-server integration for blind vulnerability detection.
 
-Infrastructure:
-- Domain: whoopbhapzham.my.id
-- Server IP: 70.153.26.71
-- Auth Token: maybeftankseed123
-- Log Polling: http://70.153.26.71/logs
+Infrastructure is configured through environment variables and is never embedded in source.
 
 Usage:
     from engines.oob_engine import oob_engine
@@ -20,6 +16,7 @@ Usage:
 """
 
 import json
+import os
 import random
 import string
 import time
@@ -32,10 +29,10 @@ from urllib.parse import quote
 # ============================================================
 # OOB CONFIGURATION
 # ============================================================
-OOB_DOMAIN = "whoopbhapzham.my.id"
-OOB_SERVER_IP = "70.153.26.71"
-OOB_AUTH_TOKEN = "maybeftankseed123"
-OOB_LOGS_ENDPOINT = f"http://{OOB_SERVER_IP}/logs"
+OOB_DOMAIN = os.environ.get("OOB_DOMAIN", "")
+OOB_SERVER_IP = os.environ.get("OOB_SERVER_IP", "")
+OOB_AUTH_TOKEN = os.environ.get("OOB_AUTH_TOKEN", "")
+OOB_LOGS_ENDPOINT = os.environ.get("OOB_LOGS_ENDPOINT", "")
 OOB_POLL_TIMEOUT = 10  # seconds
 OOB_POLL_INTERVAL = 2  # seconds between polls
 
@@ -71,6 +68,8 @@ class OOBEngine:
     """
 
     def __init__(self):
+        if not OOB_DOMAIN or not OOB_LOGS_ENDPOINT:
+            raise RuntimeError("OOB_DOMAIN and OOB_LOGS_ENDPOINT must be configured")
         self.domain = OOB_DOMAIN
         self.server_ip = OOB_SERVER_IP
         self.auth_token = OOB_AUTH_TOKEN

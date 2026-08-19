@@ -4,3 +4,5 @@ venv_pentest/
 node_modules/
 .next/
 *.log
+.aider*
+stored_reports/

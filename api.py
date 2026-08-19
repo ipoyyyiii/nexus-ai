@@ -7,7 +7,7 @@ from core.interactive_flow import run_phase1, run_phase2_interactive, run_phase3
 import secrets
 import threading
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Header
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -315,6 +315,8 @@ class SessionSetupRequest(BaseModel):
     scope_rules: list[Dict[str, Any]]
     authorization_confirmed: bool
     model_id: Optional[str] = None
+    scan_preset: Optional[str] = None
+    vuln_types: Optional[List[str]] = None
 
 
 class ChatMessageRequest(BaseModel):
@@ -569,6 +571,7 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
         all_results = {}
         all_reports = []
         
+        preset = scan_config.get("scan_preset") or session_store.get(session_id, {}).get("scan_preset", "full")
         phase1_success = run_phase1(
             job_id=job_id,
             session_id=session_id,
@@ -585,7 +588,8 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
             update_job=update_job,
             save_message=save_message,
             phase_filter=scan_config.get("phase_filter"),
-            result_handler=lambda phase, output, run_id: _ingest_phase_result(session_id, target, phase, output, run_id)
+            result_handler=lambda phase, output, run_id: _ingest_phase_result(session_id, target, phase, output, run_id),
+            scan_preset=preset
         )
         
         if not phase1_success:
@@ -697,13 +701,27 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
 @app.post("/sessions")
 async def create_interactive_session(req: SessionSetupRequest, _: bool = Depends(require_api_key)):
     try:
-        return session_store.create(
+        preset = (req.scan_preset or "full").lower()
+        if preset not in ("recon-only", "full"):
+            preset = "full"
+        vuln_types = getattr(req, "vuln_types", None) or []
+        session = session_store.create(
             target_url=req.target,
             goal=req.goal,
             scope_rules=req.scope_rules,
             authorization_confirmed=req.authorization_confirmed,
             model_id=req.model_id,
         )
+        # Persist preset + vuln_types
+        updates: dict = {}
+        if preset != "full":
+            updates["scan_preset"] = preset
+        if vuln_types:
+            updates["scan_vuln_types"] = vuln_types
+        if updates:
+            session_store.sb.table("session_context").update(updates).eq("session_id", session["session_id"]).execute()
+            session.update(updates)
+        return session
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
@@ -1554,7 +1572,18 @@ async def export_report(job_id: str, format: str = "md", _: bool = Depends(requi
     Query param: ?format=md|pdf|docx
     """
     if job_id not in jobs:
-        raise HTTPException(status_code=404, detail="Job not found")
+        # Fallback: coba ambil dari workflow_jobs (durable) biar gak 404 setelah restart
+        try:
+            res = supabase.table("workflow_jobs").select("*").eq("job_id", job_id).execute()
+            db_job = (res.data or [None])[0]
+            if db_job:
+                payload = db_job.pop("payload", {}) or {}
+                db_job.update(payload)
+                jobs[job_id] = db_job
+        except Exception:
+            pass
+        if job_id not in jobs:
+            raise HTTPException(status_code=404, detail="Job not found")
 
     job = jobs[job_id]
     if job.get("status") != "done" or not job.get("report"):
