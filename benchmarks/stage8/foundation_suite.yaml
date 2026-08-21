@@ -1,0 +1,109 @@
+suite_id: stage8-webapi-foundation
+name: Nexus Stage 8 Web/API Measurement Foundation
+version: "1.0"
+mode: deterministic
+description: Local-only 12-domain x 4-variant benchmark matrix. Diagnostic domains are visible coverage gaps, never release passes.
+variants:
+  - gold_positive
+  - gold_negative
+  - noisy_control
+  - reproduction
+domains:
+  - family: sqli_error
+    subtype: error_boolean_time
+    category: injection
+    target_surface: api
+    endpoint_class: parameterized_api
+    required: true
+    required_evidence_roles: [baseline, test, negative_control, reproduction]
+  - family: reflected_xss
+    subtype: reflection_browser_execution
+    category: browser
+    target_surface: browser
+    endpoint_class: html_form
+    required: true
+    required_evidence_roles: [test, browser]
+  - family: ssrf_oob
+    subtype: callback_correlation
+    category: oob
+    target_surface: oob
+    endpoint_class: fetch_url
+    required: true
+    required_evidence_roles: [test, oob, negative_control]
+  - family: race_condition
+    subtype: synchronized_state_effect
+    category: race
+    target_surface: api
+    endpoint_class: state_mutation
+    required: true
+    cleanup_required: true
+    cleanup_assertion: server-side fixture state returns to its initial value
+    required_evidence_roles: [baseline, test, negative_control, reproduction, external]
+  - family: evidence_redaction
+    subtype: secret_pii_persistence
+    category: safety
+    target_surface: safety
+    endpoint_class: persistence_boundary
+    required: true
+    required_evidence_roles: [external]
+  - family: browser_workflow_recovery
+    subtype: checkpoint_resume_cleanup
+    category: recovery
+    target_surface: browser
+    endpoint_class: stateful_workflow
+    required: true
+    cleanup_required: true
+    cleanup_assertion: resumed workflow completes cleanup verification
+    required_evidence_roles: [baseline, test, reproduction, external]
+  - family: command_ssti
+    subtype: command_template_injection
+    category: injection
+    target_surface: api
+    endpoint_class: templating
+    required: false
+    required_evidence_roles: [baseline, test, negative_control, reproduction]
+  - family: idor_tenant_isolation
+    subtype: cross_tenant_object_access
+    category: authorization
+    target_surface: api
+    endpoint_class: object_api
+    auth_state: two_identities
+    identity: user_a_user_b
+    tenant: tenant_a_tenant_b
+    required: false
+    required_evidence_roles: [baseline, test, negative_control, reproduction]
+  - family: auth_session_oauth
+    subtype: session_and_oauth_state
+    category: authentication
+    target_surface: api
+    endpoint_class: auth_callback
+    auth_state: authenticated
+    identity: user_a
+    required: false
+    required_evidence_roles: [baseline, test, reproduction]
+  - family: cors_redirect
+    subtype: credentialed_cors_and_external_location
+    category: configuration
+    target_surface: http
+    endpoint_class: response_headers
+    required: false
+    required_evidence_roles: [baseline, test, negative_control]
+  - family: api_schema_mass_assignment
+    subtype: method_and_schema_behavior
+    category: api
+    target_surface: api
+    endpoint_class: json_mutation
+    required: false
+    required_evidence_roles: [baseline, test, negative_control, reproduction]
+  - family: business_logic_invariant
+    subtype: ownership_price_state_transition
+    category: business_logic
+    target_surface: browser
+    endpoint_class: stateful_journey
+    auth_state: multi_identity
+    identity: owner_reviewer
+    tenant: tenant_a
+    required: false
+    cleanup_required: true
+    cleanup_assertion: fixture entity and side effects are cleaned after evaluation
+    required_evidence_roles: [baseline, test, negative_control, reproduction, external]

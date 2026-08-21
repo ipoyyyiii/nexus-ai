@@ -5,16 +5,15 @@ from core.cancellation import check_cancelled
 from engines.response_differ import ResponseDiffer
 
 differ = ResponseDiffer()
-_differ_baseline = None
+_differ_baselines: Dict[str, Any] = {}
 
 def _ensure_baseline(target: str):
-    global _differ_baseline
-    if _differ_baseline is None:
+    if target not in _differ_baselines:
         try:
-            _differ_baseline = differ.capture_baseline(target)
+            _differ_baselines[target] = differ.capture_baseline(target)
         except Exception:
-            _differ_baseline = {}
-    return _differ_baseline
+            _differ_baselines[target] = {}
+    return _differ_baselines[target]
 
 def run_chain(chain: List[str], target: str, tool_map: Dict[str, Any], goal: str = "") -> List[Dict[str, Any]]:
     results = []
@@ -31,8 +30,21 @@ def run_chain(chain: List[str], target: str, tool_map: Dict[str, Any], goal: str
             results.append({"step": step, "error": "tool not found", "score": 0})
             continue
         try:
-            out = tool.invoke({"url": target}) if hasattr(tool, "invoke") else tool(target)
-            text = str(out)
+            from core.identity_context import get_execution_context
+            from core.structured_runner import StructuredToolRunner
+            active = get_execution_context()
+            runner = StructuredToolRunner(
+                session_store=None,
+                repository=active.repository if active else None,
+                safety_kernel=active.safety_kernel if active else None,
+            )
+            result = runner.execute(
+                tool, {"url": target}, target=target,
+                session_id=active.session_id if active else "",
+                job_id=active.job_id if active else "",
+                identity_id=active.identity_id if active else "",
+            )
+            text = runner.render_for_model(result)
             # Differ scoring
             score = 0.0
             try:

@@ -1,9 +1,9 @@
 import json
-import requests
+from core.tool_transport import guarded_requests as requests
 import re
 import urllib3
 from urllib.parse import urlparse, urljoin
-from langchain.tools import tool
+from core.tool_decorator import langchain_tool as tool
 from core.rate_limiter import rate_limiter
 from core.auth_store import auth_get, auth_post
 from core.cancellation import check_cancelled
@@ -79,7 +79,7 @@ def recon_advanced(domain: str) -> str:
     if not check_cancelled(logger):
         logger.add_log(tool_name, "PROCESSING", "Running subfinder for subdomain enumeration")
         try:
-            import subprocess
+            from core.tool_transport import guarded_subprocess as subprocess
             import tempfile
             import os
 
@@ -255,7 +255,7 @@ def recon_advanced(domain: str) -> str:
     if not check_cancelled(logger):
         logger.add_log(tool_name, "PROCESSING", "Running nmap port scan")
         try:
-            import subprocess
+            from core.tool_transport import guarded_subprocess as subprocess
             import tempfile
             import os
 

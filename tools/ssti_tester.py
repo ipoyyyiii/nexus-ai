@@ -1,6 +1,6 @@
-import requests
+from core.tool_transport import guarded_requests as requests
 import re
-from langchain.tools import tool
+from core.tool_decorator import langchain_tool as tool
 from core.cancellation import check_cancelled
 from core.checkpoint import require_approval
 from tools.custom_tools import exec_logger
@@ -96,7 +96,7 @@ def _run_tplmap_confirmation(url: str, params: list, logger) -> dict:
     Run tplmap sebagai confirmation step for SSTI.
     Return dict with is_confirmed, evidence, severity.
     """
-    import subprocess
+    from core.tool_transport import guarded_subprocess as subprocess
     import tempfile
     import os
 

@@ -48,7 +48,18 @@ def redact(value: Any) -> Any:
     if isinstance(value, str):
         return _redact_str(value)
     if isinstance(value, dict):
-        return {k: redact(v) for k, v in value.items()}
+        sensitive_keys = {
+            "authorization", "proxy-authorization", "cookie", "set-cookie",
+            "password", "passwd", "secret", "token", "api_key", "apikey",
+            "access_token", "refresh_token", "client_secret", "private_key",
+        }
+        result = {}
+        for key, item in value.items():
+            if str(key).lower().replace("-", "_") in sensitive_keys:
+                result[key] = "[REDACTED:SECRET]"
+            else:
+                result[key] = redact(item)
+        return result
     if isinstance(value, list):
         return [redact(item) for item in value]
     return value

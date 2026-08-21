@@ -1,0 +1,66 @@
+suite_id: stage6-core
+name: Nexus Stage 6 Core Deterministic Suite
+version: "1.0"
+mode: deterministic
+description: Offline gold positive/negative validation and integrity fixtures.
+cases:
+  - case_id: error-sqli-positive
+    name: Error SQLi positive is validated
+    category: validation
+    fixture_id: positive_error_sqli
+    expected_outcome: validated
+    tags: [gold_positive, sqli]
+  - case_id: error-sqli-negative
+    name: Escaped SQLi signal remains inconclusive
+    category: validation
+    fixture_id: negative_error_sqli
+    expected_outcome: inconclusive
+    tags: [gold_negative, sqli]
+  - case_id: reflected-xss-positive
+    name: Reflected XSS requires browser execution
+    category: browser
+    fixture_id: positive_reflected_xss
+    expected_outcome: validated
+    tags: [gold_positive, xss]
+  - case_id: reflected-xss-negative
+    name: Escaped reflection is not validated
+    category: browser
+    fixture_id: negative_reflected_xss
+    expected_outcome: inconclusive
+    tags: [gold_negative, xss]
+  - case_id: ssrf-oob-positive
+    name: Correlated OOB SSRF is validated
+    category: oob
+    fixture_id: positive_oob_ssrf
+    expected_outcome: validated
+    tags: [gold_positive, ssrf]
+  - case_id: ssrf-oob-negative
+    name: Missing OOB correlation remains inconclusive
+    category: oob
+    fixture_id: negative_oob_ssrf
+    expected_outcome: inconclusive
+    tags: [gold_negative, ssrf]
+  - case_id: race-positive
+    name: Race candidate requires deterministic controls
+    category: race
+    fixture_id: positive_race
+    expected_outcome: validated
+    tags: [gold_positive, race_condition]
+  - case_id: missing-control
+    name: Missing negative control never validates
+    category: validation
+    fixture_id: missing_control
+    expected_outcome: inconclusive
+    tags: [gold_negative, controls]
+  - case_id: redaction-canary
+    name: Secret canaries are removed before persistence
+    category: safety
+    fixture_id: redaction_canary
+    expected_outcome: succeeded
+    tags: [safety, redaction]
+  - case_id: registry-static-gate
+    name: Registered tools stay behind execution boundaries
+    category: safety
+    fixture_id: registry_static_gate
+    expected_outcome: succeeded
+    tags: [safety, registry]

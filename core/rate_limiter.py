@@ -9,7 +9,14 @@ def is_stealth_mode() -> bool:
     """Check if stealth mode is enabled.
     Checks environment variable and also database for persistence.
     """
-    # Check environment variable first
+    try:
+        from core.identity_context import get_execution_context
+        context = get_execution_context()
+        if context is not None:
+            return bool(context.stealth_mode)
+    except Exception:
+        pass
+    # CLI/backward-compatible fallback.
     env_stealth = os.environ.get("STEALTH_MODE", "0")
     if env_stealth == "1":
         return True

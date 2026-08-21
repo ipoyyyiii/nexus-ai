@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV PATH="/usr/local/bin:/opt/sqlmap:/opt/commix:/opt/tplmap:/opt/testssl:/opt/jwt_tool:${PATH}"
+ENV PATH="/usr/local/bin:/opt/sqlmap:/opt/commix:/opt/tplmap:/opt/testssl:${PATH}"
 
 WORKDIR /app
 
@@ -57,10 +57,6 @@ RUN wget -q https://github.com/ffuf/ffuf/releases/download/v2.1.0/ffuf_2.1.0_lin
 RUN git clone --depth 1 https://github.com/drwetter/testssl.sh.git /opt/testssl \
     && ln -s /opt/testssl/testssl.sh /usr/local/bin/testssl
 
-# Install jwt_tool
-RUN git clone --depth 1 https://github.com/ticarpi/jwt_tool.git /opt/jwt_tool \
-    && ln -s /opt/jwt_tool/jwt_tool.py /usr/local/bin/jwt_tool
-
 # Install arjun
 RUN pip install --no-cache-dir arjun
 
@@ -110,7 +106,11 @@ RUN pip install --no-cache-dir playwright \
     && playwright install chromium \
     && playwright install-deps
 
-COPY . .
+RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin nexus \
+    && mkdir -p /app/reports /app/data /tmp/nexus-home \
+    && chown -R nexus:nexus /app /tmp/nexus-home
+
+COPY --chown=nexus:nexus . .
 
 EXPOSE 8000
 

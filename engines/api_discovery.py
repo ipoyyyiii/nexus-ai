@@ -12,7 +12,7 @@ Usage:
 
 import json
 import re
-import requests
+from core.tool_transport import guarded_requests as requests
 from typing import Dict, List, Any, Optional
 from urllib.parse import urlparse, urljoin
 

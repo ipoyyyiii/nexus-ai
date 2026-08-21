@@ -1,7 +1,7 @@
-import subprocess
+from core.tool_transport import guarded_subprocess as subprocess
 import json
 import os
-from langchain.tools import tool
+from core.tool_decorator import langchain_tool as tool
 from core.cancellation import check_cancelled
 from tools.custom_tools import exec_logger
 

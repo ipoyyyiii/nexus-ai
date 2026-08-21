@@ -199,6 +199,13 @@ class ReportGenerator:
         """
         Generate executive summary + all findings.
         """
+        # Candidate/suspected findings are intentionally excluded from the
+        # main report and severity summary. They belong in the evidence
+        # appendix/UI until deterministic validation or a labeled override.
+        findings = [
+            item for item in findings
+            if item.get("status") in {"validated", "validated_override"}
+        ]
         report = []
 
         # Header

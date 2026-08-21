@@ -1,7 +1,7 @@
-import requests
+from core.tool_transport import guarded_requests as requests
 import json
 import time
-from langchain.tools import tool
+from core.tool_decorator import langchain_tool as tool
 from core.cancellation import check_cancelled
 from core.checkpoint import require_approval
 from tools.custom_tools import exec_logger
@@ -713,7 +713,7 @@ def graphql_tester(target_url: str) -> str:
     if not check_cancelled(exec_logger):
         exec_logger.add_log("GraphQL Tester", "PROCESSING", "Running graphql-cop for additional testing")
         try:
-            import subprocess
+            from core.tool_transport import guarded_subprocess as subprocess
             import tempfile
             import os
 

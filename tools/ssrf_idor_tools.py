@@ -4,9 +4,9 @@ import time
 from typing import Optional
 from urllib.parse import urlparse, urljoin, urlencode, parse_qs, urlunparse
 from core.proxy_router import proxy_router
-import requests
+from core.tool_transport import guarded_requests as requests
 import urllib3
-from crewai.tools import tool
+from core.tool_decorator import crewai_tool as tool
 from core.cancellation import check_cancelled
 from core.checkpoint import require_approval
 from core.rate_limiter import rate_limiter
@@ -18,9 +18,6 @@ from engines.stealth_engine import stealth_get, stealth
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # ── Shared session ────────────────────────────────────────────────────────────
-SESSION = requests.Session()
-SESSION.verify = False
-SESSION.timeout = 10
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
 }
@@ -31,7 +28,7 @@ def _domain_of(url: str) -> str:
     except Exception:
         return url
 
-def _validate_params_exist(url: str, params: list, logger=None) -> list:
+def _validate_params_exist(url: str, params: list, logger=None, session=None) -> list:
     """
     Validasi parameter mana that benar-benar received endpoint.
     Kirim benign value (angka 1) ke setiap parameter.
@@ -40,9 +37,10 @@ def _validate_params_exist(url: str, params: list, logger=None) -> list:
     tool_name = "SSRF Param Validator"
     valid_params = []
 
+    client = session or SESSION
     try:
         # Capture baseline
-        baseline_resp = SESSION.get(url, timeout=5, allow_redirects=False)
+        baseline_resp = client.get(url, timeout=5, allow_redirects=False)
         baseline_body = baseline_resp.text
         baseline_status = baseline_resp.status_code
     except Exception:
@@ -53,7 +51,7 @@ def _validate_params_exist(url: str, params: list, logger=None) -> list:
         try:
             test_url = f"{url}{'&' if '?' in url else '?'}{param}=1"
             rate_limiter.wait(_domain_of(url))
-            resp = SESSION.get(test_url, timeout=5, allow_redirects=False)
+            resp = client.get(test_url, timeout=5, allow_redirects=False)
 
             # Parameter dianggap ada kalau:
             # 1. Status code berubah (misal 400 → 200), atau
@@ -139,6 +137,10 @@ def scan_ssrf(url: str, canary_domain: str = "") -> str:
     if not approved:
         return "DIBATALKAN: approval rejected atau timeout."
 
+    # Never share a cookie jar between identities/jobs.
+    SESSION = requests.Session()
+    SESSION.verify = True
+
     # Use OOB engine canary if not provided
     if not canary_domain:
         from engines.oob_engine import oob_engine
@@ -155,7 +157,7 @@ def scan_ssrf(url: str, canary_domain: str = "") -> str:
         logger.add_log(tool_name, "PROCESSING", "Phase 1: Parameter-based SSRF test")
 
     # Validasi parameter senot yet test — skip param that gak ada di endpoint
-    valid_params = _validate_params_exist(url, SSRF_PARAMS, logger)
+    valid_params = _validate_params_exist(url, SSRF_PARAMS, logger, SESSION)
     if not valid_params:
         if logger:
             logger.add_log(tool_name, "INFO", "No valid SSRF params found — skipping Phase 1")
@@ -440,6 +442,9 @@ def scan_idor(url: str, cookies: str = "", auth_header: str = "") -> str:
     )
     if not approved:
         return "DIBATALKAN: approval rejected atau timeout."
+
+    SESSION = requests.Session()
+    SESSION.verify = True
 
     domain = _domain_of(url)
     findings = []

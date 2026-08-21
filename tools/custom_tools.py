@@ -1,21 +1,21 @@
 import json
-import requests
-import socket
+from core.tool_transport import guarded_requests as requests
+from core.tool_transport import guarded_socket as socket
 import re
 import urllib3
 import urllib.parse
 import ssl
 import hashlib
 import base64
-import dns.resolver
+from core.tool_transport import guarded_dns as dns
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from crewai.tools import tool
+from core.tool_decorator import crewai_tool as tool
 from typing import Dict, List, Any
 from urllib.parse import quote, parse_qs, urlparse
 import time
-from langchain.tools import tool
+from core.tool_decorator import langchain_tool as tool
 from core.checkpoint import require_approval
 from core.rate_limiter import rate_limiter
 from core.redact import redact
@@ -536,7 +536,7 @@ def _run_sqlmap_confirmation(url: str, param: str, exec_logger) -> dict:
     Run sqlmap sebagai confirmation step.
     Return dict with is_confirmed, details, severity.
     """
-    import subprocess
+    from core.tool_transport import guarded_subprocess as subprocess
     import json
     import os
     import tempfile
@@ -853,7 +853,7 @@ def analyze_ssl_tls(domain: str) -> str:
         
         # 5. Check HSTS header
         try:
-            import requests
+            from core.tool_transport import guarded_requests as requests
             rate_limiter.wait(domain)
             resp = requests.get(f"https://{domain}", timeout=5, verify=False, allow_redirects=False)
             hsts = resp.headers.get('Strict-Transport-Security', '')
@@ -1354,17 +1354,14 @@ def report_new_endpoint(session_id: str, new_url: str, discovered_by: str) -> st
     """
     url = new_url.strip()
     try:
-        # Kirim target baru ke endpoint internal FastAPI kita (port 8000)
-        res = requests.post(
-            f"http://127.0.0.1:8000/api/v1/session/{session_id}/inject-target",
-            json={"url": url, "source": discovered_by},
-            timeout=3
-        )
-        if res.status_code == 200:
-            return f"[SUCCESS] Target baru '{url}' success dimasukkan ke antrean pool oleh {discovered_by}."
-        return f"[-] Failed mendaftarkan target, server merespon with status: {res.status_code}"
+        from core.identity_context import get_execution_context
+        from core.discovery_service import record_discovered_endpoint
+        context = get_execution_context()
+        repository = context.repository if context else None
+        result = record_discovered_endpoint(repository, session_id, url, discovered_by)
+        return f"[SUCCESS] Target baru '{url}' dicatat oleh {discovered_by}: {result.get('status')}."
     except Exception as e:
-        return f"[-] Failed menghubungi internal orchestrator: {str(e)}"
+        return f"[-] Discovery persistence blocked: {type(e).__name__}"
 
 
 # ==========================================

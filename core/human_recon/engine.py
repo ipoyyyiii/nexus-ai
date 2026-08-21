@@ -125,7 +125,7 @@ class HumanReconEngine:
 
                 # Observe
                 snapshot = await _observe(page, url, depth, captured)
-                self.pages_visited.append({"url": url, "depth": depth, "forms": len(snapshot.forms), "xhr": len(snapshot.xhr)})
+                self.pages_visited.append({"url": redact(url), "depth": depth, "forms": len(snapshot.forms), "forms_detail": redact(snapshot.forms), "inputs": redact(snapshot.inputs), "buttons": redact(snapshot.buttons), "xhr_detail": redact(snapshot.xhr), "xhr": len(snapshot.xhr)})
 
                 # Decide
                 decision = llm_next(snapshot, self.target, self.goal, history)
@@ -178,7 +178,18 @@ class HumanReconEngine:
                 if pages_done % 10 == 0:
                     try:
                         from tools.hunter_pipeline import httpx_probe
-                        httpx_probe.invoke({"target": url})
+                        from core.identity_context import get_execution_context
+                        from core.structured_runner import StructuredToolRunner
+                        active = get_execution_context()
+                        StructuredToolRunner(
+                            repository=active.repository if active else None,
+                            safety_kernel=active.safety_kernel if active else None,
+                        ).execute(
+                            httpx_probe, {"target": url}, target=url,
+                            session_id=active.session_id if active else self.session_id,
+                            job_id=active.job_id if active else "",
+                            identity_id=active.identity_id if active else "",
+                        )
                     except Exception:
                         pass
                 # Expand frontier from current page links (BFS, limited)

@@ -1,11 +1,11 @@
 import json
-import requests
+from core.tool_transport import guarded_requests as requests
 import re
 import time
 import uuid
 import urllib3
 from urllib.parse import quote, urlparse
-from langchain.tools import tool
+from core.tool_decorator import langchain_tool as tool
 from core.rate_limiter import rate_limiter
 from core.auth_store import auth_get, auth_post
 from core.cancellation import check_cancelled
@@ -281,7 +281,7 @@ def twofa_bypass_scanner(url: str, login_url: str = "", username: str = "", pass
 # TOOL 2: Credential Stuffing Exposure Scanner
 # ==========================================
 @tool("credential_stuffing_scanner")
-def credential_stuffing_scanner(url: str, login_url: str = "") -> str:
+def credential_stuffing_scanner(url: str, login_url: str = "", secret_ref: str = "") -> str:
     """
     Scan for credential stuffing exposure — apakah login endpoint
     rentan terhadap serangan credential stuffing:
@@ -302,6 +302,18 @@ def credential_stuffing_scanner(url: str, login_url: str = "") -> str:
     auth_kwargs = get_auth_kwargs(domain)
     base = url.rstrip("/")
     findings = {"vulnerabilities": [], "info": []}
+    from core.identity_context import get_execution_context
+    context = get_execution_context()
+    vault_credentials = None
+    if secret_ref:
+        try:
+            if not context or not context.secret_vault:
+                raise RuntimeError("secret vault unavailable")
+            vault_credentials = context.secret_vault.get(secret_ref, context.session_id, context.identity_id)
+        except Exception:
+            return json.dumps({"status": "SKIPPED", "reason": "credential secret_ref could not be resolved"})
+    probe_username = f"nexus-probe-{uuid.uuid4().hex[:12]}@invalid.test"
+    probe_password = uuid.uuid4().hex + "-invalid"
 
     # Find login endpoint
     login_endpoint = None
@@ -337,9 +349,9 @@ def credential_stuffing_scanner(url: str, login_url: str = "") -> str:
             r = auth_post(
                 login_endpoint,
                 data={
-                    "username": f"testuser{i}@example.com",
-                    "email": f"testuser{i}@example.com",
-                    "password": "WrongPass123!"
+                    "username": probe_username,
+                    "email": probe_username,
+                    "password": probe_password
                 },
                 timeout=5, verify=False
             )
@@ -369,18 +381,24 @@ def credential_stuffing_scanner(url: str, login_url: str = "") -> str:
     if not has_rate_limit and not has_lockout:
         logger.add_log(tool_name, "PROCESSING", "Running hydra for brute force test")
         try:
-            import subprocess
+            from core.tool_transport import guarded_subprocess as subprocess
             import tempfile
             import os
 
-            # Create temp files for usernames and passwords
+            if not vault_credentials:
+                logger.add_log(tool_name, "SKIPPED", "Hydra requires secret_ref from the Secret Vault")
+                raise PermissionError("credential_secret_ref_required")
+            usernames = [str(item) for item in vault_credentials.get("usernames", [])][:10]
+            passwords = [str(item) for item in vault_credentials.get("passwords", [])][:10]
+            if not usernames or not passwords:
+                raise PermissionError("vault credential set is empty")
             with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
                 user_file = f.name
-                f.write("admin\nroot\ntest\nuser\n")
+                f.write("\n".join(usernames) + "\n")
 
             with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
                 pass_file = f.name
-                f.write("admin\npassword\n123456\nadmin123\nroot\ntest\n")
+                f.write("\n".join(passwords) + "\n")
 
             with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
                 output_file = f.name
@@ -497,12 +515,12 @@ def credential_stuffing_scanner(url: str, login_url: str = "") -> str:
         for _ in range(3):
             rate_limiter.wait(domain)
             t_start = _time.monotonic()
-            auth_post(login_endpoint, data={"username": "admin", "password": "WrongPass"}, timeout=5, verify=False)
+            auth_post(login_endpoint, data={"username": probe_username, "password": probe_password}, timeout=5, verify=False)
             times_valid_user.append(_time.monotonic() - t_start)
 
             rate_limiter.wait(domain)
             t_start = _time.monotonic()
-            auth_post(login_endpoint, data={"username": "nonexistent_xyz999@fake.com", "password": "WrongPass"}, timeout=5, verify=False)
+            auth_post(login_endpoint, data={"username": f"absent-{uuid.uuid4().hex[:12]}@invalid.test", "password": probe_password}, timeout=5, verify=False)
             times_invalid_user.append(_time.monotonic() - t_start)
 
         avg_valid = sum(times_valid_user) / len(times_valid_user)
@@ -923,7 +941,7 @@ def asn_ip_mapper(domain_or_ip: str) -> str:
     logger.add_log(tool_name, "START", f"Starting ASN mapping for {domain_or_ip}")
     if check_cancelled(logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
-    import socket
+    from core.tool_transport import guarded_socket as socket
     findings = {
         "ip_addresses": [],
         "asn_info": {},

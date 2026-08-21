@@ -1,10 +1,10 @@
 import os
 import json
-import requests
+from core.tool_transport import guarded_requests as requests
 import re
 import urllib3
 from urllib.parse import urlparse
-from langchain.tools import tool
+from core.tool_decorator import langchain_tool as tool
 from core.rate_limiter import rate_limiter
 from core.cancellation import check_cancelled
 from core.auth_store import get_auth_kwargs
@@ -76,7 +76,7 @@ def shodan_scanner(target: str) -> str:
     }
 
     # ── 1. Resolve domain ke IP ───────────────────────────────────────────────
-    import socket
+    from core.tool_transport import guarded_socket as socket
     target_ip = target
     if not re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$', target):
         logger.add_log(tool_name, "PROCESSING", f"Resolving {target} → IP")
@@ -338,7 +338,7 @@ def censys_scanner(target: str) -> str:
     }
 
     # ── 1. Resolve domain ─────────────────────────────────────────────────────
-    import socket
+    from core.tool_transport import guarded_socket as socket
     target_ip = target
     if not re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$', target):
         logger.add_log(tool_name, "PROCESSING", f"Resolving {target}")

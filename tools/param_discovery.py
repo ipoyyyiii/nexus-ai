@@ -3,9 +3,9 @@ import time
 from typing import Optional
 from urllib.parse import urlparse, urlencode
 
-import requests
+from core.tool_transport import guarded_requests as requests
 import urllib3
-from crewai.tools import tool
+from core.tool_decorator import crewai_tool as tool
 
 from core.cancellation import check_cancelled
 from core.checkpoint import require_approval
@@ -17,8 +17,6 @@ from core.auth_store import inject_into_session
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-SESSION = requests.Session()
-SESSION.verify = False
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
 }
@@ -94,7 +92,7 @@ TECH_SPECIFIC = {
 
 def _run_arjun_discovery(url: str, logger) -> list:
     """Run arjun for parameter discovery."""
-    import subprocess
+    from core.tool_transport import guarded_subprocess as subprocess
     import tempfile
     import os
 
@@ -187,6 +185,9 @@ def param_discovery_get(url: str, tech_stack: str = "") -> str:
     )
     if not approved:
         return "DIBATALKAN: approval rejected atau timeout."
+
+    SESSION = requests.Session()
+    SESSION.verify = True
 
     domain = _domain_of(url)
 

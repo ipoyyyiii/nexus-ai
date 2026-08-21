@@ -15,8 +15,11 @@ from crewai import Agent, Task, Crew
 from core.target_state import TargetState, create_target_state, get_target_state
 
 
-def build_phase1_agents(target: str, goal: str, memory_context: str, 
-                         llm_recon, llm_analis, all_results: dict, scan_preset: str = "full"):
+def build_phase1_agents(target: str, goal: str, memory_context: str,
+                         llm_recon, llm_analis, all_results: dict,
+                         scan_preset: str = "full", session_id: str = "",
+                         recommended_tools: Optional[List[str]] = None,
+                         planner_context: Optional[Dict[str, Any]] = None):
     """
     Build Phase 1 agents for automated data gathering.
     Returns list of (agent, task, phase_name) tuples.
@@ -41,34 +44,31 @@ def build_phase1_agents(target: str, goal: str, memory_context: str,
         ldap_injection_scanner, xpath_injection_scanner,
         stored_xss_scanner, dom_xss_scanner, jsonp_injection_scanner,
         access_control_scanner,
+        authorization_differential_replay,
         csrf_exploit_scanner, mass_assignment_scanner, http_method_tampering_scanner,
         command_injection_scanner, log_injection_scanner, csv_injection_scanner,
         prototype_pollution_scanner,
         web_cache_poisoning_scanner, cache_deception_scanner, idor_uuid_scanner,
         html_injection_scanner, ssi_injection_scanner, hpp_scanner,
+        scan_ssrf, ssrf_advanced_scanner, xxe_tester,
+        file_upload_scanner, session_management_scanner, test_jwt_weakness,
+        websocket_security_scanner,
+        browser_workflow_discovery, stateful_browser_workflow,
+        business_invariant_evaluator,
     )
     
+    from core.structured_runner import structured_crewai_tool
+
     def langchain_to_crewai(lc_tool):
-        from crewai.tools import BaseTool
-        from pydantic import create_model
-        import inspect
-        
-        if hasattr(lc_tool, 'args_schema') and lc_tool.args_schema:
-            schema = lc_tool.args_schema
-        else:
-            sig = inspect.signature(lc_tool.func)
-            fields = {k: (str, ...) for k, v in sig.parameters.items() if k != 'self'}
-            schema = create_model(f"{lc_tool.name}Input", **fields) if fields else None
-        
-        class CrewAIWrappedTool(BaseTool):
-            name: str = lc_tool.name
-            description: str = lc_tool.description
-            args_schema: type = schema if schema else type('EmptySchema', (), {})
-            
-            def _run(self, **kwargs):
-                return lc_tool.invoke(kwargs)
-        
-        return CrewAIWrappedTool()
+        category = "recon" if lc_tool is human_recon_crawl else "scanner"
+        try:
+            from api import session_store
+        except Exception:
+            session_store = None
+        return structured_crewai_tool(
+            lc_tool, session_id=session_id, target=target,
+            category=category, session_store=session_store,
+        )
 
     phases = []
     
@@ -94,27 +94,70 @@ def build_phase1_agents(target: str, goal: str, memory_context: str,
         return phases
 
     # ── Vulnerability Analysis Agent ──────────────────────────────────────────
+    vuln_tool_map = {
+        "scan_sql_injection": scan_sql_injection,
+        "blind_sqli_scanner": blind_sqli_scanner,
+        "detect_xss_csrf": detect_xss_csrf,
+        "dom_xss_scanner": dom_xss_scanner,
+        "stored_xss_scanner": stored_xss_scanner,
+        "scan_ssrf": scan_ssrf,
+        "ssrf_advanced_scanner": ssrf_advanced_scanner,
+        "xxe_tester": xxe_tester,
+        "ssti_tester": ssti_tester,
+        "command_injection_scanner": command_injection_scanner,
+        "scan_lfi_rfi": scan_lfi_rfi,
+        "authorization_differential_replay": authorization_differential_replay,
+        "access_control_scanner": access_control_scanner,
+        "browser_find_open_redirect": browser_find_open_redirect,
+        "cors_tester": cors_tester,
+        "graphql_tester": graphql_tester,
+        "csrf_exploit_scanner": csrf_exploit_scanner,
+        "mass_assignment_scanner": mass_assignment_scanner,
+        "file_upload_scanner": file_upload_scanner,
+        "session_management_scanner": session_management_scanner,
+        "test_jwt_weakness": test_jwt_weakness,
+        "websocket_security_scanner": websocket_security_scanner,
+        "param_discovery_post": param_discovery_post,
+        "run_nuclei_scan": run_nuclei_scan,
+        "browser_workflow_discovery": browser_workflow_discovery,
+        "stateful_browser_workflow": stateful_browser_workflow,
+        "business_invariant_evaluator": business_invariant_evaluator,
+    }
+    default_vuln_tools = [
+        baca_log_burp, scan_sql_injection, detect_xss_csrf,
+        scan_lfi_rfi, test_header_injection,
+        browser_simulate_form, browser_find_open_redirect,
+        param_discovery_post, run_nuclei_scan,
+        report_new_endpoint, graphql_tester, cors_tester, ssti_tester,
+        blind_sqli_scanner, nosql_injection_scanner,
+        ldap_injection_scanner, xpath_injection_scanner,
+        stored_xss_scanner, dom_xss_scanner, jsonp_injection_scanner,
+        access_control_scanner,
+        authorization_differential_replay,
+        csrf_exploit_scanner, mass_assignment_scanner, http_method_tampering_scanner,
+        command_injection_scanner, log_injection_scanner, csv_injection_scanner,
+        prototype_pollution_scanner,
+        web_cache_poisoning_scanner, cache_deception_scanner, idor_uuid_scanner,
+        html_injection_scanner, ssi_injection_scanner, hpp_scanner,
+    ]
+    planner_requested = list(recommended_tools or [])
+    unknown_planner_tools = [
+        name for name in planner_requested
+        if name not in vuln_tool_map and name != "human_recon_crawl"
+    ]
+    if unknown_planner_tools:
+        raise ValueError(f"Planner selected unavailable tool(s): {unknown_planner_tools}")
+    planner_selected = [
+        vuln_tool_map[name] for name in planner_requested if name in vuln_tool_map
+    ]
+    initial_vuln_tools = planner_selected or default_vuln_tools
+
     vuln_agent = Agent(
         role="Senior Vulnerability Strategist",
         goal="Design precise payloads based on intel recon.",
         backstory="Exploitation mastermind. Surgical, WAF-aware payloads.",
         llm=llm_analis,
-        tools=[langchain_to_crewai(t) for t in [
-            baca_log_burp, scan_sql_injection, detect_xss_csrf,
-            scan_lfi_rfi, test_header_injection,
-            browser_simulate_form, browser_find_open_redirect,
-            param_discovery_post, run_nuclei_scan,
-            report_new_endpoint, graphql_tester, cors_tester, ssti_tester,
-            blind_sqli_scanner, nosql_injection_scanner,
-            ldap_injection_scanner, xpath_injection_scanner,
-            stored_xss_scanner, dom_xss_scanner, jsonp_injection_scanner,
-            access_control_scanner,
-            csrf_exploit_scanner, mass_assignment_scanner, http_method_tampering_scanner,
-            command_injection_scanner, log_injection_scanner, csv_injection_scanner,
-            prototype_pollution_scanner,
-            web_cache_poisoning_scanner, cache_deception_scanner, idor_uuid_scanner,
-            html_injection_scanner, ssi_injection_scanner, hpp_scanner,
-        ]],
+        tools=[langchain_to_crewai(t) for t in initial_vuln_tools],
         verbose=True
     )
     # Wire attack surface + dynamic smart selector (filter 34 -> 5-8 kontekstual)
@@ -148,7 +191,7 @@ def build_phase1_agents(target: str, goal: str, memory_context: str,
         advisor_note = ""
     recon_ctx = all_results.get("recon", "")[:4000]
     # If filtered, update agent tools dynamically
-    if vuln_tools_filtered:
+    if vuln_tools_filtered and not planner_selected:
         vuln_agent.tools = [langchain_to_crewai(t) for t in vuln_tools_filtered + [report_new_endpoint]]
     # Respect user-selected vuln_types (empty = all via advisor)
     selected_vulns = []
@@ -161,8 +204,15 @@ def build_phase1_agents(target: str, goal: str, memory_context: str,
     except Exception:
         pass
     vuln_scope = f" Focus only on: {', '.join(selected_vulns)}." if selected_vulns else ""
+    planner_note = ""
+    if planner_selected:
+        planner_note = (
+            f"\nDeterministic planner selected only: {recommended_tools}. "
+            f"Planner context: {str(planner_context or {})[:3000]}. "
+            "Do not claim validation yourself; return observations and candidates through the structured runner."
+        )
     vuln_task = Task(
-        description=f"Target: {target} | Goal: {goal}\nBased on recon:\n{recon_ctx}\n{advisor_note}{vuln_scope}\n\nTest injection vectors dynamically prioritized: explore goal-relevant vulns first, then pivot if score low.",
+        description=f"Target: {target} | Goal: {goal}\nBased on recon:\n{recon_ctx}\n{advisor_note}{vuln_scope}{planner_note}\n\nRun the bounded evidence-producing test and stop when its configured stop condition is reached.",
         expected_output="List of vulnerabilities in GFM markdown format.",
         agent=vuln_agent
     )
@@ -171,33 +221,20 @@ def build_phase1_agents(target: str, goal: str, memory_context: str,
     return phases
 
 
-def build_phase3_agent(target: str, all_results: dict, target_state: TargetState, llm_assessor):
+def build_phase3_agent(target: str, all_results: dict, target_state: TargetState, llm_assessor, session_id: str = ""):
     """
     Build Phase 3 agent for risk assessment and reporting.
     """
     from tools import report_new_endpoint
     
+    from core.structured_runner import structured_crewai_tool
+    from api import session_store
+
     def langchain_to_crewai(lc_tool):
-        from crewai.tools import BaseTool
-        from pydantic import create_model
-        import inspect
-        
-        if hasattr(lc_tool, 'args_schema') and lc_tool.args_schema:
-            schema = lc_tool.args_schema
-        else:
-            sig = inspect.signature(lc_tool.func)
-            fields = {k: (str, ...) for k, v in sig.parameters.items() if k != 'self'}
-            schema = create_model(f"{lc_tool.name}Input", **fields) if fields else None
-        
-        class CrewAIWrappedTool(BaseTool):
-            name: str = lc_tool.name
-            description: str = lc_tool.description
-            args_schema: type = schema if schema else type('EmptySchema', (), {})
-            
-            def _run(self, **kwargs):
-                return lc_tool.invoke(kwargs)
-        
-        return CrewAIWrappedTool()
+        return structured_crewai_tool(
+            lc_tool, session_id=session_id, target=target,
+            category="reporting", session_store=session_store,
+        )
 
     agent = Agent(
         role="Chief Information Security Officer (CISO)",
@@ -240,7 +277,9 @@ def run_phase1(job_id: str, session_id: str, target: str, goal: str,
                  all_results: dict, all_reports: list,
                  auto_pilot: bool, cancellation_store, continue_store,
                  update_job, save_message, phase_filter: Optional[List[str]] = None,
-                 result_handler=None, scan_preset: str = "full") -> bool:
+                 result_handler=None, scan_preset: str = "full",
+                 recommended_tools: Optional[List[str]] = None,
+                 planner_context: Optional[Dict[str, Any]] = None) -> bool:
     """
     Run Phase 1: Automated Data Gathering.
     Returns True if completed successfully, False if cancelled.
@@ -250,7 +289,11 @@ def run_phase1(job_id: str, session_id: str, target: str, goal: str,
     target_state = get_target_state()
     phase_names = {"recon": "Reconnaissance", "analis": "Vulnerability Analysis"}
     
-    phases = build_phase1_agents(target, goal, memory_context, llm_recon, llm_analis, all_results)
+    phases = build_phase1_agents(
+        target, goal, memory_context, llm_recon, llm_analis, all_results,
+        scan_preset=scan_preset, session_id=session_id,
+        recommended_tools=recommended_tools, planner_context=planner_context,
+    )
     if phase_filter:
         phases = [phase for phase in phases if phase[0] in phase_filter]
     
@@ -329,7 +372,12 @@ def run_phase2_interactive(job_id: str, session_id: str, target: str,
     jobs[job_id] = job_data
     
     # Wait for user to finish consultation
-    auto_pilot = os.environ.get("AUTO_PILOT", "0") == "1"
+    try:
+        from core.identity_context import get_execution_context
+        context = get_execution_context()
+        auto_pilot = bool(context.auto_pilot) if context else os.environ.get("AUTO_PILOT", "0") == "1"
+    except Exception:
+        auto_pilot = os.environ.get("AUTO_PILOT", "0") == "1"
     if not auto_pilot:
         approved = continue_store.request_continue(job_id)
         if not approved:

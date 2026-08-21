@@ -25,7 +25,7 @@ PATHS = {
 
 def fetch_all() -> Dict[str, List[str]]:
     """Fetch & cache payloads per vuln. Returns dict vuln -> payloads."""
-    import requests
+    from core.tool_transport import guarded_requests as requests
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     result: Dict[str, List[str]] = {}
     for vuln, paths in PATHS.items():

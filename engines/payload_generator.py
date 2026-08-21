@@ -124,7 +124,7 @@ class PayloadGenerator:
         """
         Detect tech stack from target URL based on response headers dan body.
         """
-        import requests
+        from core.tool_transport import guarded_requests as requests
         logger = _logger()
 
         detected = {"framework": "unknown", "language": "unknown", "database": "unknown"}

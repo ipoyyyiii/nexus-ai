@@ -2,9 +2,9 @@ import json
 import re
 from urllib.parse import urlparse, urljoin
 
-import requests
+from core.tool_transport import guarded_requests as requests
 import urllib3
-from crewai.tools import tool
+from core.tool_decorator import crewai_tool as tool
 
 from core.cancellation import check_cancelled
 from core.rate_limiter import rate_limiter
@@ -15,8 +15,6 @@ from core.auth_store import inject_into_session
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-SESSION = requests.Session()
-SESSION.verify = False
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
 }
@@ -127,6 +125,9 @@ def analyze_js_deep(url: str) -> str:
 
     if check_cancelled(logger):
         return "DIBATALKAN: job di-cancel oleh user."
+
+    SESSION = requests.Session()
+    SESSION.verify = True
 
     domain = _domain_of(url)
     parsed = urlparse(url)

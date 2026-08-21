@@ -1,8 +1,9 @@
-import requests
+from core.tool_transport import guarded_requests as requests
 import base64
 import json
 import time
-from langchain.tools import tool
+import secrets
+from core.tool_decorator import langchain_tool as tool
 from core.checkpoint import require_approval
 from core.cancellation import check_cancelled
 from tools.custom_tools import exec_logger
@@ -136,7 +137,10 @@ def test_auth_rate_limiting(login_url: str) -> str:
 
     url = login_url.strip()
     headers = {"User-Agent": "Mozilla/5.0 NexusAI-Auth-Tester"}
-    payload = {"username": "admin_test_nexus", "password": "password_test_nexus"}
+    payload = {
+        "username": f"nexus-probe-{secrets.token_urlsafe(8)}@invalid.test",
+        "password": secrets.token_urlsafe(18),
+    }
     
     status_codes = []
     for _ in range(10):
@@ -156,91 +160,49 @@ def test_auth_rate_limiting(login_url: str) -> str:
     return f"[WARN] POTENTIAL MISSING RATE LIMITING: Endpoint {url} menerima 10 request beruntun tanpa proteksi 429. Respon that received: {list(distinct_codes)}. Rentan terhadap Brute Force."
 
 
+def _decode_jwt_part(value: str) -> dict:
+    padded = value + "=" * (-len(value) % 4)
+    decoded = base64.urlsafe_b64decode(padded.encode()).decode("utf-8")
+    parsed = json.loads(decoded)
+    return parsed if isinstance(parsed, dict) else {}
+
+
 @tool("jwt_tool_analysis")
 def jwt_tool_analysis(jwt_token: str, target_url: str = "") -> str:
-    """
-    Comprehensive JWT analysis using jwt_tool.
-    Tests for algorithm confusion, weak secrets, and other JWT vulnerabilities.
-    
-    Args:
-        jwt_token: JWT token to analyze
-        target_url: Target URL for testing (optional)
-    """
-    import subprocess
-    import tempfile
-    import os
-
-    if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
-
-    exec_logger.add_log("JWT Tool", "START", "Running jwt_tool analysis")
-
+    """Deterministic in-process JWT inspection compatibility adapter."""
+    if check_cancelled(exec_logger):
+        return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
+    parts = str(jwt_token or "").strip().split(".")
+    if len(parts) != 3:
+        return "JWT parse inconclusive: expected three compact-token segments."
     try:
-        # Create temp output file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
-            output_file = f.name
-
-        # Run jwt_tool
-        cmd = [
-            "python3",
-            "/opt/jwt_tool/jwt_tool.py",
-            jwt_token,
-            "-M", "at",  # Test all attacks
-            "-o", output_file,
-        ]
-
-        # Add target URL if provided
-        if target_url:
-            cmd.extend(["-t", target_url])
-
-        # Apply stealth mode
-        if os.environ.get("STEALTH_MODE", "0") == "1":
-            cmd.append("--timeout")
-
-        result = subprocess.run(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=120,
-        )
-
-        # Parse output
-        output = result.stdout + result.stderr
-
-        # Check for vulnerability indicators
-        vuln_indicators = [
-            "VULNERABLE",
-            "alg:none",
-            "weak secret",
-            "key confusion",
-            "exploitable",
-        ]
-
-        is_vulnerable = any(indicator.lower() in output.lower() for indicator in vuln_indicators)
-
-        # Build report
-        report = f"=== JWT TOOL ANALYSIS ===\n\n"
-
-        if is_vulnerable:
-            report += "[🔴 VULNERABLE] jwt_tool detected potential vulnerabilities!\n\n"
-            report += output[:2000]
-        else:
-            report += "[✅] No obvious JWT vulnerabilities detected by jwt_tool.\n\n"
-            report += "Output summary:\n"
-            report += output[:1000]
-
-        # Cleanup
-        try:
-            os.unlink(output_file)
-        except:
-            pass
-
-        exec_logger.add_log("JWT Tool", "SUCCESS", "jwt_tool analysis complete")
-        return report
-
-    except subprocess.TimeoutExpired:
-        return "ERROR: jwt_tool timed out after 2 minutes"
-    except FileNotFoundError:
-        return "ERROR: jwt_tool not found. Install: git clone https://github.com/ticarpi/jwt_tool.git /opt/jwt_tool"
-    except Exception as e:
-        return f"ERROR: jwt_tool failed: {str(e)}"
+        header = _decode_jwt_part(parts[0])
+        payload = _decode_jwt_part(parts[1])
+    except Exception:
+        return "JWT parse inconclusive: malformed base64url or JSON."
+    alg = str(header.get("alg", "")).lower()
+    findings = [
+        "=== JWT DETERMINISTIC ANALYSIS ===",
+        f"algorithm={alg or 'missing'}",
+        f"target_present={bool(target_url)}",
+    ]
+    if alg == "none":
+        findings.append("observation=unsigned_algorithm")
+    elif alg in {"hs256", "hs384", "hs512"}:
+        findings.append("observation=symmetric_signing")
+    elif alg in {"rs256", "rs384", "rs512", "es256", "es384", "es512", "ps256", "ps384", "ps512"}:
+        findings.append("observation=asymmetric_signing")
+    else:
+        findings.append("observation=unknown_algorithm")
+    kid = str(header.get("kid", ""))
+    if kid:
+        findings.append("kid_present=true")
+        if any(marker in kid for marker in ("..", "/", chr(92), "'", '"', ";")):
+            findings.append("observation=suspicious_kid_syntax")
+    for claim in ("iss", "aud", "sub", "exp", "nbf"):
+        if claim in payload:
+            findings.append(f"claim_present={claim}")
+    for claim in ("admin", "role", "permissions", "is_admin", "is_staff"):
+        if claim in payload:
+            findings.append(f"sensitive_claim_present={claim}")
+    return "\n".join(findings)

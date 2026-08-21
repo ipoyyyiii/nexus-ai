@@ -18,10 +18,13 @@ Structure:
 
 import threading
 import time
-import requests
+from core.tool_transport import guarded_requests as requests
 from typing import Optional, Dict, Any, Set
 from urllib.parse import urlparse
 from datetime import datetime, timedelta
+
+from core.identity_context import get_execution_context
+from core.config_loader import get_setting
 
 
 def _domain_of(url: str) -> str:
@@ -44,6 +47,11 @@ class AuthSession:
         login_url: Optional[str] = None,
         credentials: Optional[Dict[str, str]] = None,
         expires_at: Optional[str] = None,
+        identity_id: str = "anonymous",
+        session_id: str = "",
+        auth_context_id: str = "",
+        secret_ref: str = "",
+        storage_state: Optional[Dict[str, Any]] = None,
     ):
         self.domain = domain
         self.cookies = cookies or {}
@@ -51,7 +59,15 @@ class AuthSession:
         self.auth_type = auth_type
         self.source = source
         self.login_url = login_url
-        self.credentials = credentials
+        # Never retain passwords or raw credential payloads in the process
+        # object.  The vault stores secret material; this object only carries
+        # the runtime auth material needed by the current request context.
+        self.credentials = {"username": credentials.get("username", "")} if credentials else None
+        self.identity_id = identity_id or "anonymous"
+        self.session_id = session_id
+        self.auth_context_id = auth_context_id
+        self.secret_ref = secret_ref
+        self.storage_state = storage_state or {}
         self.created_at = datetime.now().isoformat()
         self.expires_at = expires_at
         self.last_used = self.created_at
@@ -83,8 +99,8 @@ class AuthSession:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "domain": self.domain,
-            "cookies": self.cookies,
-            "headers": self.headers,
+            "cookie_names": sorted(self.cookies.keys()),
+            "header_names": sorted(self.headers.keys()),
             "auth_type": self.auth_type,
             "source": self.source,
             "login_url": self.login_url,
@@ -92,6 +108,11 @@ class AuthSession:
             "expires_at": self.expires_at,
             "last_used": self.last_used,
             "request_count": self.request_count,
+            "identity_id": self.identity_id,
+            "session_id": self.session_id,
+            "auth_context_id": self.auth_context_id,
+            "secret_ref": self.secret_ref,
+            "storage_state_present": bool(self.storage_state),
         }
 
 
@@ -100,67 +121,114 @@ class AuthStore:
 
     def __init__(self):
         self._lock = threading.Lock()
-        self._sessions: Dict[str, AuthSession] = {}
+        self._sessions: Dict[tuple[str, str, str], AuthSession] = {}
+        self._legacy_sessions: Dict[str, AuthSession] = {}
 
-    def save_session(self, domain: str, session: AuthSession):
-        """Simpan session for domain."""
-        with self._lock:
-            self._sessions[domain] = session
+    @staticmethod
+    def _context_values(session_id: str = "", identity_id: str = "") -> tuple[str, str]:
+        context = get_execution_context()
+        return (
+            session_id or (context.session_id if context else ""),
+            identity_id or (context.identity_id if context else ""),
+        )
 
-    def get_session(self, domain: str) -> Optional[AuthSession]:
-        """Ambil session for domain. Return None kalau gak ada atau expired."""
+    def save_session(self, domain: str, session: AuthSession, session_id: str = "", identity_id: str = ""):
+        """Save an identity-scoped session; legacy domain storage is opt-in only."""
+        context = get_execution_context()
+        session_id, identity_id = self._context_values(session_id, identity_id)
+        session.session_id = session_id or session.session_id
+        session.identity_id = identity_id or session.identity_id or "anonymous"
         with self._lock:
-            session = self._sessions.get(domain)
+            if session_id:
+                self._sessions[(session_id, session.identity_id, domain)] = session
+                if context and context.job_id:
+                    self._job_domains.setdefault(context.job_id, set()).add((session_id, session.identity_id, domain))
+            else:
+                self._legacy_sessions[domain] = session
+
+    def get_session(self, domain: str, session_id: str = "", identity_id: str = "") -> Optional[AuthSession]:
+        """Get the session selected by the current execution context."""
+        session_id, identity_id = self._context_values(session_id, identity_id)
+        with self._lock:
+            session = self._sessions.get((session_id, identity_id or "anonymous", domain)) if session_id else None
+            # Legacy fallback is deliberately disabled in strict mode.  This
+            # prevents an unrelated job from inheriting another domain's auth.
+            if session is None and not session_id and str(get_setting("structured_evidence_mode", "strict")).lower() != "strict":
+                session = self._legacy_sessions.get(domain)
             if session and session.is_expired():
-                del self._sessions[domain]
+                self._remove_session_locked(domain, session)
                 return None
             return session
+
+    def _remove_session_locked(self, domain: str, session: AuthSession) -> None:
+        self._legacy_sessions.pop(domain, None)
+        for key, value in list(self._sessions.items()):
+            if key[2] == domain and value is session:
+                self._sessions.pop(key, None)
 
     def has_session(self, domain: str) -> bool:
         """Cek apakah ada session aktif for domain."""
         return self.get_session(domain) is not None
 
-    def clear_session(self, domain: str):
-        """Delete session for domain."""
+    def clear_session(self, domain: str, session_id: str = "", identity_id: str = ""):
+        """Delete one identity session, or all identities for a domain."""
+        session_id, identity_id = self._context_values(session_id, identity_id)
         with self._lock:
-            self._sessions.pop(domain, None)
+            if session_id:
+                self._sessions.pop((session_id, identity_id or "anonymous", domain), None)
+            else:
+                self._legacy_sessions.pop(domain, None)
+                for key in list(self._sessions):
+                    if key[2] == domain:
+                        self._sessions.pop(key, None)
 
-    _job_domains: Dict[str, Set[str]] = {}
+    _job_domains: Dict[str, Set[tuple[str, str, str]]] = {}
 
-    def track_job_domain(self, job_id: str, domain: str):
+    def track_job_domain(self, job_id: str, domain: str, session_id: str = "", identity_id: str = ""):
+        session_id, identity_id = self._context_values(session_id, identity_id)
         with self._lock:
-            self._job_domains.setdefault(job_id, set()).add(domain)
+            self._job_domains.setdefault(job_id, set()).add((session_id, identity_id or "anonymous", domain))
 
     def clear_for_job(self, job_id: str):
         """Scoped cleanup: remove only domains touched by this job."""
         with self._lock:
-            domains = self._job_domains.pop(job_id, set())
-            for d in domains:
-                self._sessions.pop(d, None)
-            if not domains:
+            keys = self._job_domains.pop(job_id, set())
+            for key in keys:
+                self._sessions.pop(key, None)
+            if not keys:
                 # fallback if tracking missed: no-op instead of clear_all
                 pass
+
+    def clear_for_session(self, session_id: str) -> None:
+        """Clear every runtime auth context belonging to one engagement."""
+        if not session_id:
+            return
+        with self._lock:
+            for key in list(self._sessions):
+                if key[0] == session_id:
+                    self._sessions.pop(key, None)
 
     def clear_all(self):
         """Delete all session (dipanggil pas job selesai)."""
         with self._lock:
             self._sessions.clear()
+            self._legacy_sessions.clear()
 
     def list_sessions(self) -> Dict[str, Dict]:
         """List all session aktif."""
         with self._lock:
             return {
-                domain: session.to_dict()
-                for domain, session in self._sessions.items()
+                f"{session.session_id}:{session.identity_id}:{domain}": session.to_dict()
+                for (session_id, identity_id, domain), session in self._sessions.items()
                 if not session.is_expired()
             }
 
-    def inject_into_kwargs(self, domain: str, kwargs: Dict) -> Dict:
+    def inject_into_kwargs(self, domain: str, kwargs: Dict, session_id: str = "", identity_id: str = "") -> Dict:
         """
         Auto-inject session cookies/headers ke requests kwargs.
         Dipanggil from tools senot yet make request.
         """
-        session = self.get_session(domain)
+        session = self.get_session(domain, session_id=session_id, identity_id=identity_id)
         if not session:
             return kwargs
 
@@ -185,7 +253,7 @@ class AuthStore:
         return kwargs
 
 
-def inject_into_session(requests_session, domain: str):
+def inject_into_session(requests_session, domain: str, session_id: str = "", identity_id: str = ""):
     """
     Inject session cookies/headers ke requests.Session object.
     Used by tools that use shared SESSION object.
@@ -194,7 +262,7 @@ def inject_into_session(requests_session, domain: str):
         from auth_store import inject_into_session
         inject_into_session(SESSION, "target.com")
     """
-    auth_session = auth_store.get_session(domain)
+    auth_session = auth_store.get_session(domain, session_id=session_id, identity_id=identity_id)
     if not auth_session:
         return
 
@@ -231,7 +299,7 @@ def authenticated_request(
         (response, login_wall_result)
         login_wall_result = None kalau gak ada login wall
     """
-    import requests
+    from core.tool_transport import guarded_requests as requests
     from urllib.parse import urlparse
     from auth_detection import detect_login_wall
     from auth_checkpoint import request_auth
@@ -243,6 +311,7 @@ def authenticated_request(
             return url
 
     domain = _domain_of(url)
+    context = get_execution_context()
     session = auth_store.get_session(domain)
 
     # Build request kwargs
@@ -354,7 +423,7 @@ def authenticated_request(
     return response, login_wall
 
 
-def get_auth_kwargs(domain: str) -> Dict:
+def get_auth_kwargs(domain: str, session_id: str = "", identity_id: str = "") -> Dict:
     """
     Return kwargs dict (cookies + headers) for di-inject ke requests.get/post.
     Used by tools that do not have shared SESSION object.
@@ -363,7 +432,7 @@ def get_auth_kwargs(domain: str) -> Dict:
         from auth_store import get_auth_kwargs
         r = requests.get(url, **get_auth_kwargs(domain), headers=HEADERS, timeout=5)
     """
-    session = auth_store.get_session(domain)
+    session = auth_store.get_session(domain, session_id=session_id, identity_id=identity_id)
     if not session:
         return {}
     kwargs = {}

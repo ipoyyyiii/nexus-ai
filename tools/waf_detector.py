@@ -27,7 +27,7 @@ Usage:
 """
 
 import re
-import requests
+from core.tool_transport import guarded_requests as requests
 import time
 from typing import Dict, Any, Optional, List
 from urllib.parse import urlparse

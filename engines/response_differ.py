@@ -247,7 +247,7 @@ class ResponseDiffer:
         snapshots: jumlah baseline snapshot (for consistency check)
         Return dict that can dipake for compare.
         """
-        import requests
+        from core.tool_transport import guarded_requests as requests
         import time
 
         snapshots_data = []
@@ -444,7 +444,7 @@ class ResponseDiffer:
         Check temporal consistency - kirim requests beberapa kali dan cek konsistensi.
         Returns consistency metrics.
         """
-        import requests
+        from core.tool_transport import guarded_requests as requests
         import time
 
         responses = []
@@ -879,7 +879,7 @@ class ResponseDiffer:
                 "reason": str,
             }
         """
-        import requests
+        from core.tool_transport import guarded_requests as requests
         import string
         import random
 
@@ -953,7 +953,7 @@ def quick_diff(url: str, payload: str, param: str = "test") -> Dict[str, Any]:
     Quick helper: capture baseline, inject payload, compare.
     Return diff result.
     """
-    import requests
+    from core.tool_transport import guarded_requests as requests
     from urllib.parse import quote
     from core.rate_limiter import rate_limiter
 

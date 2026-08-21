@@ -1,13 +1,14 @@
 """Human-like crawl tool exposed to CrewAI agents."""
 
 import json
-from crewai.tools import tool
+from core.tool_decorator import crewai_tool as tool
 from core.cancellation import check_cancelled
+from core.redact import redact
 from core.rate_limiter import rate_limiter
 
 
 @tool("human_recon_crawl")
-def human_recon_crawl(url: str, goal: str = "", session_id: str = "") -> str:
+def human_recon_crawl(url: str, goal: str = "", session_id: str = "", structured: bool = False) -> str:
     """
     Human-like recon: stateful browser that clicks one-by-one, extracts JS, tries features/buttons,
     captures XHR/fetch after each interaction, and crawls subdomains. Returns GFM report.
@@ -16,6 +17,7 @@ def human_recon_crawl(url: str, goal: str = "", session_id: str = "") -> str:
         url: Seed URL to crawl
         goal: Attack goal for prioritization
         session_id: Session for scope validation & state persistence
+        structured: Return redacted browser workflow captures as JSON for Stage 4.
     """
     if check_cancelled(None):
         return "CANCELLED"
@@ -32,6 +34,8 @@ def human_recon_crawl(url: str, goal: str = "", session_id: str = "") -> str:
     from core.human_recon.engine import HumanReconEngine
     engine = HumanReconEngine(session_id=session_id, target=url, goal=goal, scope_rules=scope_rules)
     result = engine.run()
+    if structured:
+        return json.dumps({"schema": "browser_recon_capture_v1", "pages": result.get("pages_detail", []), "visited_urls": result.get("visited_urls", []), "xhr_captured": result.get("xhr_captured", 0)}, ensure_ascii=False)
     # Format GFM
     lines = [f"# Human Recon Crawl: {url}", ""]
     lines.append(f"Pages visited: {result['pages_visited']} | XHR captured: {result['xhr_captured']}")

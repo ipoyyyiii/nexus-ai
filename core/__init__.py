@@ -18,6 +18,8 @@ from core.model_registry import build_llm, list_available_models, chain_summary,
 from core.scan_history import scan_history
 from core.response_cache import response_cache
 from core.safe_except import safe_except
+from core.identity_context import ToolExecutionContext, get_execution_context, use_execution_context
+from core.authorization_engine import AuthorizationReplayEngine
 
 __all__ = [
     "checkpoint_store", "require_approval", "current_job_id",
@@ -30,4 +32,6 @@ __all__ = [
     "validate_target", "extract_domain",
     "build_llm", "list_available_models", "chain_summary", "MODEL_REGISTRY",
     "scan_history", "response_cache", "safe_except",
+    "ToolExecutionContext", "get_execution_context", "use_execution_context",
+    "AuthorizationReplayEngine",
 ]

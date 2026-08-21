@@ -164,68 +164,19 @@ class StealthEngine:
         }
 
 
-# Try to import tls_client for better TLS fingerprinting
-try:
-    import tls_client
-    TLS_CLIENT_AVAILABLE = True
-except ImportError:
-    TLS_CLIENT_AVAILABLE = False
-
+# The old tls_client/requests fallback was a transitive boundary bypass.
+# Stealth is now only a request-shaping adapter; transport remains guarded.
+from core.tool_transport import guarded_requests as _guarded_requests
 
 class StealthSession:
-    """
-    TLS-fingerprint-aware session that mimic browser.
-    Pakai tls_client kalau available, fallback ke requests.
-    """
-
-    def __init__(self):
-        self._session = None
-        self._lock = threading.Lock()
-
-    def get_session(self):
-        """Get or create stealth session."""
-        with self._lock:
-            if self._session is None:
-                if TLS_CLIENT_AVAILABLE:
-                    # tls_client punya pre-built browser profiles
-                    self._session = tls_client.Session(
-                        client_identifier="chrome_131",
-                        random_tls_extension_order=True,
-                    )
-                else:
-                    # Fallback ke requests biasa
-                    import requests as req
-                    self._session = req.Session()
-                    self._session.verify = False
-            return self._session
-
     def request(self, method: str, url: str, **kwargs) -> Any:
-        """
-        Make request with TLS fingerprint spoofing.
-        """
-        session = self.get_session()
-
-        # Add browser headers kalau gak ada
-        if "headers" not in kwargs:
-            stealth = StealthEngine()
-            kwargs["headers"] = stealth.get_browser_headers(url)
-
-        # Add jitter
         stealth = StealthEngine()
+        kwargs.setdefault("headers", stealth.get_browser_headers(url))
+        kwargs.setdefault("allow_redirects", True)
+        kwargs.setdefault("verify", True)
         stealth.add_jitter(base_delay=0.3, max_jitter=1.0)
+        return _guarded_requests.request(method, url, **kwargs)
 
-        try:
-            if TLS_CLIENT_AVAILABLE and hasattr(session, 'request'):
-                return session.request(method, url, **kwargs)
-            else:
-                return session.request(method, url, **kwargs)
-        except Exception:
-            # Fallback ke requests biasa
-            import requests as req
-            return req.request(method, url, **kwargs)
-
-
-# Global instances
 stealth = StealthEngine()
 stealth_session = StealthSession()
 

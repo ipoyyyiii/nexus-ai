@@ -1,7 +1,26 @@
+# Local Python environments and caches
+.venv/
+venv/
+env/
 venv_pentest/
 __pycache__/
 *.pyc
+.pytest_cache/
+.mypy_cache/
+
+# Frontend dependencies/build output
+node_modules/
+frontend-pentest/node_modules/
+frontend-pentest/.next/
+
+# Repository metadata and local secrets
 .git/
 .gitignore
+.env
+*.log
+
+# Local generated artifacts
+reports/
+artifacts/
 *.png
 *.jpg

@@ -20,6 +20,81 @@ services:
       - ./stored_reports:/app/reports
       - nexus_data:/app/data
 
+  # Durable execution worker. It has no published ports and runs as non-root.
+  nexus-worker:
+    container_name: nexus_execution_worker
+    build: .
+    command: ["python", "worker.py", "--capability", "general"]
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+      - /home/nexus:size=64m,mode=700,uid=10001,gid=10001
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: always
+
+  # Explicit opt-in only; keep raw-network capability disabled by default.
+  nexus-raw-network-worker:
+    container_name: nexus_raw_network_worker
+    profiles: ["raw-network"]
+    build: .
+    command: ["python", "worker.py", "--capability", "general", "--capability", "raw-network"]
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+      - /home/nexus:size=64m,mode=700,uid=10001,gid=10001
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_RAW
+    restart: always
+
+  # Local deterministic fixture app. Optional; never part of production services.
+  stage6-fixture:
+    profiles: ["benchmark-labs"]
+    build: .
+    command: ["uvicorn", "benchmarks.stage6.fixture_app:app", "--host", "0.0.0.0", "--port", "8100"]
+    ports:
+      - "127.0.0.1:8100:8100"
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  # Stage 8 local benchmark fixture. Optional; no external network or secrets.
+  stage8-fixture:
+    profiles: ["benchmark-labs"]
+    build: .
+    command: ["uvicorn", "benchmarks.stage8.fixture_app:app", "--host", "0.0.0.0", "--port", "8200"]
+    ports:
+      - "127.0.0.1:8200:8200"
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
   # --- Frontend Service  ---
   nexus-frontend:
     container_name: nexus_nextjs_ui

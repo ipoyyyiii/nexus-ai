@@ -29,7 +29,7 @@ def create_mock_response(status_code: int, body: str, headers: dict = None) -> d
     }
 
 
-def test_false_positives():
+def _run_false_positives():
     """Test cases that should NOT be flagged as vulnerabilities."""
     differ = ResponseDiffer()
     
@@ -94,7 +94,7 @@ def test_false_positives():
     return results
 
 
-def test_true_positives():
+def _run_true_positives():
     """Test cases that SHOULD be flagged as vulnerabilities."""
     differ = ResponseDiffer()
     
@@ -151,6 +151,16 @@ def test_true_positives():
     return results
 
 
+def test_false_positives():
+    results = _run_false_positives()
+    assert results["failed"] == 0, results["details"]
+
+
+def test_true_positives():
+    results = _run_true_positives()
+    assert results["failed"] == 0, results["details"]
+
+
 def run_all_tests():
     """Run all tests and calculate FP rate."""
     print("=" * 60)
@@ -160,7 +170,7 @@ def run_all_tests():
     
     # Test false positives
     print("Testing False Positives (should NOT be flagged)...")
-    fp_results = test_false_positives()
+    fp_results = _run_false_positives()
     print(f"Results: {fp_results['passed']}/{fp_results['passed'] + fp_results['failed']} passed")
     for detail in fp_results["details"]:
         print(f"  {detail}")
@@ -168,7 +178,7 @@ def run_all_tests():
     
     # Test true positives
     print("Testing True Positives (SHOULD be flagged)...")
-    tp_results = test_true_positives()
+    tp_results = _run_true_positives()
     print(f"Results: {tp_results['passed']}/{tp_results['passed'] + tp_results['failed']} passed")
     for detail in tp_results["details"]:
         print(f"  {detail}")

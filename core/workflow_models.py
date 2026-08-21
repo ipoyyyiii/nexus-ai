@@ -1,6 +1,6 @@
 """Structured workflow records for evidence-driven security engagements."""
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields as dataclass_fields
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
@@ -35,6 +35,7 @@ class RecordStatus(str, Enum):
     INCONCLUSIVE = "inconclusive"
     COMPLETE = "complete"
     FAILED = "failed"
+    STALE = "stale"
 
 
 def _now() -> str:
@@ -85,6 +86,8 @@ class FindingRecord:
     remediation: str = ""
     fingerprint: str = ""
     retest_id: str = ""
+    validation_source: str = "machine"
+    source_candidate_id: str = ""
 
 
 @dataclass
@@ -96,6 +99,25 @@ class HypothesisRecord:
     status: str = RecordStatus.PENDING.value
     result: str = ""
     confidence: str = "medium"
+    category: str = "unknown"
+    target_url: str = ""
+    method: str = "GET"
+    parameter: str = ""
+    fingerprint: str = ""
+    null_hypothesis: str = "The observed behavior has a benign explanation."
+    alternative_claims: List[str] = field(default_factory=list)
+    contradicting_evidence_ids: List[str] = field(default_factory=list)
+    source_candidate_ids: List[str] = field(default_factory=list)
+    prior_probability: float = 0.5
+    confidence_score: float = 0.5
+    expected_information_gain: float = 0.0
+    test_attempts: int = 0
+    max_test_attempts: int = 3
+    generation_rule: str = ""
+    decision_reason: str = ""
+    revision: int = 1
+    last_updated: str = field(default_factory=_now)
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -111,6 +133,33 @@ class ActionProposal:
     action_id: str = field(default_factory=lambda: _id("action"))
     status: str = RecordStatus.PROPOSED.value
     evidence_ids: List[str] = field(default_factory=list)
+    hypothesis_id: str = ""
+    recommended_tool: str = ""
+    alternative_tools: List[str] = field(default_factory=list)
+    information_gain: float = 0.0
+    estimated_cost: float = 0.0
+    risk_score: float = 0.0
+    priority_score: float = 0.0
+    score_breakdown: Dict[str, float] = field(default_factory=dict)
+    preconditions: List[str] = field(default_factory=list)
+    unmet_preconditions: List[str] = field(default_factory=list)
+    stop_conditions: List[str] = field(default_factory=list)
+    input_bindings: Dict[str, Any] = field(default_factory=dict)
+    fingerprint: str = ""
+    planner_cycle_id: str = ""
+    planner_managed: bool = False
+
+
+@dataclass
+class PlannerDecisionRecord:
+    cycle_id: str = field(default_factory=lambda: _id("plan"))
+    snapshot_digest: str = ""
+    considered_actions: List[Dict[str, Any]] = field(default_factory=list)
+    selected_action_ids: List[str] = field(default_factory=list)
+    knowledge_gaps: List[str] = field(default_factory=list)
+    stop_reasons: List[str] = field(default_factory=list)
+    rationale: str = ""
+    created_at: str = field(default_factory=_now)
 
 
 @dataclass
@@ -155,6 +204,7 @@ class WorkflowState:
     chains: List[ChainRecord] = field(default_factory=list)
     cleanup: List[CleanupItem] = field(default_factory=list)
     retests: List[RetestRecord] = field(default_factory=list)
+    planner_decisions: List[PlannerDecisionRecord] = field(default_factory=list)
     events: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -164,7 +214,12 @@ class WorkflowState:
     def from_dict(cls, data: Optional[Dict[str, Any]]) -> "WorkflowState":
         data = data or {}
         def many(key: str, record_type: Any) -> List[Any]:
-            return [record_type(**item) for item in data.get(key, [])]
+            allowed = {item.name for item in dataclass_fields(record_type)}
+            records = []
+            for item in data.get(key, []):
+                if isinstance(item, dict):
+                    records.append(record_type(**{k: v for k, v in item.items() if k in allowed}))
+            return records
         return cls(
             phase=data.get("phase", WorkflowPhase.SETUP.value),
             objectives=many("objectives", EngagementObjective),
@@ -175,6 +230,7 @@ class WorkflowState:
             chains=many("chains", ChainRecord),
             cleanup=many("cleanup", CleanupItem),
             retests=many("retests", RetestRecord),
+            planner_decisions=many("planner_decisions", PlannerDecisionRecord),
             events=list(data.get("events", [])),
         )
 
@@ -192,6 +248,59 @@ class WorkflowState:
     def add_proposal(self, proposal: ActionProposal) -> None:
         self.proposals.append(proposal)
         self.record_event("proposal_created", action_id=proposal.action_id, action=proposal.action)
+
+    def upsert_hypothesis(self, hypothesis: HypothesisRecord) -> HypothesisRecord:
+        existing = next(
+            (item for item in self.hypotheses if hypothesis.fingerprint and item.fingerprint == hypothesis.fingerprint),
+            None,
+        )
+        if existing is None:
+            self.hypotheses.append(hypothesis)
+            self.record_event(
+                "hypothesis_created",
+                hypothesis_id=hypothesis.hypothesis_id,
+                fingerprint=hypothesis.fingerprint,
+                generation_rule=hypothesis.generation_rule,
+            )
+            return hypothesis
+
+        preserved_id = existing.hypothesis_id
+        preserved_actions = list(dict.fromkeys(existing.required_action_ids + hypothesis.required_action_ids))
+        preserved_attempts = existing.test_attempts
+        preserved_revision = existing.revision
+        previous_status = existing.status
+        for item in dataclass_fields(HypothesisRecord):
+            setattr(existing, item.name, getattr(hypothesis, item.name))
+        existing.hypothesis_id = preserved_id
+        existing.required_action_ids = preserved_actions
+        existing.test_attempts = preserved_attempts
+        existing.revision = preserved_revision + 1
+        if hypothesis.status == RecordStatus.PENDING.value and previous_status in {
+            RecordStatus.PROPOSED.value, RecordStatus.RUNNING.value,
+        }:
+            existing.status = previous_status
+        existing.last_updated = _now()
+        if previous_status != existing.status:
+            self.record_event(
+                "hypothesis_status_changed",
+                hypothesis_id=existing.hypothesis_id,
+                previous=previous_status,
+                current=existing.status,
+            )
+        return existing
+
+    def add_planner_decision(self, decision: PlannerDecisionRecord) -> None:
+        self.planner_decisions.append(decision)
+        # Keep session JSONB bounded while preserving the event/audit summary.
+        self.planner_decisions = self.planner_decisions[-100:]
+        self.record_event(
+            "planner_cycle_completed",
+            cycle_id=decision.cycle_id,
+            snapshot_digest=decision.snapshot_digest,
+            selected_action_ids=decision.selected_action_ids,
+            considered_count=len(decision.considered_actions),
+            knowledge_gap_count=len(decision.knowledge_gaps),
+        )
 
     def context(self) -> str:
         objectives = "\n".join(f"- [{item.status}] {item.description}" for item in self.objectives) or "- None defined"

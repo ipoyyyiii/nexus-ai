@@ -1,47 +1,57 @@
-"""Hunter pipeline wrappers — 1:1 with serious bug bounty workflow."""
+"""Allowlisted hunter pipeline wrappers using the Stage 5 sandbox boundary."""
 
-import subprocess
-import json
-import shlex
-from crewai.tools import tool
+from core.tool_decorator import crewai_tool as tool
 
-def _run(cmd: str, timeout: int = 90) -> str:
+from core.sandbox_runner import SandboxedCommandRunner
+
+_runner = SandboxedCommandRunner()
+
+
+def _run(command_id: str, args=(), *, stdin: str = "", timeout: int = 90, lines: int = 80) -> str:
     try:
-        out = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout)
-        return (out.stdout + out.stderr)[:8000]
-    except Exception as e:
-        return f"error: {e}"
+        result = _runner.run(command_id, args, stdin=stdin, timeout_seconds=timeout)
+        output = "\n".join((result.stdout + result.stderr).splitlines()[:lines])
+        return output or f"exit_code: {result.run.exit_code}"
+    except Exception as exc:
+        return f"error: {type(exc).__name__}: {exc}"
+
+
+def _host(target: str) -> str:
+    return target.replace("https://", "").replace("http://", "").split("/")[0]
+
 
 @tool("httpx_probe")
 def httpx_probe(target: str) -> str:
-    """Live host probe via httpx: check if subdomains/hosts are alive."""
-    return _run(f"echo {shlex.quote(target)} | httpx -silent -status-code -title -tech-detect -timeout 8 2>&1 | head -30")
+    """Live host probe via allowlisted httpx."""
+    return _run("httpx_probe", stdin=target, lines=30)
+
 
 @tool("naabu_scan")
 def naabu_scan(target: str) -> str:
-    """Port scan via naabu (fast, reliable)."""
-    host = target.replace("https://","").replace("http://","").split("/")[0]
-    return _run(f"naabu -host {shlex.quote(host)} -top-ports 1000 -silent 2>&1 | head -40", timeout=120)
+    """Port scan via allowlisted naabu."""
+    return _run("naabu_scan", ["-host", _host(target)], timeout=120, lines=40)
+
 
 @tool("gowitness_shot")
 def gowitness_shot(target: str) -> str:
-    """Screenshot via gowitness (Chrome headless with report)."""
-    host = target.replace("https://","").replace("http://","").split("/")[0]
-    return _run(f"gowitness single {shlex.quote(target)} --disable-db 2>&1 | head -40")
+    """Screenshot via allowlisted gowitness."""
+    return _run("gowitness_shot", [target], timeout=120, lines=40)
+
 
 @tool("gau_urls")
 def gau_urls(target: str) -> str:
-    """URL gathering via gau (GetAllUrls) — historical endpoints."""
-    host = target.replace("https://","").replace("http://","").split("/")[0]
-    return _run(f"echo {shlex.quote(host)} | gau --threads 5 2>&1 | head -80")
+    """Historical URL gathering via allowlisted gau."""
+    return _run("gau_urls", stdin=_host(target), lines=80)
+
 
 @tool("hakrawler_crawl")
 def hakrawler_crawl(target: str) -> str:
-    """JS crawling via hakrawler — discovers endpoints/assets in web app."""
-    return _run(f"echo {shlex.quote(target)} | hakrawler -depth 2 -plain 2>&1 | head -80")
+    """Endpoint crawling via allowlisted hakrawler."""
+    return _run("hakrawler_crawl", stdin=target, lines=80)
+
 
 @tool("amass_enum")
 def amass_enum(target: str) -> str:
-    """Subdomain enum via amass (OSINT + active)."""
-    domain = target.replace("https://","").replace("http://","").split("/")[0].split(":")[0]
-    return _run(f"amass enum -passive -d {shlex.quote(domain)} -timeout 2 2>&1 | head -50", timeout=150)
+    """Passive subdomain enumeration via allowlisted amass."""
+    domain = _host(target).split(":")[0]
+    return _run("amass_enum", ["-d", domain], timeout=150, lines=50)

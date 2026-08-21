@@ -1,5 +1,5 @@
-import requests
-from langchain.tools import tool
+from core.tool_transport import guarded_requests as requests
+from core.tool_decorator import langchain_tool as tool
 from core.cancellation import check_cancelled
 from core.checkpoint import require_approval
 from tools.custom_tools import exec_logger

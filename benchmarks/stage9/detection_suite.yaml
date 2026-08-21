@@ -1,0 +1,98 @@
+suite_id: stage9-detection-depth
+name: Nexus Stage 9 Detection Depth and Validation V2
+version: "1.0"
+mode: deterministic
+description: Local-only 12-domain x 6-variant deterministic validation benchmark.
+variants:
+  - gold_positive
+  - gold_negative
+  - noisy_control
+  - missing_control
+  - clean_reproduction
+  - recovery_cleanup
+domains:
+  - family: sqli_error
+    subtype: error_boolean_time
+    category: injection
+    target_surface: api
+    endpoint_class: parameterized_api
+    required_evidence_roles: [baseline, test, negative_control, reproduction]
+  - family: reflected_xss
+    subtype: reflection_browser_execution
+    category: browser
+    target_surface: browser
+    endpoint_class: html_form
+    required_evidence_roles: [test, browser, negative_control, reproduction]
+  - family: ssrf_oob
+    subtype: callback_correlation
+    category: oob
+    target_surface: oob
+    endpoint_class: fetch_url
+    required_evidence_roles: [test, oob, negative_control, reproduction]
+  - family: command_ssti
+    subtype: harmless_marker_and_timing
+    category: injection
+    target_surface: api
+    endpoint_class: templating
+    required_evidence_roles: [baseline, test, negative_control, reproduction]
+  - family: idor_tenant_isolation
+    subtype: cross_tenant_object_access
+    category: authorization
+    target_surface: api
+    endpoint_class: object_api
+    auth_state: two_identities
+    identity: owner_non_owner
+    tenant: tenant_a_tenant_b
+    required_evidence_roles: [baseline, test, negative_control, reproduction]
+  - family: auth_session_oauth
+    subtype: session_rotation_oauth_state_pkce
+    category: authentication
+    target_surface: api
+    endpoint_class: auth_callback
+    auth_state: authenticated
+    identity: user_a
+    required_evidence_roles: [baseline, test, negative_control, reproduction]
+  - family: cors_redirect
+    subtype: credentialed_cors_and_external_location
+    category: configuration
+    target_surface: http
+    endpoint_class: response_headers
+    required_evidence_roles: [baseline, test, negative_control, reproduction]
+  - family: api_schema_mass_assignment
+    subtype: method_schema_state_diff
+    category: api
+    target_surface: api
+    endpoint_class: json_mutation
+    required_evidence_roles: [baseline, test, negative_control, reproduction]
+  - family: business_logic_invariant
+    subtype: ownership_price_state_transition
+    category: business_logic
+    target_surface: browser
+    endpoint_class: stateful_journey
+    auth_state: multi_identity
+    identity: owner_reviewer
+    tenant: tenant_a
+    cleanup_required: true
+    cleanup_assertion: fixture state returns to its initial value
+    required_evidence_roles: [baseline, test, negative_control, reproduction]
+  - family: race_condition
+    subtype: synchronized_state_effect
+    category: race
+    target_surface: api
+    endpoint_class: state_mutation
+    cleanup_required: true
+    cleanup_assertion: server-side effects are removed and verified
+    required_evidence_roles: [baseline, test, negative_control, reproduction]
+  - family: evidence_redaction
+    subtype: secret_pii_persistence
+    category: safety
+    target_surface: safety
+    required_evidence_roles: [external]
+  - family: browser_workflow_recovery
+    subtype: checkpoint_resume_cleanup
+    category: recovery
+    target_surface: browser
+    endpoint_class: stateful_workflow
+    cleanup_required: true
+    cleanup_assertion: resumed workflow cleanup is verified
+    required_evidence_roles: [external]

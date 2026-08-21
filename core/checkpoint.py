@@ -7,7 +7,14 @@ current_job_id: ContextVar[Optional[str]] = ContextVar("current_job_id", default
 
 
 def is_auto_pilot() -> bool:
-    """Check if auto-pilot mode is enabled."""
+    """Read auto-pilot from the active job context, with CLI fallback."""
+    try:
+        from core.identity_context import get_execution_context
+        context = get_execution_context()
+        if context is not None:
+            return bool(context.auto_pilot)
+    except Exception:
+        pass
     return os.environ.get("AUTO_PILOT", "0") == "1"
 
 
@@ -25,8 +32,9 @@ class CheckpointStore:
         Blocking call (dipanggil from worker thread tempat crew jalan).
         Return (approved: bool, reason: str)
         """
-        # Auto-pilot mode: auto-approve all actions
-        if is_auto_pilot():
+        # Auto-pilot may only skip read-only pauses. Mutation, credential,
+        # upload and raw-network actions always require explicit approval.
+        if is_auto_pilot() and risk == "read_only":
             if self.on_wait_start:
                 try:
                     self.on_wait_start(job_id, action, context)
@@ -102,14 +110,15 @@ def require_approval(action: str, context: str, risk: str = "high", exec_logger=
     """
     job_id = current_job_id.get()
 
-    # Auto-pilot mode: auto-approve all actions
-    if is_auto_pilot():
+    # Auto-pilot is never an approval bypass for high-risk actions.
+    if is_auto_pilot() and risk == "read_only":
         if exec_logger:
-            exec_logger.add_log(
-                "HITL", "AUTO-APPROVED",
-                f"Auto-pilot mode: '{action}' auto-approved"
-            )
+            exec_logger.add_log("HITL", "AUTO-APPROVED", f"Read-only action '{action}' auto-approved")
         return True
+    if is_auto_pilot() and risk != "read_only":
+        if exec_logger:
+            exec_logger.add_log("HITL", "BLOCKED", f"Auto-pilot cannot approve mutation/high-risk action '{action}'")
+        return False
 
     if not job_id:
         if exec_logger:
@@ -123,6 +132,15 @@ def require_approval(action: str, context: str, risk: str = "high", exec_logger=
         exec_logger.add_log("HITL", "START", f"Requesting approval for: {action}", {"context": context, "risk": risk})
 
     approved, reason = checkpoint_store.request(job_id, action, context, risk=risk)
+
+    if approved:
+        try:
+            from core.identity_context import get_execution_context
+            active = get_execution_context()
+            if active is not None:
+                active.approval_granted = True
+        except Exception:
+            pass
 
     if exec_logger:
         exec_logger.add_log(

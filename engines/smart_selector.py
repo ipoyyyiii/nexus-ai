@@ -178,7 +178,7 @@ class SmartToolSelector:
         Detect tech stack from target URL.
         Return: {"language": "...", "framework": "...", "database": "..."}
         """
-        import requests
+        from core.tool_transport import guarded_requests as requests
         try:
             from core.rate_limiter import rate_limiter
             rate_limiter.wait(_domain_of(url))

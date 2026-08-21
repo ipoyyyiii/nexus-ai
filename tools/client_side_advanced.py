@@ -1,9 +1,9 @@
 import json
-import requests
+from core.tool_transport import guarded_requests as requests
 import re
 import urllib3
 from urllib.parse import quote, urlparse
-from langchain.tools import tool
+from core.tool_decorator import langchain_tool as tool
 from core.rate_limiter import rate_limiter
 from core.auth_store import auth_get, auth_post
 from core.cancellation import check_cancelled

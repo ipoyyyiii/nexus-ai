@@ -40,7 +40,7 @@ class ChainPlanner:
         proposal = ActionProposal(
             action="controlled_impact_proof",
             target_url=context["target_url"],
-            rationale=f"Use validated finding {finding.finding_id} as the prerequisite for the stated objective.",
+            rationale=f"Use {'human-override' if finding.validation_source == 'human_override' else 'machine'}-validated finding {finding.finding_id} as the prerequisite for the stated objective.",
             expected_evidence="Minimal, objective-specific before/after evidence linked to the validated finding.",
             risk="high",
             requires_approval=True,

@@ -6,7 +6,7 @@ import time
 from typing import Optional
 from urllib.parse import urljoin, urlparse
 from core.proxy_router import proxy_router
-from crewai.tools import tool
+from core.tool_decorator import crewai_tool as tool
 from core.cancellation import check_cancelled
 from core.rate_limiter import rate_limiter
 from core.redact import redact
@@ -45,7 +45,7 @@ async def _get_browser():
     return _browser
 
 
-async def _new_page(browser, timeout_ms: int = 15000):
+async def _new_page(browser, timeout_ms: int = 15000, origin: str = ""):
     """Buat page baru with stealth settings dasar."""
     proxy_dict = proxy_router.get_proxy()
     proxy_server = proxy_dict["http"] if proxy_dict else None
@@ -60,16 +60,37 @@ async def _new_page(browser, timeout_ms: int = 15000):
         "viewport": {"width": 1280, "height": 800},
         "ignore_https_errors": True,
     }
+
+    # Each browser context is bound to the active identity. Never reuse a
+    # shared browser context across identities.
+    try:
+        from core.auth_store import auth_store
+        from core.identity_context import get_execution_context
+        context = get_execution_context()
+        domain = _domain_of(origin or (context.target_origin if context else ""))
+        auth_session = auth_store.get_session(
+            domain,
+            session_id=context.session_id if context else "",
+            identity_id=context.identity_id if context else "",
+        ) if domain else None
+        if context and context.auth_context_id and auth_session and auth_session.auth_context_id not in {"", context.auth_context_id}:
+            auth_session = None
+        if auth_session:
+            if auth_session.storage_state:
+                context_args["storage_state"] = auth_session.storage_state
+            elif auth_session.cookies:
+                context_args["storage_state"] = {
+                    "cookies": [
+                        {"name": name, "value": value, "domain": domain, "path": "/"}
+                        for name, value in auth_session.cookies.items()
+                    ],
+                    "origins": [],
+                }
+            if auth_session.headers:
+                context_args["extra_http_headers"] = auth_session.headers
+    except Exception:
+        pass
     
-    ctx = await browser.new_context(
-        user_agent=(
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
-        ),
-        viewport={"width": 1280, "height": 800},
-        ignore_https_errors=True,
-    )
     if proxy_server:
         context_args["proxy"] = {"server": proxy_server}
 
@@ -144,7 +165,7 @@ def browser_screenshot(url: str) -> str:
 
     async def _run():
         browser = await _get_browser()
-        page, ctx = await _new_page(browser)
+        page, ctx = await _new_page(browser, origin=url)
         try:
             await page.goto(url, wait_until="domcontentloaded")
             await page.wait_for_timeout(2000)  # Tunggu JS render
@@ -205,7 +226,7 @@ def browser_storage_security_scanner(url: str) -> str:
 
     async def _run():
         browser = await _get_browser()
-        page, ctx = await _new_page(browser)
+        page, ctx = await _new_page(browser, origin=url)
         try:
             await page.goto(url, wait_until="networkidle")
             await page.wait_for_timeout(2000)
@@ -378,7 +399,7 @@ def login_automator(
 
     async def _run():
         browser = await _get_browser()
-        page, ctx = await _new_page(browser)
+        page, ctx = await _new_page(browser, origin=url)
         try:
             # ── 1. Buka login page ────────────────────────────────────────────
             logger.add_log(tool_name, "PROCESSING", f"Opening {url}")
@@ -1155,16 +1176,34 @@ def browser_intercept_requests(url: str) -> str:
         browser = await _get_browser()
         page, ctx = await _new_page(browser)
         captured = []
+        request_index = {}
 
         async def on_request(request):
-            captured.append({
+            item = {
                 "url": request.url,
                 "method": request.method,
                 "resource_type": request.resource_type,
-                "headers": dict(list(request.headers.items())[:5]),  # Ambil 5 header pertama
-            })
+                "headers": redact(dict(list(request.headers.items())[:20])),
+                "post_data": redact((request.post_data or "")[:12000]),
+            }
+            captured.append(item)
+            request_index.setdefault((request.url, request.method), []).append(item)
+
+        async def on_response(response):
+            key = (response.url, response.request.method)
+            items = request_index.get(key) or []
+            if not items:
+                return
+            item = items[-1]
+            item["response_status"] = response.status
+            item["response_headers"] = redact(dict(list(response.headers.items())[:20]))
+            try:
+                item["response_body"] = redact((await response.text())[:12000])
+            except Exception:
+                item["response_body"] = ""
 
         page.on("request", on_request)
+        page.on("response", on_response)
 
         try:
             await page.goto(url, wait_until="networkidle")
@@ -1185,6 +1224,7 @@ def browser_intercept_requests(url: str) -> str:
             result = {
                 "url": url,
                 "total_requests_captured": len(captured),
+                "captures": captured[:120],
                 "xhr_and_fetch_requests": api_requests[:40],
                 "api_flagged_requests": flagged[:20],
                 "unique_domains_contacted": list(set(

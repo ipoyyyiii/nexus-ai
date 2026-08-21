@@ -1,5 +1,8 @@
 import os
 from dotenv import load_dotenv
+
+load_dotenv()
+
 from crewai import Agent, Task, Crew
 from langchain_openai import ChatOpenAI
 from tools.custom_tools import (
@@ -16,6 +19,7 @@ from tools.playwright_tools import (
     browser_find_open_redirect,
 )
 from tools.ssrf_idor_tools import scan_ssrf, scan_idor
+from tools.authorization_tools import authorization_differential_replay
 from tools.param_discovery import param_discovery_get, param_discovery_post, param_discovery_headers
 from tools.js_analysis import analyze_js_deep
 from core.model_registry import build_llm, chain_summary
@@ -66,11 +70,6 @@ from tools.ssi_injection_scanner import ssi_injection_scanner
 from tools.hpp_scanner import hpp_scanner
 from tools.password_storage_analyzer import password_storage_analyzer
 from tools.credential_reuse_scanner import credential_reuse_scanner
-
-# ==========================================
-# 1. LOAD ENV
-# ==========================================
-load_dotenv()
 
 # ==========================================
 # 2. SCOPE VALIDATION (CLI mode)
@@ -161,27 +160,10 @@ if __name__ == "__main__":
     print(f"  Assessor  : {' → '.join(chain_summary(model_assessor)[:3])}")
 
     # ── Helper: LangChain → CrewAI BaseTool ──────────────────────────────────
+    from core.structured_runner import structured_crewai_tool
+
     def langchain_to_crewai(lc_tool):
-        from crewai.tools import BaseTool
-        from pydantic import create_model
-        import inspect
-
-        if hasattr(lc_tool, 'args_schema') and lc_tool.args_schema:
-            schema = lc_tool.args_schema
-        else:
-            sig = inspect.signature(lc_tool.func)
-            fields = {k: (str, ...) for k, v in sig.parameters.items() if k != 'self'}
-            schema = create_model(f"{lc_tool.name}Input", **fields) if fields else None
-
-        class CrewAIWrappedTool(BaseTool):
-            name: str = lc_tool.name
-            description: str = lc_tool.description
-            args_schema: type = schema if schema else type('EmptySchema', (), {})
-
-            def _run(self, **kwargs) -> str:
-                return lc_tool.invoke(kwargs)
-
-        return CrewAIWrappedTool()
+        return structured_crewai_tool(lc_tool, target=input_target, category="cli")
 
     # ── Build LLMs ────────────────────────────────────────────────────────────
     llm_recon     = build_llm(model_recon)
@@ -230,6 +212,7 @@ if __name__ == "__main__":
             stored_xss_scanner, dom_xss_scanner, jsonp_injection_scanner,
             # Access control
             access_control_scanner,
+            authorization_differential_replay,
             csrf_exploit_scanner, mass_assignment_scanner, http_method_tampering_scanner,
             # Client-side
             prototype_pollution_scanner,
@@ -255,6 +238,7 @@ if __name__ == "__main__":
             # Core
             tembak_payload, test_api_security, analyze_password_strength,
             scan_ssrf, scan_idor,
+            authorization_differential_replay,
             # Auth
             test_jwt_weakness, test_auth_rate_limiting,
             oauth_flow_tester, report_new_endpoint,

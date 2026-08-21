@@ -5,6 +5,7 @@ from typing import Any, Optional
 
 from core.session_store import SessionStore
 from core.workflow_models import ActionProposal, RecordStatus
+from core.redact import redact
 
 
 @dataclass
@@ -40,7 +41,7 @@ class ExecutionGuard:
                     raise ValueError(decision.reason)
                 proposal.status = "approved"
                 state.workflow.record_event(
-                    "action_approved", action_id=action_id, reviewer_note=reviewer_note
+                    "action_approved", action_id=action_id, reviewer_note=str(redact(reviewer_note))[:1000]
                 )
                 self.sessions.save_state(session_id, state)
                 return proposal
@@ -51,8 +52,15 @@ class ExecutionGuard:
         for proposal in state.workflow.proposals:
             if proposal.action_id == action_id:
                 proposal.status = "rejected"
+                hypothesis = next(
+                    (item for item in state.workflow.hypotheses if item.hypothesis_id == proposal.hypothesis_id),
+                    None,
+                )
+                if hypothesis:
+                    hypothesis.status = RecordStatus.PENDING.value
+                    hypothesis.decision_reason = "Equivalent action was rejected for the current evidence snapshot."
                 state.workflow.record_event(
-                    "action_rejected", action_id=action_id, reviewer_note=reviewer_note
+                    "action_rejected", action_id=action_id, reviewer_note=str(redact(reviewer_note))[:1000]
                 )
                 self.sessions.save_state(session_id, state)
                 return proposal

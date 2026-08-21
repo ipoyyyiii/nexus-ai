@@ -1,6 +1,6 @@
-import dns.resolver
-import requests
-from langchain.tools import tool
+from core.tool_transport import guarded_dns as dns
+from core.tool_transport import guarded_requests as requests
+from core.tool_decorator import langchain_tool as tool
 from core.auth_store import get_auth_kwargs
 
 # Fingerprints populer for Subdomain Takeover

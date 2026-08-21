@@ -21,7 +21,7 @@ import random
 import string
 import time
 import threading
-import requests
+from core.tool_transport import guarded_requests as requests
 from typing import Optional, Dict, Any, Callable, List
 from urllib.parse import quote
 

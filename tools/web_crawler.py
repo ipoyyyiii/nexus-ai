@@ -7,11 +7,11 @@ Usage:
     from tools.web_crawler import web_crawler
 """
 
-import subprocess
+from core.tool_transport import guarded_subprocess as subprocess
 import tempfile
 import os
 import json
-from langchain.tools import tool
+from core.tool_decorator import langchain_tool as tool
 from core.rate_limiter import rate_limiter
 from core.cancellation import check_cancelled
 from core.checkpoint import require_approval

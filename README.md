@@ -130,6 +130,8 @@ npm run dev
 | `NEXUS_LOCAL_LLM_MODELS` | ❌ | comma-separated local model slugs |
 | `STEALTH_MODE` | ❌ | `1` for evasive mode (0.5 req/s) |
 | `AUTO_PILOT` | ❌ | `1` to skip HITL approval |
+| `NEXUS_AUTH_VAULT_KEY` | ✅ for identity secrets | Random base64/hex key for encrypted engagement-scoped auth material |
+
 
 ## API Endpoints
 
@@ -138,8 +140,14 @@ npm run dev
 | `POST` | `/pentest` | Start new pentest scan |
 | `GET` | `/job/{job_id}` | Poll job status |
 | `GET` | `/job/{job_id}/stream` | SSE real-time stream |
+| `GET/POST` | `/sessions/{session_id}/identities` | Manage isolated authorization identities |
+| `POST` | `/sessions/{session_id}/authorization/discover` | Persist runtime request/resource discovery |
+| `POST` | `/sessions/{session_id}/authorization/replays` | Run evidence-linked differential replay |
 | `POST` | `/job/{job_id}/cancel` | Cancel running job |
 | `POST` | `/job/{job_id}/continue` | Continue to next phase |
+| `POST` | `/sessions/{session_id}/workflow/plan` | Recompute evidence-driven hypotheses and next-test proposals |
+| `GET` | `/sessions/{session_id}/workflow/hypotheses` | Inspect belief, status, evidence, and test budget per hypothesis |
+| `GET` | `/sessions/{session_id}/workflow/planner-decisions` | Inspect deterministic ranking and skip/stop reasons |
 | `GET` | `/job/{job_id}/report.md` | Download report |
 | `GET` | `/job/{job_id}/export` | Export (md/pdf/docx) |
 | `POST` | `/checkpoint/respond` | Approve/reject HITL |
@@ -246,4 +254,3 @@ Reports available in 3 formats:
 - **Markdown** (GFM) — Default, with severity badges and collapsible sections
 - **PDF** — Via fpdf2 library
 - **DOCX** — Via python-docx library
-

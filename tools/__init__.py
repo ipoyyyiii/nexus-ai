@@ -26,6 +26,7 @@ from tools.playwright_tools import (
 
 # ── SSRF & IDOR ──────────────────────────────────────────────────────────────
 from tools.ssrf_idor_tools import scan_ssrf, scan_idor
+from tools.authorization_tools import authorization_differential_replay
 
 # ── Parameter Discovery ──────────────────────────────────────────────────────
 from tools.param_discovery import param_discovery_get, param_discovery_post, param_discovery_headers
@@ -115,3 +116,6 @@ from tools.credential_reuse_scanner import credential_reuse_scanner
 
 # ── Hunter Pipeline (bug bounty 1:1) ───────────────────────────────────────
 from tools.hunter_pipeline import httpx_probe, naabu_scan, gowitness_shot, gau_urls, hakrawler_crawl, amass_enum
+
+# ── Stateful browser and business logic ─────────────────────────────────────
+from tools.browser_workflow_tools import browser_workflow_discovery, stateful_browser_workflow, business_invariant_evaluator

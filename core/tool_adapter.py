@@ -28,7 +28,7 @@ class ToolOutputAdapter:
     _severity = re.compile(r"\[(CRITICAL|HIGH|MEDIUM|LOW|INFO)\]\s*(.+)", re.IGNORECASE)
     _url = re.compile(r"https?://[^\s<>'\"{}|\\^`\[\]]+")
 
-    def adapt(self, tool: str, target_url: str, output: str, tool_run_id: str = "") -> AdapterResult:
+    def adapt(self, tool: str, target_url: str, output: str, tool_run_id: str = "", historical: bool = False) -> AdapterResult:
         safe_output = redact(output)
         urls = sorted({url.rstrip(".,);]") for url in self._url.findall(output)})
         result = AdapterResult(
@@ -45,18 +45,21 @@ class ToolOutputAdapter:
             }],
             endpoints=urls,
         )
-        for match in self._severity.finditer(output):
-            severity = match.group(1).upper()
-            title = redact(match.group(2).strip(), 500)
-            vuln_type = self._vuln_type(title)
-            result.findings.append({
-                "title": title,
-                "vuln_type": vuln_type,
-                "severity": severity,
-                "fingerprint": fingerprint(vuln_type, target_url),
-                "confidence": "medium",
-                "evidence_summary": title,
-            })
+        # Regex severity parsing is historical-only. New execution paths use
+        # typed ToolResultV1 and deterministic validators.
+        if historical:
+            for match in self._severity.finditer(output):
+                severity = match.group(1).upper()
+                title = redact(match.group(2).strip(), 500)
+                vuln_type = self._vuln_type(title)
+                result.findings.append({
+                    "title": title,
+                    "vuln_type": vuln_type,
+                    "severity": severity,
+                    "fingerprint": fingerprint(vuln_type, target_url),
+                    "confidence": "medium",
+                    "evidence_summary": title,
+                })
         return result
 
     @staticmethod
