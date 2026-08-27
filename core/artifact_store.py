@@ -9,6 +9,7 @@ from typing import Any, Optional
 
 from core.config_loader import get_config
 from core.structured_contract import ArtifactV1
+from core.production_contract import ArtifactSweepV1
 
 
 class ArtifactStorageError(RuntimeError):
@@ -75,3 +76,40 @@ class ArtifactStore:
         if isinstance(result, dict):
             return str(result.get("signedURL") or result.get("signedUrl") or result.get("signed_url") or "")
         return ""
+
+    def sweep_expired(self, *, dry_run: bool = True, limit: int = 500) -> ArtifactSweepV1:
+        """Remove only expired private objects whose metadata is already known.
+
+        Database evidence metadata is append-only, so the sweep removes the
+        object bytes but never erases the audit record.  It is dry-run by
+        default and always constrained to this configured bucket.
+        """
+        sweep = ArtifactSweepV1(bucket=self.bucket, dry_run=dry_run)
+        if self.supabase is None:
+            sweep.finished_at = datetime.now(timezone.utc).isoformat()
+            return sweep
+        try:
+            result = (self.supabase.table("evidence_artifacts").select("storage_uri,retention_until")
+                      .not_.is_("retention_until", "null")
+                      .lte("retention_until", datetime.now(timezone.utc).isoformat())
+                      .limit(max(1, min(int(limit), 2000))).execute())
+            rows = result.data or []
+            sweep.scanned = len(rows)
+            sweep.expired = len(rows)
+            if not dry_run:
+                for row in rows:
+                    uri = str(row.get("storage_uri", ""))
+                    prefix = f"supabase://{self.bucket}/"
+                    if not uri.startswith(prefix):
+                        sweep.errors += 1
+                        continue
+                    path = uri[len(prefix):]
+                    try:
+                        self.supabase.storage.from_(self.bucket).remove([path])
+                        sweep.deleted += 1
+                    except Exception:
+                        sweep.errors += 1
+        except Exception:
+            sweep.errors += 1
+        sweep.finished_at = datetime.now(timezone.utc).isoformat()
+        return sweep

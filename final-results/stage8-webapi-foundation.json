@@ -1,0 +1,4382 @@
+{
+  "coverage": {
+    "diagnostic": 24,
+    "failure_taxonomy": {
+      "unsupported_capability": 24
+    },
+    "required": 24,
+    "samples": 48,
+    "unsupported_capabilities": [
+      "api_schema_mass_assignment",
+      "auth_session_oauth",
+      "business_logic_invariant",
+      "command_ssti",
+      "cors_redirect",
+      "idor_tenant_isolation"
+    ]
+  },
+  "matrix": {
+    "baseline_id": "",
+    "created_at": "2026-08-23T12:48:46.936364+00:00",
+    "diagnostic_count": 24,
+    "dimension_coverage": {
+      "families": [
+        "api_schema_mass_assignment",
+        "auth_session_oauth",
+        "browser_workflow_recovery",
+        "business_logic_invariant",
+        "command_ssti",
+        "cors_redirect",
+        "evidence_redaction",
+        "idor_tenant_isolation",
+        "race_condition",
+        "reflected_xss",
+        "sqli_error",
+        "ssrf_oob"
+      ],
+      "surfaces": [
+        "api",
+        "browser",
+        "http",
+        "oob",
+        "safety"
+      ],
+      "tiers": [
+        "diagnostic",
+        "required"
+      ],
+      "variants": [
+        "gold_negative",
+        "gold_positive",
+        "noisy_control",
+        "reproduction"
+      ]
+    },
+    "fixture_digest": "fa862654d11a6e134f33fce6ceb0cf1b822b4c37746f74099f12087fb79e7159",
+    "matrix_id": "matrix_e17e178ae846465f9afe63e01b980314",
+    "required_count": 24,
+    "scenario_count": 48,
+    "schema_version": "1.0",
+    "suite_digest": "4307798a52d468f45ffdbc35bbdbce5ceba7d493b8e65114f879004fbc96ca89",
+    "suite_id": "stage8-webapi-foundation",
+    "suite_version": "1.0",
+    "unsupported_capabilities": [
+      "api_schema_mass_assignment",
+      "auth_session_oauth",
+      "business_logic_invariant",
+      "command_ssti",
+      "cors_redirect",
+      "idor_tenant_isolation"
+    ]
+  },
+  "model": {
+    "actions": 0,
+    "mode": "deterministic",
+    "valid_actions": 0
+  },
+  "release_gate": {
+    "created_at": "2026-08-23T12:48:46.947917+00:00",
+    "decision": "ready",
+    "decision_id": "gate_fff4a70352dc41be9ae2b145fa23a9bd",
+    "hard_gates": [
+      {
+        "actual": 6,
+        "assertion_id": "assert_8baca02c7a3c401e93b8537dbd1d0f2c",
+        "evidence_ids": [],
+        "expected": true,
+        "name": "required_positive_recall",
+        "passed": true,
+        "reason": "Required gold positives must pass.",
+        "schema_version": "1.0"
+      },
+      {
+        "actual": 0,
+        "assertion_id": "assert_92bafb2e337a4050a8fe6bfbb9f73f69",
+        "evidence_ids": [],
+        "expected": 0,
+        "name": "required_negative_zero_validated",
+        "passed": true,
+        "reason": "Required gold negatives must never validate.",
+        "schema_version": "1.0"
+      },
+      {
+        "actual": 24,
+        "assertion_id": "assert_3338f541490d496594418d8142a9c81d",
+        "evidence_ids": [],
+        "expected": true,
+        "name": "required_cases_pass",
+        "passed": true,
+        "reason": "All required cases must pass.",
+        "schema_version": "1.0"
+      },
+      {
+        "actual": 0.0,
+        "assertion_id": "assert_40ca1562037e450ab695321828d4ee48",
+        "evidence_ids": [],
+        "expected": 0,
+        "name": "redaction_leaks_zero",
+        "passed": true,
+        "reason": "No redaction canary may leak.",
+        "schema_version": "1.0"
+      },
+      {
+        "actual": 0.0,
+        "assertion_id": "assert_f44d7e46ad55499cb84d056883f56306",
+        "evidence_ids": [],
+        "expected": 0,
+        "name": "registry_violations_zero",
+        "passed": true,
+        "reason": "No registered tool boundary bypass is allowed.",
+        "schema_version": "1.0"
+      },
+      {
+        "actual": 1.0,
+        "assertion_id": "assert_bec6d40355ee45caada572a0e4b7ba67",
+        "evidence_ids": [],
+        "expected": 1.0,
+        "name": "deterministic_replay_stable",
+        "passed": true,
+        "reason": "Repeated deterministic runs must have the same outcome digest.",
+        "schema_version": "1.0"
+      }
+    ],
+    "metrics": {
+      "cleanup_success": 1.0,
+      "deterministic_replay_stability": 1.0,
+      "diagnostic_case_count": 24.0,
+      "evidence_completeness": 1.0,
+      "f1": 1.0,
+      "false_negative_rate": 0.0,
+      "false_positive_rate": 0.0,
+      "gold_negative_specificity": 1.0,
+      "gold_positive_recall": 1.0,
+      "inconclusive_rate": 0.6666666666666666,
+      "precision": 1.0,
+      "recall": 1.0,
+      "redaction_leaks": 0.0,
+      "registry_violations": 0.0,
+      "reproduction_success": 1.0,
+      "required_case_pass_rate": 1.0,
+      "supported_capability_coverage": 1.0,
+      "unsupported_capability_count": 24.0
+    },
+    "review_reason": "",
+    "reviewer_id": "",
+    "run_id": "eval_2c4a868ce5058bd6e57d2fb3c04c1585",
+    "schema_version": "1.0",
+    "signature": "",
+    "suite_id": "stage8-webapi-foundation",
+    "suite_version": "1.0"
+  },
+  "run": {
+    "commit_sha": "",
+    "config_digest": "cdb04885b9be96b0fbdb0374075228944259a2147f590a0bbc75b94418fdacd0",
+    "config_snapshot": {
+      "adaptive_planner": {
+        "max_attempts_per_hypothesis": 3,
+        "max_hypotheses": 80,
+        "max_proposals": 3,
+        "scoring": {
+          "cost_penalty": 0.16,
+          "evidence_strength": 0.18,
+          "failure_penalty": 0.1,
+          "information_gain": 0.38,
+          "novelty": 0.12,
+          "objective_relevance": 0.22,
+          "risk_penalty": 0.22,
+          "technology_fit": 0.1
+        }
+      },
+      "artifact_storage": {
+        "bucket": "nexus-evidence",
+        "orphan_grace_days": 2,
+        "retention_days": 30,
+        "signed_url_ttl_seconds": 300,
+        "sweep_enabled": true,
+        "sweep_interval_minutes": 60
+      },
+      "auth_secret_ttl_minutes": 240,
+      "authorization_graph_mode": "shadow",
+      "browser_workflow": {
+        "approval_ttl_minutes": 30,
+        "artifact_bucket": "nexus-evidence",
+        "identity_matrix_max_runs": 12,
+        "max_mutations_per_run": 3,
+        "max_retries": 1,
+        "max_steps": 30,
+        "read_only_auto_run": true,
+        "require_cleanup": true,
+        "require_entity_fingerprint": true,
+        "require_identity_graph": true,
+        "step_timeout_ms": 15000
+      },
+      "browser_workflow_mode": "shadow",
+      "detection_depth_mode": "shadow",
+      "evaluation": {
+        "benchmark_matrix_size": 48,
+        "core_suite_path": "benchmarks/stage6/core_suite.yaml",
+        "deterministic_trial_count": 3,
+        "enabled": true,
+        "max_performance_regression": 0.2,
+        "mode": "shadow",
+        "model_trial_count": 3,
+        "primary_model_trials": 3,
+        "public_lab_profile": "benchmark-labs",
+        "require_zero_redaction_leaks": true,
+        "require_zero_registry_violations": true,
+        "stage10_benchmark_matrix_size": 60,
+        "stage10_suite_path": "benchmarks/stage10/identity_business_suite.yaml",
+        "stage11_benchmark_matrix_size": 96,
+        "stage11_suite_path": "benchmarks/stage11/modern_chain_suite.yaml",
+        "stage12_benchmark_matrix_size": 96,
+        "stage12_suite_path": "benchmarks/stage12/reasoning_report_suite.yaml",
+        "stage13_benchmark_matrix_size": 96,
+        "stage13_suite_path": "benchmarks/stage13/production_readiness_suite.yaml",
+        "stage14_benchmark_matrix_size": 48,
+        "stage14_suite_path": "benchmarks/stage14/mission_attack_path_suite.yaml",
+        "stage15_benchmark_matrix_size": 72,
+        "stage15_suite_path": "benchmarks/stage15/target_knowledge_coverage_suite.yaml",
+        "stage16_benchmark_matrix_size": 96,
+        "stage16_suite_path": "benchmarks/stage16/autonomous_reasoning_search_suite.yaml",
+        "stage17_benchmark_matrix_size": 96,
+        "stage17_suite_path": "benchmarks/stage17/modern_detection_suite.yaml",
+        "stage18_benchmark_matrix_size": 120,
+        "stage18_suite_path": "benchmarks/stage18/identity_business_impact_suite.yaml",
+        "stage19_benchmark_matrix_size": 96,
+        "stage19_soak_minutes": 120,
+        "stage19_suite_path": "benchmarks/stage19/production_autonomy_suite.yaml",
+        "stage8_suite_path": "benchmarks/stage8/foundation_suite.yaml",
+        "stage9_benchmark_matrix_size": 72,
+        "stage9_suite_path": "benchmarks/stage9/detection_suite.yaml",
+        "strict_cutover_requires_readiness": true,
+        "worker_scale_smoke_enabled": false
+      },
+      "execution": {
+        "checkpoint_interval_seconds": 30,
+        "cpu_limit": 1.0,
+        "heartbeat_seconds": 15,
+        "job_timeout_minutes": 120,
+        "lease_seconds": 60,
+        "max_attempts_mutation": 1,
+        "max_attempts_read_only": 3,
+        "memory_limit_mb": 2048,
+        "poll_interval_seconds": 2,
+        "readiness_soak_minutes": 120,
+        "require_fencing_token": true,
+        "require_persisted_events": true,
+        "rollback_on_critical_incident": true,
+        "slo_thresholds": {
+          "availability": 0.99,
+          "cleanup_success_rate": 0.99,
+          "duplicate_execution_rate": 0.0,
+          "error_rate": 0.01,
+          "recovery_success_rate": 1.0,
+          "stale_write_rate": 0.0,
+          "terminal_success_rate": 0.99
+        },
+        "stale_worker_after_seconds": 90,
+        "strict_rpc_required": true,
+        "strict_startup_preflight": true,
+        "worker_concurrency": 1,
+        "worker_health_interval_seconds": 15
+      },
+      "execution_platform_mode": "shadow",
+      "exploit_chain_mode": "shadow",
+      "exploration": {
+        "max_action_seconds": 120,
+        "max_payload_variants": 10,
+        "mutation_requires_approval": true,
+        "read_only_auto_run": true
+      },
+      "exploration_mode": "assisted",
+      "human_recon": {
+        "fallback_priority": {
+          "api_link": 8,
+          "button": 5,
+          "form": 10,
+          "link": 3
+        },
+        "max_clicks_per_page": 12,
+        "max_depth": 3,
+        "max_pages": 60
+      },
+      "identity_browser_business_mode": "shadow",
+      "identity_business_impact_mode": "shadow",
+      "llm": {
+        "analis_max_tokens": 4096,
+        "recon_max_tokens": 2048
+      },
+      "mission_graph": {
+        "cleanup_required_for_mutation": true,
+        "max_paths": 8,
+        "max_replans": 10,
+        "mutation_requires_approval": true,
+        "read_only_auto_run": true,
+        "require_evidence": true,
+        "risk_profile": "bounded_autonomy"
+      },
+      "mission_graph_mode": "shadow",
+      "opsec": {
+        "stealth_jitter_max": 0.8,
+        "stealth_jitter_min": 0.3
+      },
+      "production_readiness_mode": "shadow",
+      "protocol_detection_mode": "shadow",
+      "race_engine": {
+        "enabled": true,
+        "max_concurrency": 8,
+        "ramp": [
+          2,
+          4,
+          8
+        ]
+      },
+      "reasoning": {
+        "invalid_action_retry_limit": 1,
+        "max_actions_per_cycle": 3,
+        "max_backtracks": 3,
+        "max_branch_factor": 4,
+        "max_cycles": 10,
+        "max_model_actions": 20,
+        "memory_isolation_required": true,
+        "min_information_gain": 0.1,
+        "repetition_penalty": 0.2,
+        "require_evidence_grounding": true,
+        "search_strategy": "best_first",
+        "stale_evidence_reject": true,
+        "stop_on_contradiction": true
+      },
+      "reasoning_adaptation_mode": "shadow",
+      "reasoning_mode": "shadow",
+      "report_intelligence_mode": "shadow",
+      "safety": {
+        "allow_private_network": false,
+        "burst": 4,
+        "egress_providers": {
+          "bgpview": {
+            "origins": [
+              "https://api.bgpview.io"
+            ]
+          },
+          "censys": {
+            "origins": [
+              "https://search.censys.io",
+              "https://api.censys.io"
+            ]
+          },
+          "crtsh": {
+            "origins": [
+              "https://crt.sh"
+            ]
+          },
+          "github": {
+            "origins": [
+              "https://api.github.com",
+              "https://raw.githubusercontent.com"
+            ]
+          },
+          "ip_api": {
+            "origins": [
+              "http://ip-api.com"
+            ]
+          },
+          "oob": {
+            "origins": []
+          },
+          "shodan": {
+            "origins": [
+              "https://api.shodan.io"
+            ]
+          },
+          "wayback": {
+            "origins": [
+              "https://web.archive.org"
+            ]
+          }
+        },
+        "max_credential_attempts": 10,
+        "max_download_bytes": 536870912,
+        "max_requests_per_job": 20000,
+        "max_response_bytes": 2097152,
+        "max_upload_bytes": 10485760,
+        "policy_version": "1.0",
+        "random_proxy_enabled": false,
+        "requests_per_second": 2.0,
+        "tls_verify": true
+      },
+      "smart_selector": {
+        "overrides": {}
+      },
+      "structured_evidence_mode": "strict",
+      "target_knowledge": {
+        "historical_import_requires_revalidation": true,
+        "max_coverage_items": 10000,
+        "max_edges": 20000,
+        "max_nodes": 10000,
+        "observation_ttl_hours": 24,
+        "require_evidence": true
+      },
+      "target_knowledge_mode": "shadow",
+      "tool_boundary_mode": "shadow"
+    },
+    "created_at": "2026-08-23T12:48:46.936503+00:00",
+    "error_code": "",
+    "error_message": "",
+    "finished_at": "2026-08-23T12:48:46.947709+00:00",
+    "fixture_digest": "fa862654d11a6e134f33fce6ceb0cf1b822b4c37746f74099f12087fb79e7159",
+    "image_digest": "",
+    "job_id": "",
+    "metrics": {
+      "cleanup_success": 1.0,
+      "deterministic_replay_stability": 1.0,
+      "diagnostic_case_count": 24.0,
+      "evidence_completeness": 1.0,
+      "f1": 1.0,
+      "false_negative_rate": 0.0,
+      "false_positive_rate": 0.0,
+      "gold_negative_specificity": 1.0,
+      "gold_positive_recall": 1.0,
+      "inconclusive_rate": 0.6666666666666666,
+      "precision": 1.0,
+      "recall": 1.0,
+      "redaction_leaks": 0.0,
+      "registry_violations": 0.0,
+      "reproduction_success": 1.0,
+      "required_case_pass_rate": 1.0,
+      "supported_capability_coverage": 1.0,
+      "unsupported_capability_count": 24.0
+    },
+    "mode": "deterministic",
+    "model_id": "",
+    "policy_versions": {
+      "benchmark": "stage8-foundation-v1",
+      "validator": "stage1-validation-v1"
+    },
+    "prompt_version": "",
+    "random_seed": 0,
+    "resource_budget": {
+      "case_count": 48,
+      "trial_count": 3
+    },
+    "run_id": "eval_2c4a868ce5058bd6e57d2fb3c04c1585",
+    "schema_version": "1.0",
+    "session_id": "",
+    "started_at": "2026-08-23T12:48:46.936483+00:00",
+    "status": "succeeded",
+    "suite_id": "stage8-webapi-foundation",
+    "suite_version": "1.0",
+    "tool_contract_version": "1.0",
+    "totals": {
+      "diagnostic": 24,
+      "failed": 0,
+      "inconclusive": 24,
+      "passed": 24,
+      "required": 24,
+      "total": 48
+    },
+    "trial_count": 3,
+    "trial_number": 1,
+    "validator_version": "1.0"
+  },
+  "suite": {
+    "cases": [
+      {
+        "budget": {},
+        "case_id": "sqli_error-gold_positive",
+        "category": "injection",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "negative_control",
+          "reproduction"
+        ],
+        "expected_outcome": "validated",
+        "fixture_id": "stage8:sqli_error:gold_positive",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "parameterized_api",
+            "expected_outcome": "validated",
+            "fixture_id": "stage8:sqli_error:gold_positive",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "injection",
+                "endpoint_class": "parameterized_api",
+                "family": "sqli_error",
+                "required": true,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "negative_control",
+                  "reproduction"
+                ],
+                "subtype": "error_boolean_time",
+                "target_surface": "api"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "negative_control",
+              "reproduction"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "sqli_error-gold_positive",
+            "schema_version": "1.0",
+            "subtype": "error_boolean_time",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_positive",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "none",
+            "variant": "gold_positive",
+            "vulnerability_family": "sqli_error"
+          }
+        },
+        "model_required": false,
+        "name": "sqli_error / gold_positive",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "gold_positive",
+          "required",
+          "gold_positive"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "sqli_error-gold_negative",
+        "category": "injection",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "negative_control",
+          "reproduction"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage8:sqli_error:gold_negative",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "parameterized_api",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage8:sqli_error:gold_negative",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "injection",
+                "endpoint_class": "parameterized_api",
+                "family": "sqli_error",
+                "required": true,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "negative_control",
+                  "reproduction"
+                ],
+                "subtype": "error_boolean_time",
+                "target_surface": "api"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "negative_control",
+              "reproduction"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "sqli_error-gold_negative",
+            "schema_version": "1.0",
+            "subtype": "error_boolean_time",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_negative",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "none",
+            "variant": "gold_negative",
+            "vulnerability_family": "sqli_error"
+          }
+        },
+        "model_required": false,
+        "name": "sqli_error / gold_negative",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "gold_negative",
+          "required",
+          "gold_negative"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "sqli_error-noisy_control",
+        "category": "injection",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "negative_control",
+          "reproduction"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage8:sqli_error:noisy_control",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "parameterized_api",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage8:sqli_error:noisy_control",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "injection",
+                "endpoint_class": "parameterized_api",
+                "family": "sqli_error",
+                "required": true,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "negative_control",
+                  "reproduction"
+                ],
+                "subtype": "error_boolean_time",
+                "target_surface": "api"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "negative_control",
+              "reproduction"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "sqli_error-noisy_control",
+            "schema_version": "1.0",
+            "subtype": "error_boolean_time",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "noisy_control",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "none",
+            "variant": "noisy_control",
+            "vulnerability_family": "sqli_error"
+          }
+        },
+        "model_required": false,
+        "name": "sqli_error / noisy_control",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "noisy_control",
+          "required",
+          "gold_negative"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "sqli_error-reproduction",
+        "category": "injection",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "negative_control",
+          "reproduction"
+        ],
+        "expected_outcome": "validated",
+        "fixture_id": "stage8:sqli_error:reproduction",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "parameterized_api",
+            "expected_outcome": "validated",
+            "fixture_id": "stage8:sqli_error:reproduction",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "injection",
+                "endpoint_class": "parameterized_api",
+                "family": "sqli_error",
+                "required": true,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "negative_control",
+                  "reproduction"
+                ],
+                "subtype": "error_boolean_time",
+                "target_surface": "api"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "negative_control",
+              "reproduction"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "sqli_error-reproduction",
+            "schema_version": "1.0",
+            "subtype": "error_boolean_time",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "reproduction",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "none",
+            "variant": "reproduction",
+            "vulnerability_family": "sqli_error"
+          }
+        },
+        "model_required": false,
+        "name": "sqli_error / reproduction",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "reproduction",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "reflected_xss-gold_positive",
+        "category": "browser",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "test",
+          "browser"
+        ],
+        "expected_outcome": "validated",
+        "fixture_id": "stage8:reflected_xss:gold_positive",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "html_form",
+            "expected_outcome": "validated",
+            "fixture_id": "stage8:reflected_xss:gold_positive",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "browser",
+                "endpoint_class": "html_form",
+                "family": "reflected_xss",
+                "required": true,
+                "required_evidence_roles": [
+                  "test",
+                  "browser"
+                ],
+                "subtype": "reflection_browser_execution",
+                "target_surface": "browser"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "test",
+              "browser"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "reflected_xss-gold_positive",
+            "schema_version": "1.0",
+            "subtype": "reflection_browser_execution",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_positive",
+              "required"
+            ],
+            "target_surface": "browser",
+            "tenant": "none",
+            "variant": "gold_positive",
+            "vulnerability_family": "reflected_xss"
+          }
+        },
+        "model_required": false,
+        "name": "reflected_xss / gold_positive",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "gold_positive",
+          "required",
+          "gold_positive"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "reflected_xss-gold_negative",
+        "category": "browser",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "test",
+          "browser"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage8:reflected_xss:gold_negative",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "html_form",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage8:reflected_xss:gold_negative",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "browser",
+                "endpoint_class": "html_form",
+                "family": "reflected_xss",
+                "required": true,
+                "required_evidence_roles": [
+                  "test",
+                  "browser"
+                ],
+                "subtype": "reflection_browser_execution",
+                "target_surface": "browser"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "test",
+              "browser"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "reflected_xss-gold_negative",
+            "schema_version": "1.0",
+            "subtype": "reflection_browser_execution",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_negative",
+              "required"
+            ],
+            "target_surface": "browser",
+            "tenant": "none",
+            "variant": "gold_negative",
+            "vulnerability_family": "reflected_xss"
+          }
+        },
+        "model_required": false,
+        "name": "reflected_xss / gold_negative",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "gold_negative",
+          "required",
+          "gold_negative"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "reflected_xss-noisy_control",
+        "category": "browser",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "test",
+          "browser"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage8:reflected_xss:noisy_control",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "html_form",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage8:reflected_xss:noisy_control",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "browser",
+                "endpoint_class": "html_form",
+                "family": "reflected_xss",
+                "required": true,
+                "required_evidence_roles": [
+                  "test",
+                  "browser"
+                ],
+                "subtype": "reflection_browser_execution",
+                "target_surface": "browser"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "test",
+              "browser"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "reflected_xss-noisy_control",
+            "schema_version": "1.0",
+            "subtype": "reflection_browser_execution",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "noisy_control",
+              "required"
+            ],
+            "target_surface": "browser",
+            "tenant": "none",
+            "variant": "noisy_control",
+            "vulnerability_family": "reflected_xss"
+          }
+        },
+        "model_required": false,
+        "name": "reflected_xss / noisy_control",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "noisy_control",
+          "required",
+          "gold_negative"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "reflected_xss-reproduction",
+        "category": "browser",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "test",
+          "browser"
+        ],
+        "expected_outcome": "validated",
+        "fixture_id": "stage8:reflected_xss:reproduction",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "html_form",
+            "expected_outcome": "validated",
+            "fixture_id": "stage8:reflected_xss:reproduction",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "browser",
+                "endpoint_class": "html_form",
+                "family": "reflected_xss",
+                "required": true,
+                "required_evidence_roles": [
+                  "test",
+                  "browser"
+                ],
+                "subtype": "reflection_browser_execution",
+                "target_surface": "browser"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "test",
+              "browser"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "reflected_xss-reproduction",
+            "schema_version": "1.0",
+            "subtype": "reflection_browser_execution",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "reproduction",
+              "required"
+            ],
+            "target_surface": "browser",
+            "tenant": "none",
+            "variant": "reproduction",
+            "vulnerability_family": "reflected_xss"
+          }
+        },
+        "model_required": false,
+        "name": "reflected_xss / reproduction",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "reproduction",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "ssrf_oob-gold_positive",
+        "category": "oob",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "test",
+          "oob",
+          "negative_control"
+        ],
+        "expected_outcome": "validated",
+        "fixture_id": "stage8:ssrf_oob:gold_positive",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "fetch_url",
+            "expected_outcome": "validated",
+            "fixture_id": "stage8:ssrf_oob:gold_positive",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "oob",
+                "endpoint_class": "fetch_url",
+                "family": "ssrf_oob",
+                "required": true,
+                "required_evidence_roles": [
+                  "test",
+                  "oob",
+                  "negative_control"
+                ],
+                "subtype": "callback_correlation",
+                "target_surface": "oob"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "test",
+              "oob",
+              "negative_control"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "ssrf_oob-gold_positive",
+            "schema_version": "1.0",
+            "subtype": "callback_correlation",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_positive",
+              "required"
+            ],
+            "target_surface": "oob",
+            "tenant": "none",
+            "variant": "gold_positive",
+            "vulnerability_family": "ssrf_oob"
+          }
+        },
+        "model_required": false,
+        "name": "ssrf_oob / gold_positive",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "gold_positive",
+          "required",
+          "gold_positive"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "ssrf_oob-gold_negative",
+        "category": "oob",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "test",
+          "oob",
+          "negative_control"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage8:ssrf_oob:gold_negative",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "fetch_url",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage8:ssrf_oob:gold_negative",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "oob",
+                "endpoint_class": "fetch_url",
+                "family": "ssrf_oob",
+                "required": true,
+                "required_evidence_roles": [
+                  "test",
+                  "oob",
+                  "negative_control"
+                ],
+                "subtype": "callback_correlation",
+                "target_surface": "oob"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "test",
+              "oob",
+              "negative_control"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "ssrf_oob-gold_negative",
+            "schema_version": "1.0",
+            "subtype": "callback_correlation",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_negative",
+              "required"
+            ],
+            "target_surface": "oob",
+            "tenant": "none",
+            "variant": "gold_negative",
+            "vulnerability_family": "ssrf_oob"
+          }
+        },
+        "model_required": false,
+        "name": "ssrf_oob / gold_negative",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "gold_negative",
+          "required",
+          "gold_negative"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "ssrf_oob-noisy_control",
+        "category": "oob",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "test",
+          "oob",
+          "negative_control"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage8:ssrf_oob:noisy_control",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "fetch_url",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage8:ssrf_oob:noisy_control",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "oob",
+                "endpoint_class": "fetch_url",
+                "family": "ssrf_oob",
+                "required": true,
+                "required_evidence_roles": [
+                  "test",
+                  "oob",
+                  "negative_control"
+                ],
+                "subtype": "callback_correlation",
+                "target_surface": "oob"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "test",
+              "oob",
+              "negative_control"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "ssrf_oob-noisy_control",
+            "schema_version": "1.0",
+            "subtype": "callback_correlation",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "noisy_control",
+              "required"
+            ],
+            "target_surface": "oob",
+            "tenant": "none",
+            "variant": "noisy_control",
+            "vulnerability_family": "ssrf_oob"
+          }
+        },
+        "model_required": false,
+        "name": "ssrf_oob / noisy_control",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "noisy_control",
+          "required",
+          "gold_negative"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "ssrf_oob-reproduction",
+        "category": "oob",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "test",
+          "oob",
+          "negative_control"
+        ],
+        "expected_outcome": "validated",
+        "fixture_id": "stage8:ssrf_oob:reproduction",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "fetch_url",
+            "expected_outcome": "validated",
+            "fixture_id": "stage8:ssrf_oob:reproduction",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "oob",
+                "endpoint_class": "fetch_url",
+                "family": "ssrf_oob",
+                "required": true,
+                "required_evidence_roles": [
+                  "test",
+                  "oob",
+                  "negative_control"
+                ],
+                "subtype": "callback_correlation",
+                "target_surface": "oob"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "test",
+              "oob",
+              "negative_control"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "ssrf_oob-reproduction",
+            "schema_version": "1.0",
+            "subtype": "callback_correlation",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "reproduction",
+              "required"
+            ],
+            "target_surface": "oob",
+            "tenant": "none",
+            "variant": "reproduction",
+            "vulnerability_family": "ssrf_oob"
+          }
+        },
+        "model_required": false,
+        "name": "ssrf_oob / reproduction",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "reproduction",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "race_condition-gold_positive",
+        "category": "race",
+        "cleanup_assertion": "server-side fixture state returns to its initial value",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "negative_control",
+          "reproduction",
+          "external"
+        ],
+        "expected_outcome": "validated",
+        "fixture_id": "stage8:race_condition:gold_positive",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "required",
+            "cleanup_assertion": "server-side fixture state returns to its initial value",
+            "cleanup_required": true,
+            "endpoint_class": "state_mutation",
+            "expected_outcome": "validated",
+            "fixture_id": "stage8:race_condition:gold_positive",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "race",
+                "cleanup_assertion": "server-side fixture state returns to its initial value",
+                "cleanup_required": true,
+                "endpoint_class": "state_mutation",
+                "family": "race_condition",
+                "required": true,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "negative_control",
+                  "reproduction",
+                  "external"
+                ],
+                "subtype": "synchronized_state_effect",
+                "target_surface": "api"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "negative_control",
+              "reproduction",
+              "external"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "race_condition-gold_positive",
+            "schema_version": "1.0",
+            "subtype": "synchronized_state_effect",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_positive",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "none",
+            "variant": "gold_positive",
+            "vulnerability_family": "race_condition"
+          }
+        },
+        "model_required": false,
+        "name": "race_condition / gold_positive",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "gold_positive",
+          "required",
+          "gold_positive"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "race_condition-gold_negative",
+        "category": "race",
+        "cleanup_assertion": "server-side fixture state returns to its initial value",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "negative_control",
+          "reproduction",
+          "external"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage8:race_condition:gold_negative",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "required",
+            "cleanup_assertion": "server-side fixture state returns to its initial value",
+            "cleanup_required": true,
+            "endpoint_class": "state_mutation",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage8:race_condition:gold_negative",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "race",
+                "cleanup_assertion": "server-side fixture state returns to its initial value",
+                "cleanup_required": true,
+                "endpoint_class": "state_mutation",
+                "family": "race_condition",
+                "required": true,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "negative_control",
+                  "reproduction",
+                  "external"
+                ],
+                "subtype": "synchronized_state_effect",
+                "target_surface": "api"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "negative_control",
+              "reproduction",
+              "external"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "race_condition-gold_negative",
+            "schema_version": "1.0",
+            "subtype": "synchronized_state_effect",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_negative",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "none",
+            "variant": "gold_negative",
+            "vulnerability_family": "race_condition"
+          }
+        },
+        "model_required": false,
+        "name": "race_condition / gold_negative",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "gold_negative",
+          "required",
+          "gold_negative"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "race_condition-noisy_control",
+        "category": "race",
+        "cleanup_assertion": "server-side fixture state returns to its initial value",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "negative_control",
+          "reproduction",
+          "external"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage8:race_condition:noisy_control",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "required",
+            "cleanup_assertion": "server-side fixture state returns to its initial value",
+            "cleanup_required": true,
+            "endpoint_class": "state_mutation",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage8:race_condition:noisy_control",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "race",
+                "cleanup_assertion": "server-side fixture state returns to its initial value",
+                "cleanup_required": true,
+                "endpoint_class": "state_mutation",
+                "family": "race_condition",
+                "required": true,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "negative_control",
+                  "reproduction",
+                  "external"
+                ],
+                "subtype": "synchronized_state_effect",
+                "target_surface": "api"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "negative_control",
+              "reproduction",
+              "external"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "race_condition-noisy_control",
+            "schema_version": "1.0",
+            "subtype": "synchronized_state_effect",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "noisy_control",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "none",
+            "variant": "noisy_control",
+            "vulnerability_family": "race_condition"
+          }
+        },
+        "model_required": false,
+        "name": "race_condition / noisy_control",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "noisy_control",
+          "required",
+          "gold_negative"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "race_condition-reproduction",
+        "category": "race",
+        "cleanup_assertion": "server-side fixture state returns to its initial value",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "negative_control",
+          "reproduction",
+          "external"
+        ],
+        "expected_outcome": "validated",
+        "fixture_id": "stage8:race_condition:reproduction",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "required",
+            "cleanup_assertion": "server-side fixture state returns to its initial value",
+            "cleanup_required": true,
+            "endpoint_class": "state_mutation",
+            "expected_outcome": "validated",
+            "fixture_id": "stage8:race_condition:reproduction",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "race",
+                "cleanup_assertion": "server-side fixture state returns to its initial value",
+                "cleanup_required": true,
+                "endpoint_class": "state_mutation",
+                "family": "race_condition",
+                "required": true,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "negative_control",
+                  "reproduction",
+                  "external"
+                ],
+                "subtype": "synchronized_state_effect",
+                "target_surface": "api"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "negative_control",
+              "reproduction",
+              "external"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "race_condition-reproduction",
+            "schema_version": "1.0",
+            "subtype": "synchronized_state_effect",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "reproduction",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "none",
+            "variant": "reproduction",
+            "vulnerability_family": "race_condition"
+          }
+        },
+        "model_required": false,
+        "name": "race_condition / reproduction",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "reproduction",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "evidence_redaction-gold_positive",
+        "category": "safety",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "external"
+        ],
+        "expected_outcome": "succeeded",
+        "fixture_id": "stage8:evidence_redaction:gold_positive",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "persistence_boundary",
+            "expected_outcome": "succeeded",
+            "fixture_id": "stage8:evidence_redaction:gold_positive",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "safety",
+                "endpoint_class": "persistence_boundary",
+                "family": "evidence_redaction",
+                "required": true,
+                "required_evidence_roles": [
+                  "external"
+                ],
+                "subtype": "secret_pii_persistence",
+                "target_surface": "safety"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "external"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "evidence_redaction-gold_positive",
+            "schema_version": "1.0",
+            "subtype": "secret_pii_persistence",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_positive",
+              "required"
+            ],
+            "target_surface": "safety",
+            "tenant": "none",
+            "variant": "gold_positive",
+            "vulnerability_family": "evidence_redaction"
+          }
+        },
+        "model_required": false,
+        "name": "evidence_redaction / gold_positive",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "gold_positive",
+          "required",
+          "gold_positive"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "evidence_redaction-gold_negative",
+        "category": "safety",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "external"
+        ],
+        "expected_outcome": "succeeded",
+        "fixture_id": "stage8:evidence_redaction:gold_negative",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "persistence_boundary",
+            "expected_outcome": "succeeded",
+            "fixture_id": "stage8:evidence_redaction:gold_negative",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "safety",
+                "endpoint_class": "persistence_boundary",
+                "family": "evidence_redaction",
+                "required": true,
+                "required_evidence_roles": [
+                  "external"
+                ],
+                "subtype": "secret_pii_persistence",
+                "target_surface": "safety"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "external"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "evidence_redaction-gold_negative",
+            "schema_version": "1.0",
+            "subtype": "secret_pii_persistence",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_negative",
+              "required"
+            ],
+            "target_surface": "safety",
+            "tenant": "none",
+            "variant": "gold_negative",
+            "vulnerability_family": "evidence_redaction"
+          }
+        },
+        "model_required": false,
+        "name": "evidence_redaction / gold_negative",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "gold_negative",
+          "required",
+          "gold_negative"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "evidence_redaction-noisy_control",
+        "category": "safety",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "external"
+        ],
+        "expected_outcome": "succeeded",
+        "fixture_id": "stage8:evidence_redaction:noisy_control",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "persistence_boundary",
+            "expected_outcome": "succeeded",
+            "fixture_id": "stage8:evidence_redaction:noisy_control",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "safety",
+                "endpoint_class": "persistence_boundary",
+                "family": "evidence_redaction",
+                "required": true,
+                "required_evidence_roles": [
+                  "external"
+                ],
+                "subtype": "secret_pii_persistence",
+                "target_surface": "safety"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "external"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "evidence_redaction-noisy_control",
+            "schema_version": "1.0",
+            "subtype": "secret_pii_persistence",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "noisy_control",
+              "required"
+            ],
+            "target_surface": "safety",
+            "tenant": "none",
+            "variant": "noisy_control",
+            "vulnerability_family": "evidence_redaction"
+          }
+        },
+        "model_required": false,
+        "name": "evidence_redaction / noisy_control",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "noisy_control",
+          "required",
+          "gold_negative"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "evidence_redaction-reproduction",
+        "category": "safety",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "external"
+        ],
+        "expected_outcome": "succeeded",
+        "fixture_id": "stage8:evidence_redaction:reproduction",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "persistence_boundary",
+            "expected_outcome": "succeeded",
+            "fixture_id": "stage8:evidence_redaction:reproduction",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "safety",
+                "endpoint_class": "persistence_boundary",
+                "family": "evidence_redaction",
+                "required": true,
+                "required_evidence_roles": [
+                  "external"
+                ],
+                "subtype": "secret_pii_persistence",
+                "target_surface": "safety"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "external"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "evidence_redaction-reproduction",
+            "schema_version": "1.0",
+            "subtype": "secret_pii_persistence",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "reproduction",
+              "required"
+            ],
+            "target_surface": "safety",
+            "tenant": "none",
+            "variant": "reproduction",
+            "vulnerability_family": "evidence_redaction"
+          }
+        },
+        "model_required": false,
+        "name": "evidence_redaction / reproduction",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "reproduction",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "browser_workflow_recovery-gold_positive",
+        "category": "recovery",
+        "cleanup_assertion": "resumed workflow completes cleanup verification",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "reproduction",
+          "external"
+        ],
+        "expected_outcome": "succeeded",
+        "fixture_id": "stage8:browser_workflow_recovery:gold_positive",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "required",
+            "cleanup_assertion": "resumed workflow completes cleanup verification",
+            "cleanup_required": true,
+            "endpoint_class": "stateful_workflow",
+            "expected_outcome": "succeeded",
+            "fixture_id": "stage8:browser_workflow_recovery:gold_positive",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "recovery",
+                "cleanup_assertion": "resumed workflow completes cleanup verification",
+                "cleanup_required": true,
+                "endpoint_class": "stateful_workflow",
+                "family": "browser_workflow_recovery",
+                "required": true,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "reproduction",
+                  "external"
+                ],
+                "subtype": "checkpoint_resume_cleanup",
+                "target_surface": "browser"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "reproduction",
+              "external"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "browser_workflow_recovery-gold_positive",
+            "schema_version": "1.0",
+            "subtype": "checkpoint_resume_cleanup",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_positive",
+              "required"
+            ],
+            "target_surface": "browser",
+            "tenant": "none",
+            "variant": "gold_positive",
+            "vulnerability_family": "browser_workflow_recovery"
+          }
+        },
+        "model_required": false,
+        "name": "browser_workflow_recovery / gold_positive",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "gold_positive",
+          "required",
+          "gold_positive"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "browser_workflow_recovery-gold_negative",
+        "category": "recovery",
+        "cleanup_assertion": "resumed workflow completes cleanup verification",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "reproduction",
+          "external"
+        ],
+        "expected_outcome": "succeeded",
+        "fixture_id": "stage8:browser_workflow_recovery:gold_negative",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "required",
+            "cleanup_assertion": "resumed workflow completes cleanup verification",
+            "cleanup_required": true,
+            "endpoint_class": "stateful_workflow",
+            "expected_outcome": "succeeded",
+            "fixture_id": "stage8:browser_workflow_recovery:gold_negative",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "recovery",
+                "cleanup_assertion": "resumed workflow completes cleanup verification",
+                "cleanup_required": true,
+                "endpoint_class": "stateful_workflow",
+                "family": "browser_workflow_recovery",
+                "required": true,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "reproduction",
+                  "external"
+                ],
+                "subtype": "checkpoint_resume_cleanup",
+                "target_surface": "browser"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "reproduction",
+              "external"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "browser_workflow_recovery-gold_negative",
+            "schema_version": "1.0",
+            "subtype": "checkpoint_resume_cleanup",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_negative",
+              "required"
+            ],
+            "target_surface": "browser",
+            "tenant": "none",
+            "variant": "gold_negative",
+            "vulnerability_family": "browser_workflow_recovery"
+          }
+        },
+        "model_required": false,
+        "name": "browser_workflow_recovery / gold_negative",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "gold_negative",
+          "required",
+          "gold_negative"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "browser_workflow_recovery-noisy_control",
+        "category": "recovery",
+        "cleanup_assertion": "resumed workflow completes cleanup verification",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "reproduction",
+          "external"
+        ],
+        "expected_outcome": "succeeded",
+        "fixture_id": "stage8:browser_workflow_recovery:noisy_control",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "required",
+            "cleanup_assertion": "resumed workflow completes cleanup verification",
+            "cleanup_required": true,
+            "endpoint_class": "stateful_workflow",
+            "expected_outcome": "succeeded",
+            "fixture_id": "stage8:browser_workflow_recovery:noisy_control",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "recovery",
+                "cleanup_assertion": "resumed workflow completes cleanup verification",
+                "cleanup_required": true,
+                "endpoint_class": "stateful_workflow",
+                "family": "browser_workflow_recovery",
+                "required": true,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "reproduction",
+                  "external"
+                ],
+                "subtype": "checkpoint_resume_cleanup",
+                "target_surface": "browser"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "reproduction",
+              "external"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "browser_workflow_recovery-noisy_control",
+            "schema_version": "1.0",
+            "subtype": "checkpoint_resume_cleanup",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "noisy_control",
+              "required"
+            ],
+            "target_surface": "browser",
+            "tenant": "none",
+            "variant": "noisy_control",
+            "vulnerability_family": "browser_workflow_recovery"
+          }
+        },
+        "model_required": false,
+        "name": "browser_workflow_recovery / noisy_control",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "noisy_control",
+          "required",
+          "gold_negative"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "browser_workflow_recovery-reproduction",
+        "category": "recovery",
+        "cleanup_assertion": "resumed workflow completes cleanup verification",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "reproduction",
+          "external"
+        ],
+        "expected_outcome": "succeeded",
+        "fixture_id": "stage8:browser_workflow_recovery:reproduction",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "required",
+            "cleanup_assertion": "resumed workflow completes cleanup verification",
+            "cleanup_required": true,
+            "endpoint_class": "stateful_workflow",
+            "expected_outcome": "succeeded",
+            "fixture_id": "stage8:browser_workflow_recovery:reproduction",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "recovery",
+                "cleanup_assertion": "resumed workflow completes cleanup verification",
+                "cleanup_required": true,
+                "endpoint_class": "stateful_workflow",
+                "family": "browser_workflow_recovery",
+                "required": true,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "reproduction",
+                  "external"
+                ],
+                "subtype": "checkpoint_resume_cleanup",
+                "target_surface": "browser"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "reproduction",
+              "external"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "browser_workflow_recovery-reproduction",
+            "schema_version": "1.0",
+            "subtype": "checkpoint_resume_cleanup",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "reproduction",
+              "required"
+            ],
+            "target_surface": "browser",
+            "tenant": "none",
+            "variant": "reproduction",
+            "vulnerability_family": "browser_workflow_recovery"
+          }
+        },
+        "model_required": false,
+        "name": "browser_workflow_recovery / reproduction",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "reproduction",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "command_ssti-gold_positive",
+        "category": "injection",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "negative_control",
+          "reproduction"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage8:command_ssti:gold_positive",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "diagnostic",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "templating",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage8:command_ssti:gold_positive",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "injection",
+                "endpoint_class": "templating",
+                "family": "command_ssti",
+                "required": false,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "negative_control",
+                  "reproduction"
+                ],
+                "subtype": "command_template_injection",
+                "target_surface": "api"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "negative_control",
+              "reproduction"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "command_ssti-gold_positive",
+            "schema_version": "1.0",
+            "subtype": "command_template_injection",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_positive",
+              "diagnostic"
+            ],
+            "target_surface": "api",
+            "tenant": "none",
+            "variant": "gold_positive",
+            "vulnerability_family": "command_ssti"
+          }
+        },
+        "model_required": false,
+        "name": "command_ssti / gold_positive",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "gold_positive",
+          "diagnostic"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "command_ssti-gold_negative",
+        "category": "injection",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "negative_control",
+          "reproduction"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage8:command_ssti:gold_negative",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "diagnostic",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "templating",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage8:command_ssti:gold_negative",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "injection",
+                "endpoint_class": "templating",
+                "family": "command_ssti",
+                "required": false,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "negative_control",
+                  "reproduction"
+                ],
+                "subtype": "command_template_injection",
+                "target_surface": "api"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "negative_control",
+              "reproduction"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "command_ssti-gold_negative",
+            "schema_version": "1.0",
+            "subtype": "command_template_injection",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_negative",
+              "diagnostic"
+            ],
+            "target_surface": "api",
+            "tenant": "none",
+            "variant": "gold_negative",
+            "vulnerability_family": "command_ssti"
+          }
+        },
+        "model_required": false,
+        "name": "command_ssti / gold_negative",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "gold_negative",
+          "diagnostic"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "command_ssti-noisy_control",
+        "category": "injection",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "negative_control",
+          "reproduction"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage8:command_ssti:noisy_control",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "diagnostic",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "templating",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage8:command_ssti:noisy_control",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "injection",
+                "endpoint_class": "templating",
+                "family": "command_ssti",
+                "required": false,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "negative_control",
+                  "reproduction"
+                ],
+                "subtype": "command_template_injection",
+                "target_surface": "api"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "negative_control",
+              "reproduction"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "command_ssti-noisy_control",
+            "schema_version": "1.0",
+            "subtype": "command_template_injection",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "noisy_control",
+              "diagnostic"
+            ],
+            "target_surface": "api",
+            "tenant": "none",
+            "variant": "noisy_control",
+            "vulnerability_family": "command_ssti"
+          }
+        },
+        "model_required": false,
+        "name": "command_ssti / noisy_control",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "noisy_control",
+          "diagnostic"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "command_ssti-reproduction",
+        "category": "injection",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "negative_control",
+          "reproduction"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage8:command_ssti:reproduction",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "diagnostic",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "templating",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage8:command_ssti:reproduction",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "injection",
+                "endpoint_class": "templating",
+                "family": "command_ssti",
+                "required": false,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "negative_control",
+                  "reproduction"
+                ],
+                "subtype": "command_template_injection",
+                "target_surface": "api"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "negative_control",
+              "reproduction"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "command_ssti-reproduction",
+            "schema_version": "1.0",
+            "subtype": "command_template_injection",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "reproduction",
+              "diagnostic"
+            ],
+            "target_surface": "api",
+            "tenant": "none",
+            "variant": "reproduction",
+            "vulnerability_family": "command_ssti"
+          }
+        },
+        "model_required": false,
+        "name": "command_ssti / reproduction",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "reproduction",
+          "diagnostic"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "idor_tenant_isolation-gold_positive",
+        "category": "authorization",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "negative_control",
+          "reproduction"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage8:idor_tenant_isolation:gold_positive",
+        "identity_requirements": [
+          "user_a_user_b"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "two_identities",
+            "capability_tier": "diagnostic",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "object_api",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage8:idor_tenant_isolation:gold_positive",
+            "identity": "user_a_user_b",
+            "metadata": {
+              "domain": {
+                "auth_state": "two_identities",
+                "category": "authorization",
+                "endpoint_class": "object_api",
+                "family": "idor_tenant_isolation",
+                "identity": "user_a_user_b",
+                "required": false,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "negative_control",
+                  "reproduction"
+                ],
+                "subtype": "cross_tenant_object_access",
+                "target_surface": "api",
+                "tenant": "tenant_a_tenant_b"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "negative_control",
+              "reproduction"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "idor_tenant_isolation-gold_positive",
+            "schema_version": "1.0",
+            "subtype": "cross_tenant_object_access",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_positive",
+              "diagnostic"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a_tenant_b",
+            "variant": "gold_positive",
+            "vulnerability_family": "idor_tenant_isolation"
+          }
+        },
+        "model_required": false,
+        "name": "idor_tenant_isolation / gold_positive",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "gold_positive",
+          "diagnostic"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "idor_tenant_isolation-gold_negative",
+        "category": "authorization",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "negative_control",
+          "reproduction"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage8:idor_tenant_isolation:gold_negative",
+        "identity_requirements": [
+          "user_a_user_b"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "two_identities",
+            "capability_tier": "diagnostic",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "object_api",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage8:idor_tenant_isolation:gold_negative",
+            "identity": "user_a_user_b",
+            "metadata": {
+              "domain": {
+                "auth_state": "two_identities",
+                "category": "authorization",
+                "endpoint_class": "object_api",
+                "family": "idor_tenant_isolation",
+                "identity": "user_a_user_b",
+                "required": false,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "negative_control",
+                  "reproduction"
+                ],
+                "subtype": "cross_tenant_object_access",
+                "target_surface": "api",
+                "tenant": "tenant_a_tenant_b"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "negative_control",
+              "reproduction"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "idor_tenant_isolation-gold_negative",
+            "schema_version": "1.0",
+            "subtype": "cross_tenant_object_access",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_negative",
+              "diagnostic"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a_tenant_b",
+            "variant": "gold_negative",
+            "vulnerability_family": "idor_tenant_isolation"
+          }
+        },
+        "model_required": false,
+        "name": "idor_tenant_isolation / gold_negative",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "gold_negative",
+          "diagnostic"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "idor_tenant_isolation-noisy_control",
+        "category": "authorization",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "negative_control",
+          "reproduction"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage8:idor_tenant_isolation:noisy_control",
+        "identity_requirements": [
+          "user_a_user_b"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "two_identities",
+            "capability_tier": "diagnostic",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "object_api",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage8:idor_tenant_isolation:noisy_control",
+            "identity": "user_a_user_b",
+            "metadata": {
+              "domain": {
+                "auth_state": "two_identities",
+                "category": "authorization",
+                "endpoint_class": "object_api",
+                "family": "idor_tenant_isolation",
+                "identity": "user_a_user_b",
+                "required": false,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "negative_control",
+                  "reproduction"
+                ],
+                "subtype": "cross_tenant_object_access",
+                "target_surface": "api",
+                "tenant": "tenant_a_tenant_b"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "negative_control",
+              "reproduction"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "idor_tenant_isolation-noisy_control",
+            "schema_version": "1.0",
+            "subtype": "cross_tenant_object_access",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "noisy_control",
+              "diagnostic"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a_tenant_b",
+            "variant": "noisy_control",
+            "vulnerability_family": "idor_tenant_isolation"
+          }
+        },
+        "model_required": false,
+        "name": "idor_tenant_isolation / noisy_control",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "noisy_control",
+          "diagnostic"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "idor_tenant_isolation-reproduction",
+        "category": "authorization",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "negative_control",
+          "reproduction"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage8:idor_tenant_isolation:reproduction",
+        "identity_requirements": [
+          "user_a_user_b"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "two_identities",
+            "capability_tier": "diagnostic",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "object_api",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage8:idor_tenant_isolation:reproduction",
+            "identity": "user_a_user_b",
+            "metadata": {
+              "domain": {
+                "auth_state": "two_identities",
+                "category": "authorization",
+                "endpoint_class": "object_api",
+                "family": "idor_tenant_isolation",
+                "identity": "user_a_user_b",
+                "required": false,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "negative_control",
+                  "reproduction"
+                ],
+                "subtype": "cross_tenant_object_access",
+                "target_surface": "api",
+                "tenant": "tenant_a_tenant_b"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "negative_control",
+              "reproduction"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "idor_tenant_isolation-reproduction",
+            "schema_version": "1.0",
+            "subtype": "cross_tenant_object_access",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "reproduction",
+              "diagnostic"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a_tenant_b",
+            "variant": "reproduction",
+            "vulnerability_family": "idor_tenant_isolation"
+          }
+        },
+        "model_required": false,
+        "name": "idor_tenant_isolation / reproduction",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "reproduction",
+          "diagnostic"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "auth_session_oauth-gold_positive",
+        "category": "authentication",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "reproduction"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage8:auth_session_oauth:gold_positive",
+        "identity_requirements": [
+          "user_a"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "authenticated",
+            "capability_tier": "diagnostic",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "auth_callback",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage8:auth_session_oauth:gold_positive",
+            "identity": "user_a",
+            "metadata": {
+              "domain": {
+                "auth_state": "authenticated",
+                "category": "authentication",
+                "endpoint_class": "auth_callback",
+                "family": "auth_session_oauth",
+                "identity": "user_a",
+                "required": false,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "reproduction"
+                ],
+                "subtype": "session_and_oauth_state",
+                "target_surface": "api"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "reproduction"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "auth_session_oauth-gold_positive",
+            "schema_version": "1.0",
+            "subtype": "session_and_oauth_state",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_positive",
+              "diagnostic"
+            ],
+            "target_surface": "api",
+            "tenant": "none",
+            "variant": "gold_positive",
+            "vulnerability_family": "auth_session_oauth"
+          }
+        },
+        "model_required": false,
+        "name": "auth_session_oauth / gold_positive",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "gold_positive",
+          "diagnostic"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "auth_session_oauth-gold_negative",
+        "category": "authentication",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "reproduction"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage8:auth_session_oauth:gold_negative",
+        "identity_requirements": [
+          "user_a"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "authenticated",
+            "capability_tier": "diagnostic",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "auth_callback",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage8:auth_session_oauth:gold_negative",
+            "identity": "user_a",
+            "metadata": {
+              "domain": {
+                "auth_state": "authenticated",
+                "category": "authentication",
+                "endpoint_class": "auth_callback",
+                "family": "auth_session_oauth",
+                "identity": "user_a",
+                "required": false,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "reproduction"
+                ],
+                "subtype": "session_and_oauth_state",
+                "target_surface": "api"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "reproduction"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "auth_session_oauth-gold_negative",
+            "schema_version": "1.0",
+            "subtype": "session_and_oauth_state",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_negative",
+              "diagnostic"
+            ],
+            "target_surface": "api",
+            "tenant": "none",
+            "variant": "gold_negative",
+            "vulnerability_family": "auth_session_oauth"
+          }
+        },
+        "model_required": false,
+        "name": "auth_session_oauth / gold_negative",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "gold_negative",
+          "diagnostic"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "auth_session_oauth-noisy_control",
+        "category": "authentication",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "reproduction"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage8:auth_session_oauth:noisy_control",
+        "identity_requirements": [
+          "user_a"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "authenticated",
+            "capability_tier": "diagnostic",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "auth_callback",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage8:auth_session_oauth:noisy_control",
+            "identity": "user_a",
+            "metadata": {
+              "domain": {
+                "auth_state": "authenticated",
+                "category": "authentication",
+                "endpoint_class": "auth_callback",
+                "family": "auth_session_oauth",
+                "identity": "user_a",
+                "required": false,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "reproduction"
+                ],
+                "subtype": "session_and_oauth_state",
+                "target_surface": "api"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "reproduction"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "auth_session_oauth-noisy_control",
+            "schema_version": "1.0",
+            "subtype": "session_and_oauth_state",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "noisy_control",
+              "diagnostic"
+            ],
+            "target_surface": "api",
+            "tenant": "none",
+            "variant": "noisy_control",
+            "vulnerability_family": "auth_session_oauth"
+          }
+        },
+        "model_required": false,
+        "name": "auth_session_oauth / noisy_control",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "noisy_control",
+          "diagnostic"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "auth_session_oauth-reproduction",
+        "category": "authentication",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "reproduction"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage8:auth_session_oauth:reproduction",
+        "identity_requirements": [
+          "user_a"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "authenticated",
+            "capability_tier": "diagnostic",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "auth_callback",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage8:auth_session_oauth:reproduction",
+            "identity": "user_a",
+            "metadata": {
+              "domain": {
+                "auth_state": "authenticated",
+                "category": "authentication",
+                "endpoint_class": "auth_callback",
+                "family": "auth_session_oauth",
+                "identity": "user_a",
+                "required": false,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "reproduction"
+                ],
+                "subtype": "session_and_oauth_state",
+                "target_surface": "api"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "reproduction"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "auth_session_oauth-reproduction",
+            "schema_version": "1.0",
+            "subtype": "session_and_oauth_state",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "reproduction",
+              "diagnostic"
+            ],
+            "target_surface": "api",
+            "tenant": "none",
+            "variant": "reproduction",
+            "vulnerability_family": "auth_session_oauth"
+          }
+        },
+        "model_required": false,
+        "name": "auth_session_oauth / reproduction",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "reproduction",
+          "diagnostic"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "cors_redirect-gold_positive",
+        "category": "configuration",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "negative_control"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage8:cors_redirect:gold_positive",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "diagnostic",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "response_headers",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage8:cors_redirect:gold_positive",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "configuration",
+                "endpoint_class": "response_headers",
+                "family": "cors_redirect",
+                "required": false,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "negative_control"
+                ],
+                "subtype": "credentialed_cors_and_external_location",
+                "target_surface": "http"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "negative_control"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "cors_redirect-gold_positive",
+            "schema_version": "1.0",
+            "subtype": "credentialed_cors_and_external_location",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_positive",
+              "diagnostic"
+            ],
+            "target_surface": "http",
+            "tenant": "none",
+            "variant": "gold_positive",
+            "vulnerability_family": "cors_redirect"
+          }
+        },
+        "model_required": false,
+        "name": "cors_redirect / gold_positive",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "gold_positive",
+          "diagnostic"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "cors_redirect-gold_negative",
+        "category": "configuration",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "negative_control"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage8:cors_redirect:gold_negative",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "diagnostic",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "response_headers",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage8:cors_redirect:gold_negative",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "configuration",
+                "endpoint_class": "response_headers",
+                "family": "cors_redirect",
+                "required": false,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "negative_control"
+                ],
+                "subtype": "credentialed_cors_and_external_location",
+                "target_surface": "http"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "negative_control"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "cors_redirect-gold_negative",
+            "schema_version": "1.0",
+            "subtype": "credentialed_cors_and_external_location",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_negative",
+              "diagnostic"
+            ],
+            "target_surface": "http",
+            "tenant": "none",
+            "variant": "gold_negative",
+            "vulnerability_family": "cors_redirect"
+          }
+        },
+        "model_required": false,
+        "name": "cors_redirect / gold_negative",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "gold_negative",
+          "diagnostic"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "cors_redirect-noisy_control",
+        "category": "configuration",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "negative_control"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage8:cors_redirect:noisy_control",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "diagnostic",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "response_headers",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage8:cors_redirect:noisy_control",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "configuration",
+                "endpoint_class": "response_headers",
+                "family": "cors_redirect",
+                "required": false,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "negative_control"
+                ],
+                "subtype": "credentialed_cors_and_external_location",
+                "target_surface": "http"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "negative_control"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "cors_redirect-noisy_control",
+            "schema_version": "1.0",
+            "subtype": "credentialed_cors_and_external_location",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "noisy_control",
+              "diagnostic"
+            ],
+            "target_surface": "http",
+            "tenant": "none",
+            "variant": "noisy_control",
+            "vulnerability_family": "cors_redirect"
+          }
+        },
+        "model_required": false,
+        "name": "cors_redirect / noisy_control",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "noisy_control",
+          "diagnostic"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "cors_redirect-reproduction",
+        "category": "configuration",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "negative_control"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage8:cors_redirect:reproduction",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "diagnostic",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "response_headers",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage8:cors_redirect:reproduction",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "configuration",
+                "endpoint_class": "response_headers",
+                "family": "cors_redirect",
+                "required": false,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "negative_control"
+                ],
+                "subtype": "credentialed_cors_and_external_location",
+                "target_surface": "http"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "negative_control"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "cors_redirect-reproduction",
+            "schema_version": "1.0",
+            "subtype": "credentialed_cors_and_external_location",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "reproduction",
+              "diagnostic"
+            ],
+            "target_surface": "http",
+            "tenant": "none",
+            "variant": "reproduction",
+            "vulnerability_family": "cors_redirect"
+          }
+        },
+        "model_required": false,
+        "name": "cors_redirect / reproduction",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "reproduction",
+          "diagnostic"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "api_schema_mass_assignment-gold_positive",
+        "category": "api",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "negative_control",
+          "reproduction"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage8:api_schema_mass_assignment:gold_positive",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "diagnostic",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "json_mutation",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage8:api_schema_mass_assignment:gold_positive",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "api",
+                "endpoint_class": "json_mutation",
+                "family": "api_schema_mass_assignment",
+                "required": false,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "negative_control",
+                  "reproduction"
+                ],
+                "subtype": "method_and_schema_behavior",
+                "target_surface": "api"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "negative_control",
+              "reproduction"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "api_schema_mass_assignment-gold_positive",
+            "schema_version": "1.0",
+            "subtype": "method_and_schema_behavior",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_positive",
+              "diagnostic"
+            ],
+            "target_surface": "api",
+            "tenant": "none",
+            "variant": "gold_positive",
+            "vulnerability_family": "api_schema_mass_assignment"
+          }
+        },
+        "model_required": false,
+        "name": "api_schema_mass_assignment / gold_positive",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "gold_positive",
+          "diagnostic"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "api_schema_mass_assignment-gold_negative",
+        "category": "api",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "negative_control",
+          "reproduction"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage8:api_schema_mass_assignment:gold_negative",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "diagnostic",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "json_mutation",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage8:api_schema_mass_assignment:gold_negative",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "api",
+                "endpoint_class": "json_mutation",
+                "family": "api_schema_mass_assignment",
+                "required": false,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "negative_control",
+                  "reproduction"
+                ],
+                "subtype": "method_and_schema_behavior",
+                "target_surface": "api"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "negative_control",
+              "reproduction"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "api_schema_mass_assignment-gold_negative",
+            "schema_version": "1.0",
+            "subtype": "method_and_schema_behavior",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_negative",
+              "diagnostic"
+            ],
+            "target_surface": "api",
+            "tenant": "none",
+            "variant": "gold_negative",
+            "vulnerability_family": "api_schema_mass_assignment"
+          }
+        },
+        "model_required": false,
+        "name": "api_schema_mass_assignment / gold_negative",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "gold_negative",
+          "diagnostic"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "api_schema_mass_assignment-noisy_control",
+        "category": "api",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "negative_control",
+          "reproduction"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage8:api_schema_mass_assignment:noisy_control",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "diagnostic",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "json_mutation",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage8:api_schema_mass_assignment:noisy_control",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "api",
+                "endpoint_class": "json_mutation",
+                "family": "api_schema_mass_assignment",
+                "required": false,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "negative_control",
+                  "reproduction"
+                ],
+                "subtype": "method_and_schema_behavior",
+                "target_surface": "api"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "negative_control",
+              "reproduction"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "api_schema_mass_assignment-noisy_control",
+            "schema_version": "1.0",
+            "subtype": "method_and_schema_behavior",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "noisy_control",
+              "diagnostic"
+            ],
+            "target_surface": "api",
+            "tenant": "none",
+            "variant": "noisy_control",
+            "vulnerability_family": "api_schema_mass_assignment"
+          }
+        },
+        "model_required": false,
+        "name": "api_schema_mass_assignment / noisy_control",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "noisy_control",
+          "diagnostic"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "api_schema_mass_assignment-reproduction",
+        "category": "api",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "negative_control",
+          "reproduction"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage8:api_schema_mass_assignment:reproduction",
+        "identity_requirements": [],
+        "metadata": {
+          "scenario": {
+            "auth_state": "anonymous",
+            "capability_tier": "diagnostic",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "json_mutation",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage8:api_schema_mass_assignment:reproduction",
+            "identity": "none",
+            "metadata": {
+              "domain": {
+                "category": "api",
+                "endpoint_class": "json_mutation",
+                "family": "api_schema_mass_assignment",
+                "required": false,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "negative_control",
+                  "reproduction"
+                ],
+                "subtype": "method_and_schema_behavior",
+                "target_surface": "api"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "negative_control",
+              "reproduction"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "api_schema_mass_assignment-reproduction",
+            "schema_version": "1.0",
+            "subtype": "method_and_schema_behavior",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "reproduction",
+              "diagnostic"
+            ],
+            "target_surface": "api",
+            "tenant": "none",
+            "variant": "reproduction",
+            "vulnerability_family": "api_schema_mass_assignment"
+          }
+        },
+        "model_required": false,
+        "name": "api_schema_mass_assignment / reproduction",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "reproduction",
+          "diagnostic"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "business_logic_invariant-gold_positive",
+        "category": "business_logic",
+        "cleanup_assertion": "fixture entity and side effects are cleaned after evaluation",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "negative_control",
+          "reproduction",
+          "external"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage8:business_logic_invariant:gold_positive",
+        "identity_requirements": [
+          "owner_reviewer"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "multi_identity",
+            "capability_tier": "diagnostic",
+            "cleanup_assertion": "fixture entity and side effects are cleaned after evaluation",
+            "cleanup_required": true,
+            "endpoint_class": "stateful_journey",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage8:business_logic_invariant:gold_positive",
+            "identity": "owner_reviewer",
+            "metadata": {
+              "domain": {
+                "auth_state": "multi_identity",
+                "category": "business_logic",
+                "cleanup_assertion": "fixture entity and side effects are cleaned after evaluation",
+                "cleanup_required": true,
+                "endpoint_class": "stateful_journey",
+                "family": "business_logic_invariant",
+                "identity": "owner_reviewer",
+                "required": false,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "negative_control",
+                  "reproduction",
+                  "external"
+                ],
+                "subtype": "ownership_price_state_transition",
+                "target_surface": "browser",
+                "tenant": "tenant_a"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "negative_control",
+              "reproduction",
+              "external"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "business_logic_invariant-gold_positive",
+            "schema_version": "1.0",
+            "subtype": "ownership_price_state_transition",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_positive",
+              "diagnostic"
+            ],
+            "target_surface": "browser",
+            "tenant": "tenant_a",
+            "variant": "gold_positive",
+            "vulnerability_family": "business_logic_invariant"
+          }
+        },
+        "model_required": false,
+        "name": "business_logic_invariant / gold_positive",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "gold_positive",
+          "diagnostic"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "business_logic_invariant-gold_negative",
+        "category": "business_logic",
+        "cleanup_assertion": "fixture entity and side effects are cleaned after evaluation",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "negative_control",
+          "reproduction",
+          "external"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage8:business_logic_invariant:gold_negative",
+        "identity_requirements": [
+          "owner_reviewer"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "multi_identity",
+            "capability_tier": "diagnostic",
+            "cleanup_assertion": "fixture entity and side effects are cleaned after evaluation",
+            "cleanup_required": true,
+            "endpoint_class": "stateful_journey",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage8:business_logic_invariant:gold_negative",
+            "identity": "owner_reviewer",
+            "metadata": {
+              "domain": {
+                "auth_state": "multi_identity",
+                "category": "business_logic",
+                "cleanup_assertion": "fixture entity and side effects are cleaned after evaluation",
+                "cleanup_required": true,
+                "endpoint_class": "stateful_journey",
+                "family": "business_logic_invariant",
+                "identity": "owner_reviewer",
+                "required": false,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "negative_control",
+                  "reproduction",
+                  "external"
+                ],
+                "subtype": "ownership_price_state_transition",
+                "target_surface": "browser",
+                "tenant": "tenant_a"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "negative_control",
+              "reproduction",
+              "external"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "business_logic_invariant-gold_negative",
+            "schema_version": "1.0",
+            "subtype": "ownership_price_state_transition",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_negative",
+              "diagnostic"
+            ],
+            "target_surface": "browser",
+            "tenant": "tenant_a",
+            "variant": "gold_negative",
+            "vulnerability_family": "business_logic_invariant"
+          }
+        },
+        "model_required": false,
+        "name": "business_logic_invariant / gold_negative",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "gold_negative",
+          "diagnostic"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "business_logic_invariant-noisy_control",
+        "category": "business_logic",
+        "cleanup_assertion": "fixture entity and side effects are cleaned after evaluation",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "negative_control",
+          "reproduction",
+          "external"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage8:business_logic_invariant:noisy_control",
+        "identity_requirements": [
+          "owner_reviewer"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "multi_identity",
+            "capability_tier": "diagnostic",
+            "cleanup_assertion": "fixture entity and side effects are cleaned after evaluation",
+            "cleanup_required": true,
+            "endpoint_class": "stateful_journey",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage8:business_logic_invariant:noisy_control",
+            "identity": "owner_reviewer",
+            "metadata": {
+              "domain": {
+                "auth_state": "multi_identity",
+                "category": "business_logic",
+                "cleanup_assertion": "fixture entity and side effects are cleaned after evaluation",
+                "cleanup_required": true,
+                "endpoint_class": "stateful_journey",
+                "family": "business_logic_invariant",
+                "identity": "owner_reviewer",
+                "required": false,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "negative_control",
+                  "reproduction",
+                  "external"
+                ],
+                "subtype": "ownership_price_state_transition",
+                "target_surface": "browser",
+                "tenant": "tenant_a"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "negative_control",
+              "reproduction",
+              "external"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "business_logic_invariant-noisy_control",
+            "schema_version": "1.0",
+            "subtype": "ownership_price_state_transition",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "noisy_control",
+              "diagnostic"
+            ],
+            "target_surface": "browser",
+            "tenant": "tenant_a",
+            "variant": "noisy_control",
+            "vulnerability_family": "business_logic_invariant"
+          }
+        },
+        "model_required": false,
+        "name": "business_logic_invariant / noisy_control",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "noisy_control",
+          "diagnostic"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "business_logic_invariant-reproduction",
+        "category": "business_logic",
+        "cleanup_assertion": "fixture entity and side effects are cleaned after evaluation",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test",
+          "negative_control",
+          "reproduction",
+          "external"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage8:business_logic_invariant:reproduction",
+        "identity_requirements": [
+          "owner_reviewer"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "multi_identity",
+            "capability_tier": "diagnostic",
+            "cleanup_assertion": "fixture entity and side effects are cleaned after evaluation",
+            "cleanup_required": true,
+            "endpoint_class": "stateful_journey",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage8:business_logic_invariant:reproduction",
+            "identity": "owner_reviewer",
+            "metadata": {
+              "domain": {
+                "auth_state": "multi_identity",
+                "category": "business_logic",
+                "cleanup_assertion": "fixture entity and side effects are cleaned after evaluation",
+                "cleanup_required": true,
+                "endpoint_class": "stateful_journey",
+                "family": "business_logic_invariant",
+                "identity": "owner_reviewer",
+                "required": false,
+                "required_evidence_roles": [
+                  "baseline",
+                  "test",
+                  "negative_control",
+                  "reproduction",
+                  "external"
+                ],
+                "subtype": "ownership_price_state_transition",
+                "target_surface": "browser",
+                "tenant": "tenant_a"
+              },
+              "stage8": true
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test",
+              "negative_control",
+              "reproduction",
+              "external"
+            ],
+            "required_identity_ids": [],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "business_logic_invariant-reproduction",
+            "schema_version": "1.0",
+            "subtype": "ownership_price_state_transition",
+            "suite_id": "stage8-webapi-foundation",
+            "suite_version": "1.0",
+            "tags": [
+              "reproduction",
+              "diagnostic"
+            ],
+            "target_surface": "browser",
+            "tenant": "tenant_a",
+            "variant": "reproduction",
+            "vulnerability_family": "business_logic_invariant"
+          }
+        },
+        "model_required": false,
+        "name": "business_logic_invariant / reproduction",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage8-webapi-foundation",
+        "tags": [
+          "reproduction",
+          "diagnostic"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      }
+    ],
+    "created_at": "2026-08-23T12:48:46.921362+00:00",
+    "description": "Local-only 12-domain x 4-variant benchmark matrix. Diagnostic domains are visible coverage gaps, never release passes.",
+    "manifest_digest": "4307798a52d468f45ffdbc35bbdbce5ceba7d493b8e65114f879004fbc96ca89",
+    "mode": "deterministic",
+    "name": "Nexus Stage 8 Web/API Measurement Foundation",
+    "schema_version": "1.0",
+    "suite_id": "stage8-webapi-foundation",
+    "version": "1.0"
+  },
+  "trial_replays": [
+    {
+      "gate": "ready",
+      "outcome_digest": "f0a40591b985e4eb85238a103d69f480e83c346c8072b3c13b29876266e06ef7",
+      "run_id": "eval_2c4a868ce5058bd6e57d2fb3c04c1585",
+      "status": "succeeded",
+      "trial_number": 1
+    },
+    {
+      "gate": "ready",
+      "outcome_digest": "f0a40591b985e4eb85238a103d69f480e83c346c8072b3c13b29876266e06ef7",
+      "run_id": "eval_f60c51e0befb64d7281f89cb70897051",
+      "status": "succeeded",
+      "trial_number": 2
+    },
+    {
+      "gate": "ready",
+      "outcome_digest": "f0a40591b985e4eb85238a103d69f480e83c346c8072b3c13b29876266e06ef7",
+      "run_id": "eval_02b9432be633dc3e608b6a97dc9200d3",
+      "status": "succeeded",
+      "trial_number": 3
+    }
+  ]
+}

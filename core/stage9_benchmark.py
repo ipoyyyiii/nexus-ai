@@ -164,7 +164,7 @@ class Stage9FixtureRegistry:
         elif family == "api_schema_mass_assignment":
             common.update({"baseline_entity_state": {"role": "user"}, "field_class": "privileged", "server_state_changed": positive, "privileged_field_changed": positive, "negative_control_state": True, "reproduced": positive})
         elif family == "business_logic_invariant":
-            common.update({"rule_type": "server_authoritative", "typed_rule": True, "evaluation_id": "eval-stage9", "state_transition_evidence": True, "invariant_violated": positive, "reproduced": positive})
+            common.update({"rule_type": "server_authoritative", "typed_rule": True, "evaluation_id": "eval-stage9", "state_transition_evidence": True, "invariant_violated": positive, "reproduced": positive, "graph_id": "graph-stage9", "workflow_matrix_id": "matrix-stage9", "entity_fingerprint": "entity-stage9", "identity_ids": ["identity-stage9"]})
         elif family == "race_condition":
             common.update({"synchronized": positive, "effect_violation": positive, "unique_effect_count": 2 if positive else 1, "expected_effect_count": 1, "clean_reproduction": positive})
         if variant == "noisy_control":

@@ -18,6 +18,12 @@ from pydantic import BaseModel, ConfigDict, Field
 from core.redact import redact
 
 
+# Bare ``@tool`` declarations use the Python function name as their public
+# name.  The previous registry parser only handled ``@tool("name")`` and
+# silently omitted those capabilities.
+EXPECTED_PUBLIC_TOOL_COUNT = 103
+
+
 class ToolCapabilityV1(BaseModel):
     schema_version: str = "1.0"
     tool_id: str
@@ -139,6 +145,8 @@ def discover_tool_registry(source_root: Optional[Path] = None) -> List[ToolCapab
                 continue
             for decorator in node.decorator_list:
                 public_name = _tool_name(decorator)
+                if public_name is None and isinstance(decorator, ast.Name) and decorator.id == "tool":
+                    public_name = node.name
                 if not public_name:
                     continue
                 inferred = _infer(public_name, module)
@@ -169,8 +177,8 @@ def validate_tool_registry(entries: Optional[Iterable[ToolCapabilityV1]] = None)
             issues.append(RegistryIssue(tool_id=entry.tool_id, public_name=entry.public_name, kind="output_contract", detail="new tools must emit ToolResultV1"))
         if entry.requires_approval and entry.risk == "read_only":
             issues.append(RegistryIssue(tool_id=entry.tool_id, public_name=entry.public_name, kind="risk_policy", detail="approval-required tool cannot be read_only"))
-    if len(entries) != 90:
-        issues.append(RegistryIssue(kind="registry_count", detail=f"expected 90 public tools, found {len(entries)}"))
+    if len(entries) != EXPECTED_PUBLIC_TOOL_COUNT:
+        issues.append(RegistryIssue(kind="registry_count", detail=f"expected {EXPECTED_PUBLIC_TOOL_COUNT} public tools, found {len(entries)}"))
     return issues
 
 

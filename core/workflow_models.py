@@ -170,6 +170,106 @@ class ChainRecord:
     status: str = RecordStatus.PENDING.value
     current_step: int = 0
     blocked_reason: str = ""
+    chain_version: int = 1
+    graph_digest: str = ""
+    node_ids: List[str] = field(default_factory=list)
+    edge_ids: List[str] = field(default_factory=list)
+    prerequisite_ids: List[str] = field(default_factory=list)
+    evidence_ids: List[str] = field(default_factory=list)
+    identity_ids: List[str] = field(default_factory=list)
+    protocol_operation_ids: List[str] = field(default_factory=list)
+    impact_objective: str = ""
+    validation_status: str = RecordStatus.INCONCLUSIVE.value
+    validation_source: str = "machine"
+    mission_id: str = ""
+    identity_graph_digest: str = ""
+    knowledge_graph_digest: str = ""
+    workflow_matrix_id: str = ""
+    path_score: float = 0.0
+    score_breakdown: Dict[str, float] = field(default_factory=dict)
+    impact_status: str = RecordStatus.INCONCLUSIVE.value
+    reproduction_status: str = "unknown"
+    cleanup_status: str = "unknown"
+    input_digest: str = ""
+
+
+@dataclass
+class ChainNode:
+    node_type: str
+    reference_id: str
+    label: str = ""
+    status: str = RecordStatus.PENDING.value
+    evidence_ids: List[str] = field(default_factory=list)
+    identity_id: str = ""
+    tenant_label: str = ""
+    protocol: str = ""
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    node_id: str = field(default_factory=lambda: _id("cnode"))
+    capability: str = ""
+    role: str = ""
+    state_digest: str = ""
+    resource_fingerprint: str = ""
+
+
+@dataclass
+class ChainEdge:
+    source_node_id: str
+    target_node_id: str
+    relation: str
+    evidence_ids: List[str] = field(default_factory=list)
+    deterministic: bool = True
+    edge_id: str = field(default_factory=lambda: _id("cedge"))
+    status: str = RecordStatus.PROPOSED.value
+    reason: str = ""
+    preconditions: List[str] = field(default_factory=list)
+    required_identity_ids: List[str] = field(default_factory=list)
+    risk: str = "read_only"
+    cleanup_refs: List[str] = field(default_factory=list)
+    impact_role: str = ""
+
+
+@dataclass
+class ImpactProofPlan:
+    chain_id: str
+    objective: str
+    target_url: str
+    exact_steps: List[Dict[str, Any]] = field(default_factory=list)
+    payload_ids: List[str] = field(default_factory=list)
+    identity_id: str = ""
+    auth_context_id: str = ""
+    bindings_hash: str = ""
+    approval_digest: str = ""
+    budget: Dict[str, Any] = field(default_factory=dict)
+    expires_at: str = ""
+    cleanup_refs: List[str] = field(default_factory=list)
+    expected_before: Dict[str, Any] = field(default_factory=dict)
+    expected_after: Dict[str, Any] = field(default_factory=dict)
+    status: str = RecordStatus.PROPOSED.value
+    plan_id: str = field(default_factory=lambda: _id("impact"))
+    chain_version: int = 1
+    graph_digest: str = ""
+    workflow_matrix_id: str = ""
+    required_evidence_roles: List[str] = field(default_factory=list)
+    expected_effect: Dict[str, Any] = field(default_factory=dict)
+    state_fingerprint: str = ""
+
+
+@dataclass
+class ChainEvaluation:
+    chain_id: str
+    decision: str = RecordStatus.INCONCLUSIVE.value
+    checks: List[Dict[str, Any]] = field(default_factory=list)
+    evidence_ids: List[str] = field(default_factory=list)
+    reason: str = ""
+    validator_version: str = "2.0"
+    policy_version: str = "1.0"
+    evaluation_id: str = field(default_factory=lambda: _id("chaineval"))
+    chain_version: int = 1
+    impact_status: str = RecordStatus.INCONCLUSIVE.value
+    reproduction_status: str = "unknown"
+    cleanup_status: str = "unknown"
+    score: float = 0.0
+    input_digest: str = ""
 
 
 @dataclass

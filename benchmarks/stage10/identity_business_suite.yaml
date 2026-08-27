@@ -1,0 +1,105 @@
+suite_id: stage10-identity-business
+name: Nexus Stage 10 Identity, Browser, and Business Logic
+version: "1.0"
+mode: deterministic
+description: Local-only identity graph, stateful workflow, and business invariant benchmark.
+variants:
+  - gold_positive
+  - gold_negative
+  - noisy_control
+  - missing_control
+  - clean_reproduction
+  - recovery_cleanup
+domains:
+  - family: ownership_mapping
+    subtype: object_ownership
+    category: authorization
+    target_surface: api
+    endpoint_class: object_api
+    identity: owner_non_owner
+    tenant: tenant_a
+    required_evidence_roles: [baseline, test, negative_control, reproduction]
+  - family: tenant_isolation
+    subtype: cross_tenant_object_access
+    category: authorization
+    target_surface: api
+    endpoint_class: tenant_api
+    identity: tenant_owner_tenant_other
+    tenant: tenant_a_tenant_b
+    required_evidence_roles: [baseline, test, negative_control, reproduction]
+  - family: role_boundary
+    subtype: role_authorization
+    category: authorization
+    target_surface: browser
+    endpoint_class: role_action
+    identity: user_admin
+    tenant: tenant_a
+    required_evidence_roles: [baseline, test, negative_control, reproduction]
+  - family: checkout_price_invariant
+    subtype: server_authoritative_price
+    category: business_logic
+    target_surface: api
+    endpoint_class: checkout
+    identity: buyer
+    tenant: tenant_a
+    cleanup_required: true
+    cleanup_assertion: Fixture order and balance return to baseline.
+    required_evidence_roles: [baseline, test, negative_control, reproduction]
+  - family: coupon_single_use
+    subtype: single_use_idempotency
+    category: business_logic
+    target_surface: api
+    endpoint_class: coupon
+    identity: buyer
+    tenant: tenant_a
+    cleanup_required: true
+    cleanup_assertion: Fixture coupon redemption is removed and verified.
+    required_evidence_roles: [baseline, test, negative_control, reproduction]
+  - family: approval_separation
+    subtype: self_approval
+    category: business_logic
+    target_surface: browser
+    endpoint_class: approval
+    identity: requester_approver
+    tenant: tenant_a
+    cleanup_required: true
+    cleanup_assertion: Approval fixture is returned to pending.
+    required_evidence_roles: [baseline, test, negative_control, reproduction]
+  - family: status_transition
+    subtype: allowed_transition_graph
+    category: business_logic
+    target_surface: api
+    endpoint_class: state_api
+    identity: user
+    tenant: tenant_a
+    cleanup_required: true
+    cleanup_assertion: Entity status is restored to its initial state.
+    required_evidence_roles: [baseline, test, negative_control, reproduction]
+  - family: cross_session_consistency
+    subtype: state_consistency
+    category: business_logic
+    target_surface: api
+    endpoint_class: session_state
+    identity: user_clean_session
+    tenant: tenant_a
+    cleanup_required: true
+    cleanup_assertion: Session fixture state is cleaned and re-read.
+    required_evidence_roles: [baseline, test, negative_control, reproduction]
+  - family: browser_workflow_recovery
+    subtype: checkpoint_resume_cleanup
+    category: recovery
+    target_surface: browser
+    endpoint_class: stateful_workflow
+    identity: owner_non_owner
+    tenant: tenant_a
+    cleanup_required: true
+    cleanup_assertion: Resumed workflow cleanup is verified.
+    required_evidence_roles: [baseline, test, negative_control, reproduction]
+  - family: identity_redaction
+    subtype: secret_pii_persistence
+    category: safety
+    target_surface: persistence
+    endpoint_class: graph_and_artifact_store
+    identity: owner_non_owner
+    tenant: tenant_a
+    required_evidence_roles: [external]

@@ -1,0 +1,17 @@
+suite_id: stage14-mission-attack-path
+version: "1.0"
+name: Nexus Stage 14 Mission Control and Attack-Path Graph
+description: Local-only deterministic mission graph, bounded autonomy, approval, and replanning fixtures.
+domains:
+  - {family: objective_to_path, subtype: deterministic_selection, protocol: http, target_surface: api}
+  - {family: access_control_chain, subtype: owner_to_sensitive_action, protocol: http, target_surface: api}
+  - {family: identity_switch, subtype: explicit_identity_context, protocol: http, target_surface: api}
+  - {family: workflow_transition, subtype: state_transition, protocol: browser, target_surface: browser}
+  - {family: evidence_gap, subtype: missing_support, protocol: http, target_surface: persistence}
+  - {family: approval_boundary, subtype: mutation_requires_approval, protocol: http, target_surface: api}
+  - {family: stale_replan, subtype: graph_version_change, protocol: http, target_surface: persistence}
+  - {family: backtrack, subtype: blocked_edge, protocol: http, target_surface: api}
+  - {family: duplicate_suppression, subtype: content_addressed_graph, protocol: http, target_surface: persistence}
+  - {family: contradiction, subtype: conflicting_observation, protocol: http, target_surface: api}
+  - {family: budget_stop, subtype: bounded_path_planning, protocol: http, target_surface: persistence}
+  - {family: cleanup_impact, subtype: registered_cleanup, protocol: browser, target_surface: browser}

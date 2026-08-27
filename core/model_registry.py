@@ -265,8 +265,37 @@ def list_available_models() -> List[dict]:
     return models
 
 
+def _local_preference_id(model_id: Optional[str]) -> Optional[str]:
+    """Resolve both UI IDs and provider model IDs to the local registry ID.
+
+    The UI advertises ``local-ravenx-cyberagent`` while OpenAI-compatible
+    clients naturally send ``ravenx-cyberagent``.  Treating the latter as an
+    unknown model used to silently select the OpenRouter fallback chain, which
+    is unsafe when the operator explicitly configured a local provider.
+    """
+    candidate = str(model_id or "").strip()
+    if not candidate:
+        return None
+    for item in _local_registry():
+        aliases = {
+            item["id"],
+            item["slug"],
+            item["slug"].split("/")[-1],
+            item["id"][len("local-"):],
+        }
+        if candidate in aliases:
+            return item["id"]
+    return None
+
+
 def _find(model_id: str) -> Optional[dict]:
-    return next((m for m in _all_models() if m["id"] == model_id), None)
+    exact = next((m for m in _all_models() if m["id"] == model_id), None)
+    if exact:
+        return exact
+    local_id = _local_preference_id(model_id)
+    if local_id:
+        return next((m for m in _local_registry() if m["id"] == local_id), None)
+    return None
 
 
 def build_llm(preferred_model_id: Optional[str] = None):
@@ -279,20 +308,27 @@ def build_llm(preferred_model_id: Optional[str] = None):
     if not os.environ.get("OPENROUTER_API_KEY") and not _is_local_enabled():
         raise RuntimeError("OPENROUTER_API_KEY / NEXUS_LOCAL_LLM_BASE_URL not set di .env.")
 
-    # Direct local path - no fallback mixing
-    if preferred_model_id and preferred_model_id.startswith("local-"):
+    # Direct local path - no fallback mixing.  Accept the raw provider model
+    # ID as a backwards-compatible alias for the UI's local-* ID.
+    local_preference = _local_preference_id(preferred_model_id)
+    if local_preference:
         base_url = _local_base_url()
         if not base_url:
             raise RuntimeError("NEXUS_LOCAL_LLM_BASE_URL belum diisi untuk model local.")
-        info = _find(preferred_model_id)
-        slug = info["slug"] if info else preferred_model_id.replace("local-", "")
+        info = _find(local_preference)
+        slug = info["slug"] if info else local_preference.replace("local-", "")
         return LLM(
             model=slug,
             api_key=_local_api_key(),
             base_url=base_url,
             temperature=0.2,
             max_tokens=4096,
-            additional_params={"extra_headers": {"ngrok-skip-browser-warning": "true"}},
+            # CrewAI forwards unknown keyword arguments into the provider
+            # constructor. Passing a nested ``additional_params`` mapping
+            # makes it leak into OpenAI's completion request as an unsupported
+            # request field. ``default_headers`` is a provider-level option
+            # and keeps the ngrok header out of the JSON payload.
+            default_headers={"ngrok-skip-browser-warning": "true"},
         )
 
     ordered: List[dict] = []
@@ -372,12 +408,13 @@ def build_llm(preferred_model_id: Optional[str] = None):
 def build_chat_llm(preferred_model_id: Optional[str] = None):
     """Return a chat model instance (OpenRouter, TokenHub, or Local)."""
     # Local prefix takes priority - direct routing
-    if preferred_model_id and preferred_model_id.startswith("local-"):
+    local_preference = _local_preference_id(preferred_model_id)
+    if local_preference:
         base_url = _local_base_url()
         if not base_url:
             raise RuntimeError("NEXUS_LOCAL_LLM_BASE_URL belum diisi untuk model local.")
-        info = _find(preferred_model_id)
-        slug = info["slug"] if info else preferred_model_id.replace("local-", "")
+        info = _find(local_preference)
+        slug = info["slug"] if info else local_preference.replace("local-", "")
         return ChatOpenAI(
             model=slug,
             api_key=_local_api_key(),

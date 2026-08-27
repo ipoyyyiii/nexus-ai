@@ -1,0 +1,17 @@
+suite_id: stage16-autonomous-reasoning-search
+name: Nexus Stage 16 Autonomous Reasoning, Search & Adaptation
+version: "1.0"
+description: Local deterministic benchmark for bounded hypothesis search, adaptation, memory safety, and durable stop decisions.
+domains:
+  - {family: hypothesis-prioritization, subtype: information-gain, target_surface: api, endpoint_class: parameterized_api}
+  - {family: information-gain-selection, subtype: discriminating-control, target_surface: api, endpoint_class: noisy_api}
+  - {family: exploration-exploitation, subtype: capability-diversity, target_surface: api, endpoint_class: multi_tool}
+  - {family: alternative-strategy, subtype: failed-tool-fallback, target_surface: api, endpoint_class: scanner}
+  - {family: bounded-payload-adaptation, subtype: harmless-mutation, target_surface: api, endpoint_class: parameterized_api}
+  - {family: backtracking, subtype: branch-recovery, target_surface: browser, endpoint_class: stateful_workflow}
+  - {family: contradiction-handling, subtype: conflicting-observations, target_surface: persistence, endpoint_class: evidence_store}
+  - {family: stale-evidence, subtype: freshness-boundary, target_surface: persistence, endpoint_class: evidence_store}
+  - {family: memory-isolation, subtype: cross-session-boundary, target_surface: api, endpoint_class: session_store}
+  - {family: budget-stop, subtype: deadline-exhaustion, target_surface: safety, endpoint_class: bounded_job}
+  - {family: prompt-injection, subtype: untrusted-target-content, target_surface: api, endpoint_class: response_body}
+  - {family: recovery-pause, subtype: checkpoint-resume, target_surface: persistence, endpoint_class: durable_job}

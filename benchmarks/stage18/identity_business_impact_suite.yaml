@@ -1,0 +1,28 @@
+suite_id: stage18-identity-business-impact
+version: "1.0"
+name: Nexus Stage 18 Identity, Browser, Business Logic & Impact Chain
+description: Local-only deterministic identity matrix, stateful workflow, invariant, and impact-chain benchmark.
+variants:
+  - gold_positive
+  - gold_negative
+  - noisy_control
+  - missing_identity
+  - missing_control
+  - clean_reproduction
+  - cleanup_failure
+  - stale_graph
+  - broken_edge
+  - recovery
+domains:
+  - {family: ownership_to_sensitive_read, subtype: owner_non_owner_impact, category: identity_chain, target_surface: api, endpoint_class: object_api}
+  - {family: cross_tenant_to_sensitive_mutation, subtype: tenant_boundary_impact, category: identity_chain, target_surface: api, endpoint_class: tenant_api}
+  - {family: role_boundary_to_admin_action, subtype: user_admin_transition, category: identity_chain, target_surface: browser, endpoint_class: role_workflow}
+  - {family: auth_context_to_protected_operation, subtype: session_to_sensitive_api, category: identity_chain, target_surface: api, endpoint_class: authenticated_api}
+  - {family: browser_role_change_to_state, subtype: stateful_role_workflow, category: browser_business, target_surface: browser, endpoint_class: role_change}
+  - {family: approval_to_self_approval, subtype: separation_of_duties, category: business_logic, target_surface: browser, endpoint_class: approval_workflow}
+  - {family: checkout_to_price_impact, subtype: server_authoritative_value, category: business_logic, target_surface: api, endpoint_class: checkout}
+  - {family: coupon_to_duplicate_effect, subtype: single_use_idempotency, category: business_logic, target_surface: api, endpoint_class: coupon}
+  - {family: status_to_prerequisite_bypass, subtype: allowed_transition_sequence, category: business_logic, target_surface: api, endpoint_class: state_api}
+  - {family: upload_to_async_business_state, subtype: job_ownership_impact, category: business_chain, target_surface: both, endpoint_class: upload_job}
+  - {family: cross_session_to_entity_state, subtype: clean_session_consistency, category: business_logic, target_surface: api, endpoint_class: session_state}
+  - {family: multi_step_weakness_to_measurable_impact, subtype: chain_level_proof, category: impact_chain, target_surface: both, endpoint_class: sensitive_action}

@@ -1,0 +1,627 @@
+{
+  "release_gate": {
+    "created_at": "2026-08-23T12:48:41.835533+00:00",
+    "decision": "ready",
+    "decision_id": "gate_22c65dbe0b5742e3887cde2ac154bf48",
+    "hard_gates": [
+      {
+        "actual": 0,
+        "assertion_id": "assert_d446d1b213ab4a1e833213582c3d648d",
+        "evidence_ids": [],
+        "expected": 0,
+        "name": "gold_negative_zero_validated",
+        "passed": true,
+        "reason": "",
+        "schema_version": "1.0"
+      },
+      {
+        "actual": 0,
+        "assertion_id": "assert_f41c74c7f8ce49cab273e74bcebc4fcb",
+        "evidence_ids": [],
+        "expected": true,
+        "name": "gold_positive_all_reproducible",
+        "passed": true,
+        "reason": "",
+        "schema_version": "1.0"
+      },
+      {
+        "actual": 0,
+        "assertion_id": "assert_cdc169f98f3b481495f8088a452e3fad",
+        "evidence_ids": [],
+        "expected": true,
+        "name": "all_fixture_assertions_pass",
+        "passed": true,
+        "reason": "",
+        "schema_version": "1.0"
+      },
+      {
+        "actual": 0,
+        "assertion_id": "assert_58d83ab1c1934601914897d1e475250a",
+        "evidence_ids": [],
+        "expected": 0,
+        "name": "redaction_leaks_zero",
+        "passed": true,
+        "reason": "",
+        "schema_version": "1.0"
+      },
+      {
+        "actual": 0,
+        "assertion_id": "assert_cc2af31458214879a9158e0134402879",
+        "evidence_ids": [],
+        "expected": 0,
+        "name": "registry_bypass_zero",
+        "passed": true,
+        "reason": "",
+        "schema_version": "1.0"
+      }
+    ],
+    "metrics": {
+      "case_pass_rate": 1.0,
+      "f1": 1.0,
+      "false_negative_rate": 0.0,
+      "false_positive_rate": 0.0,
+      "gold_negative_specificity": 1.0,
+      "gold_positive_recall": 1.0,
+      "precision": 1.0,
+      "redaction_leaks": 0.0,
+      "registry_violations": 0.0
+    },
+    "review_reason": "",
+    "reviewer_id": "",
+    "run_id": "eval_bd2a14417e0562306e11e0391e64491d",
+    "schema_version": "1.0",
+    "signature": "",
+    "suite_id": "stage6-core",
+    "suite_version": "1.0"
+  },
+  "run": {
+    "commit_sha": "",
+    "config_digest": "cdb04885b9be96b0fbdb0374075228944259a2147f590a0bbc75b94418fdacd0",
+    "config_snapshot": {
+      "adaptive_planner": {
+        "max_attempts_per_hypothesis": 3,
+        "max_hypotheses": 80,
+        "max_proposals": 3,
+        "scoring": {
+          "cost_penalty": 0.16,
+          "evidence_strength": 0.18,
+          "failure_penalty": 0.1,
+          "information_gain": 0.38,
+          "novelty": 0.12,
+          "objective_relevance": 0.22,
+          "risk_penalty": 0.22,
+          "technology_fit": 0.1
+        }
+      },
+      "artifact_storage": {
+        "bucket": "nexus-evidence",
+        "orphan_grace_days": 2,
+        "retention_days": 30,
+        "signed_url_ttl_seconds": 300,
+        "sweep_enabled": true,
+        "sweep_interval_minutes": 60
+      },
+      "auth_secret_ttl_minutes": 240,
+      "authorization_graph_mode": "shadow",
+      "browser_workflow": {
+        "approval_ttl_minutes": 30,
+        "artifact_bucket": "nexus-evidence",
+        "identity_matrix_max_runs": 12,
+        "max_mutations_per_run": 3,
+        "max_retries": 1,
+        "max_steps": 30,
+        "read_only_auto_run": true,
+        "require_cleanup": true,
+        "require_entity_fingerprint": true,
+        "require_identity_graph": true,
+        "step_timeout_ms": 15000
+      },
+      "browser_workflow_mode": "shadow",
+      "detection_depth_mode": "shadow",
+      "evaluation": {
+        "benchmark_matrix_size": 48,
+        "core_suite_path": "benchmarks/stage6/core_suite.yaml",
+        "deterministic_trial_count": 3,
+        "enabled": true,
+        "max_performance_regression": 0.2,
+        "mode": "shadow",
+        "model_trial_count": 3,
+        "primary_model_trials": 3,
+        "public_lab_profile": "benchmark-labs",
+        "require_zero_redaction_leaks": true,
+        "require_zero_registry_violations": true,
+        "stage10_benchmark_matrix_size": 60,
+        "stage10_suite_path": "benchmarks/stage10/identity_business_suite.yaml",
+        "stage11_benchmark_matrix_size": 96,
+        "stage11_suite_path": "benchmarks/stage11/modern_chain_suite.yaml",
+        "stage12_benchmark_matrix_size": 96,
+        "stage12_suite_path": "benchmarks/stage12/reasoning_report_suite.yaml",
+        "stage13_benchmark_matrix_size": 96,
+        "stage13_suite_path": "benchmarks/stage13/production_readiness_suite.yaml",
+        "stage14_benchmark_matrix_size": 48,
+        "stage14_suite_path": "benchmarks/stage14/mission_attack_path_suite.yaml",
+        "stage15_benchmark_matrix_size": 72,
+        "stage15_suite_path": "benchmarks/stage15/target_knowledge_coverage_suite.yaml",
+        "stage16_benchmark_matrix_size": 96,
+        "stage16_suite_path": "benchmarks/stage16/autonomous_reasoning_search_suite.yaml",
+        "stage17_benchmark_matrix_size": 96,
+        "stage17_suite_path": "benchmarks/stage17/modern_detection_suite.yaml",
+        "stage18_benchmark_matrix_size": 120,
+        "stage18_suite_path": "benchmarks/stage18/identity_business_impact_suite.yaml",
+        "stage19_benchmark_matrix_size": 96,
+        "stage19_soak_minutes": 120,
+        "stage19_suite_path": "benchmarks/stage19/production_autonomy_suite.yaml",
+        "stage8_suite_path": "benchmarks/stage8/foundation_suite.yaml",
+        "stage9_benchmark_matrix_size": 72,
+        "stage9_suite_path": "benchmarks/stage9/detection_suite.yaml",
+        "strict_cutover_requires_readiness": true,
+        "worker_scale_smoke_enabled": false
+      },
+      "execution": {
+        "checkpoint_interval_seconds": 30,
+        "cpu_limit": 1.0,
+        "heartbeat_seconds": 15,
+        "job_timeout_minutes": 120,
+        "lease_seconds": 60,
+        "max_attempts_mutation": 1,
+        "max_attempts_read_only": 3,
+        "memory_limit_mb": 2048,
+        "poll_interval_seconds": 2,
+        "readiness_soak_minutes": 120,
+        "require_fencing_token": true,
+        "require_persisted_events": true,
+        "rollback_on_critical_incident": true,
+        "slo_thresholds": {
+          "availability": 0.99,
+          "cleanup_success_rate": 0.99,
+          "duplicate_execution_rate": 0.0,
+          "error_rate": 0.01,
+          "recovery_success_rate": 1.0,
+          "stale_write_rate": 0.0,
+          "terminal_success_rate": 0.99
+        },
+        "stale_worker_after_seconds": 90,
+        "strict_rpc_required": true,
+        "strict_startup_preflight": true,
+        "worker_concurrency": 1,
+        "worker_health_interval_seconds": 15
+      },
+      "execution_platform_mode": "shadow",
+      "exploit_chain_mode": "shadow",
+      "exploration": {
+        "max_action_seconds": 120,
+        "max_payload_variants": 10,
+        "mutation_requires_approval": true,
+        "read_only_auto_run": true
+      },
+      "exploration_mode": "assisted",
+      "human_recon": {
+        "fallback_priority": {
+          "api_link": 8,
+          "button": 5,
+          "form": 10,
+          "link": 3
+        },
+        "max_clicks_per_page": 12,
+        "max_depth": 3,
+        "max_pages": 60
+      },
+      "identity_browser_business_mode": "shadow",
+      "identity_business_impact_mode": "shadow",
+      "llm": {
+        "analis_max_tokens": 4096,
+        "recon_max_tokens": 2048
+      },
+      "mission_graph": {
+        "cleanup_required_for_mutation": true,
+        "max_paths": 8,
+        "max_replans": 10,
+        "mutation_requires_approval": true,
+        "read_only_auto_run": true,
+        "require_evidence": true,
+        "risk_profile": "bounded_autonomy"
+      },
+      "mission_graph_mode": "shadow",
+      "opsec": {
+        "stealth_jitter_max": 0.8,
+        "stealth_jitter_min": 0.3
+      },
+      "production_readiness_mode": "shadow",
+      "protocol_detection_mode": "shadow",
+      "race_engine": {
+        "enabled": true,
+        "max_concurrency": 8,
+        "ramp": [
+          2,
+          4,
+          8
+        ]
+      },
+      "reasoning": {
+        "invalid_action_retry_limit": 1,
+        "max_actions_per_cycle": 3,
+        "max_backtracks": 3,
+        "max_branch_factor": 4,
+        "max_cycles": 10,
+        "max_model_actions": 20,
+        "memory_isolation_required": true,
+        "min_information_gain": 0.1,
+        "repetition_penalty": 0.2,
+        "require_evidence_grounding": true,
+        "search_strategy": "best_first",
+        "stale_evidence_reject": true,
+        "stop_on_contradiction": true
+      },
+      "reasoning_adaptation_mode": "shadow",
+      "reasoning_mode": "shadow",
+      "report_intelligence_mode": "shadow",
+      "safety": {
+        "allow_private_network": false,
+        "burst": 4,
+        "egress_providers": {
+          "bgpview": {
+            "origins": [
+              "https://api.bgpview.io"
+            ]
+          },
+          "censys": {
+            "origins": [
+              "https://search.censys.io",
+              "https://api.censys.io"
+            ]
+          },
+          "crtsh": {
+            "origins": [
+              "https://crt.sh"
+            ]
+          },
+          "github": {
+            "origins": [
+              "https://api.github.com",
+              "https://raw.githubusercontent.com"
+            ]
+          },
+          "ip_api": {
+            "origins": [
+              "http://ip-api.com"
+            ]
+          },
+          "oob": {
+            "origins": []
+          },
+          "shodan": {
+            "origins": [
+              "https://api.shodan.io"
+            ]
+          },
+          "wayback": {
+            "origins": [
+              "https://web.archive.org"
+            ]
+          }
+        },
+        "max_credential_attempts": 10,
+        "max_download_bytes": 536870912,
+        "max_requests_per_job": 20000,
+        "max_response_bytes": 2097152,
+        "max_upload_bytes": 10485760,
+        "policy_version": "1.0",
+        "random_proxy_enabled": false,
+        "requests_per_second": 2.0,
+        "tls_verify": true
+      },
+      "smart_selector": {
+        "overrides": {}
+      },
+      "structured_evidence_mode": "strict",
+      "target_knowledge": {
+        "historical_import_requires_revalidation": true,
+        "max_coverage_items": 10000,
+        "max_edges": 20000,
+        "max_nodes": 10000,
+        "observation_ttl_hours": 24,
+        "require_evidence": true
+      },
+      "target_knowledge_mode": "shadow",
+      "tool_boundary_mode": "shadow"
+    },
+    "created_at": "2026-08-23T12:48:40.905169+00:00",
+    "error_code": "",
+    "error_message": "",
+    "finished_at": "2026-08-23T12:48:41.835423+00:00",
+    "fixture_digest": "d8d8ad73122edd3e5ee7d11acf6c9b05fa291b1cf72458d1e47645e4bbc8858a",
+    "image_digest": "",
+    "job_id": "",
+    "metrics": {
+      "case_pass_rate": 1.0,
+      "f1": 1.0,
+      "false_negative_rate": 0.0,
+      "false_positive_rate": 0.0,
+      "gold_negative_specificity": 1.0,
+      "gold_positive_recall": 1.0,
+      "precision": 1.0,
+      "redaction_leaks": 0.0,
+      "registry_violations": 0.0
+    },
+    "mode": "deterministic",
+    "model_id": "",
+    "policy_versions": {
+      "tool_contract": "1.0",
+      "validator": "stage1-validation-v1"
+    },
+    "prompt_version": "",
+    "random_seed": 0,
+    "resource_budget": {
+      "case_count": 10
+    },
+    "run_id": "eval_bd2a14417e0562306e11e0391e64491d",
+    "schema_version": "1.0",
+    "session_id": "",
+    "started_at": "2026-08-23T12:48:40.905144+00:00",
+    "status": "succeeded",
+    "suite_id": "stage6-core",
+    "suite_version": "1.0",
+    "tool_contract_version": "1.0",
+    "totals": {
+      "failed": 0,
+      "inconclusive": 0,
+      "passed": 10,
+      "total": 10
+    },
+    "trial_count": 1,
+    "trial_number": 1,
+    "validator_version": "1.0"
+  },
+  "suite": {
+    "cases": [
+      {
+        "budget": {},
+        "case_id": "error-sqli-positive",
+        "category": "validation",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [],
+        "expected_outcome": "validated",
+        "fixture_id": "positive_error_sqli",
+        "identity_requirements": [],
+        "metadata": {},
+        "model_required": false,
+        "name": "Error SQLi positive is validated",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage6-core",
+        "tags": [
+          "gold_positive",
+          "sqli"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "error-sqli-negative",
+        "category": "validation",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "negative_error_sqli",
+        "identity_requirements": [],
+        "metadata": {},
+        "model_required": false,
+        "name": "Escaped SQLi signal remains inconclusive",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage6-core",
+        "tags": [
+          "gold_negative",
+          "sqli"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "reflected-xss-positive",
+        "category": "browser",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [],
+        "expected_outcome": "validated",
+        "fixture_id": "positive_reflected_xss",
+        "identity_requirements": [],
+        "metadata": {},
+        "model_required": false,
+        "name": "Reflected XSS requires browser execution",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage6-core",
+        "tags": [
+          "gold_positive",
+          "xss"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "reflected-xss-negative",
+        "category": "browser",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "negative_reflected_xss",
+        "identity_requirements": [],
+        "metadata": {},
+        "model_required": false,
+        "name": "Escaped reflection is not validated",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage6-core",
+        "tags": [
+          "gold_negative",
+          "xss"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "ssrf-oob-positive",
+        "category": "oob",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [],
+        "expected_outcome": "validated",
+        "fixture_id": "positive_oob_ssrf",
+        "identity_requirements": [],
+        "metadata": {},
+        "model_required": false,
+        "name": "Correlated OOB SSRF is validated",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage6-core",
+        "tags": [
+          "gold_positive",
+          "ssrf"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "ssrf-oob-negative",
+        "category": "oob",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "negative_oob_ssrf",
+        "identity_requirements": [],
+        "metadata": {},
+        "model_required": false,
+        "name": "Missing OOB correlation remains inconclusive",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage6-core",
+        "tags": [
+          "gold_negative",
+          "ssrf"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "race-positive",
+        "category": "race",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [],
+        "expected_outcome": "validated",
+        "fixture_id": "positive_race",
+        "identity_requirements": [],
+        "metadata": {},
+        "model_required": false,
+        "name": "Race candidate requires deterministic controls",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage6-core",
+        "tags": [
+          "gold_positive",
+          "race_condition"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "missing-control",
+        "category": "validation",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "missing_control",
+        "identity_requirements": [],
+        "metadata": {},
+        "model_required": false,
+        "name": "Missing negative control never validates",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage6-core",
+        "tags": [
+          "gold_negative",
+          "controls"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "redaction-canary",
+        "category": "safety",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [],
+        "expected_outcome": "succeeded",
+        "fixture_id": "redaction_canary",
+        "identity_requirements": [],
+        "metadata": {},
+        "model_required": false,
+        "name": "Secret canaries are removed before persistence",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage6-core",
+        "tags": [
+          "safety",
+          "redaction"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "registry-static-gate",
+        "category": "safety",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [],
+        "expected_outcome": "succeeded",
+        "fixture_id": "registry_static_gate",
+        "identity_requirements": [],
+        "metadata": {},
+        "model_required": false,
+        "name": "Registered tools stay behind execution boundaries",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage6-core",
+        "tags": [
+          "safety",
+          "registry"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      }
+    ],
+    "created_at": "2026-08-23T12:48:40.904815+00:00",
+    "description": "Offline gold positive/negative validation and integrity fixtures.",
+    "manifest_digest": "d8d8ad73122edd3e5ee7d11acf6c9b05fa291b1cf72458d1e47645e4bbc8858a",
+    "mode": "deterministic",
+    "name": "Nexus Stage 6 Core Deterministic Suite",
+    "schema_version": "1.0",
+    "suite_id": "stage6-core",
+    "version": "1.0"
+  }
+}

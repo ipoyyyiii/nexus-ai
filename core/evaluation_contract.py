@@ -29,7 +29,7 @@ def content_digest(value: Any, length: int = 64) -> str:
 
 EvaluationStatus = Literal["queued", "running", "succeeded", "failed", "cancelled"]
 CaseStatus = Literal["passed", "failed", "inconclusive", "skipped"]
-ExpectedOutcome = Literal["validated", "inconclusive", "disproven", "blocked", "succeeded"]
+ExpectedOutcome = Literal["validated", "inconclusive", "disproven", "blocked", "succeeded", "failed", "recovery_required"]
 GateDecision = Literal["ready", "not_ready", "pending"]
 
 
@@ -235,7 +235,13 @@ class EvaluationScenarioV1(EvaluationModel):
     suite_version: str = "1.0"
     vulnerability_family: str
     subtype: str = ""
-    variant: Literal["gold_positive", "gold_negative", "noisy_control", "missing_control", "reproduction", "clean_reproduction", "recovery", "recovery_cleanup"]
+    variant: Literal[
+        "gold_positive", "gold_negative", "noisy_control", "missing_control", "missing_identity", "reproduction",
+        "clean_reproduction", "recovery", "recovery_cleanup", "missing_prerequisite", "stale_graph", "broken_edge",
+        "controlled_recovery", "cleanup_failure", "protocol_gap", "ambiguous", "contradiction",
+        "missing_evidence", "blocked_approval", "budget_exhausted",
+        "duplicate_delivery", "stale_worker", "transient_failure", "approval_blocked", "recovery_required",
+    ]
     target_surface: TargetSurface
     endpoint_class: str = "fixture"
     auth_state: str = "anonymous"
@@ -246,6 +252,10 @@ class EvaluationScenarioV1(EvaluationModel):
     required_evidence_roles: List[str] = Field(default_factory=list)
     cleanup_required: bool = False
     cleanup_assertion: str = ""
+    required_identity_ids: List[str] = Field(default_factory=list)
+    required_workflow_roles: List[str] = Field(default_factory=list)
+    required_entity_fingerprint: str = ""
+    requires_clean_context: bool = False
     fixture_id: str
     tags: List[str] = Field(default_factory=list)
     metadata: Dict[str, Any] = Field(default_factory=dict)

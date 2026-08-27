@@ -11,6 +11,12 @@ def _run(command_id: str, args=(), *, stdin: str = "", timeout: int = 90, lines:
     try:
         result = _runner.run(command_id, args, stdin=stdin, timeout_seconds=timeout)
         output = "\n".join((result.stdout + result.stderr).splitlines()[:lines])
+        if result.run.status != "succeeded":
+            return (
+                f"error: {command_id} exited with status "
+                f"{result.run.status} (exit_code={result.run.exit_code}).\n"
+                f"{output}"
+            )
         return output or f"exit_code: {result.run.exit_code}"
     except Exception as exc:
         return f"error: {type(exc).__name__}: {exc}"

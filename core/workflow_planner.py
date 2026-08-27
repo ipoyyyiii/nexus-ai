@@ -62,6 +62,30 @@ class WorkflowPlanner:
             "workflow": workflow.to_dict(),
         }
 
+    def reasoning_cycle(self, session_id: str, request: str = "", *, model_actions: Optional[List[Dict[str, Any]]] = None, model_id: str = "", mode: str = "shadow") -> Dict[str, Any]:
+        context, state = self.load(session_id)
+        snapshot = self._snapshot(session_id)
+        context = {**context, "session_id": session_id}
+        result = self.adaptive.build_reasoning_cycle(
+            context, state, snapshot, request, model_actions=model_actions,
+            model_id=model_id, mode=mode,
+        )
+        self.sessions.save_state(session_id, state, phase=state.workflow.phase)
+        return {
+            "session_id": session_id,
+            "cycle": result.cycle.model_dump(mode="json"),
+            "hypotheses": result.hypotheses,
+            "actions": result.actions,
+            "evidence_gaps": result.evidence_gaps,
+            "stop_conditions": result.stop_conditions,
+            "decision": result.decision,
+            "model_traces": result.model_traces,
+            "branches": result.branches,
+            "branch_transitions": result.branch_transitions,
+            "adaptation": result.adaptation,
+            "snapshot": {"digest": snapshot.digest(), "errors": snapshot.errors},
+        }
+
     def _snapshot(self, session_id: str) -> PlanningSnapshot:
         snapshot_errors: List[str] = []
         """Read session-local Stage 1/2 facts; missing additive tables are safe."""

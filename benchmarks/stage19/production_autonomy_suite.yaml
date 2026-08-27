@@ -1,0 +1,26 @@
+suite_id: stage19-production-autonomy
+version: "1.0"
+name: Nexus Stage 19 Production Autonomy and Operator Control
+description: Local-only deterministic lifecycle, fencing, recovery, soak, SLO, and rollback benchmark.
+variants:
+  - gold_positive
+  - gold_negative
+  - duplicate_delivery
+  - stale_worker
+  - transient_failure
+  - approval_blocked
+  - recovery_required
+  - cleanup_failure
+domains:
+  - {family: durable_queue_lifecycle, subtype: enqueue_claim_terminal, category: queue, target_surface: persistence, endpoint_class: workflow_jobs}
+  - {family: atomic_claim_fencing, subtype: skip_locked_zombie_rejection, category: queue, target_surface: persistence, endpoint_class: workflow_job_attempts}
+  - {family: lease_heartbeat_recovery, subtype: expired_lease_checkpoint, category: recovery, target_surface: persistence, endpoint_class: workflow_checkpoints}
+  - {family: duplicate_idempotency, subtype: at_least_once_delivery, category: queue, target_surface: persistence, endpoint_class: idempotency_key}
+  - {family: mutation_unknown_outcome, subtype: no_blind_retry, category: safety, target_surface: safety, endpoint_class: recovery_required}
+  - {family: approval_auth_wait, subtype: lease_release_resume, category: operator_control, target_surface: persistence, endpoint_class: waiting_approval}
+  - {family: cleanup_recovery, subtype: typed_cleanup_visibility, category: recovery, target_surface: persistence, endpoint_class: cleanup_attempts}
+  - {family: resource_budget_circuit, subtype: durable_budget_enforcement, category: safety, target_surface: safety, endpoint_class: resource_budgets}
+  - {family: event_replay_ordering, subtype: monotonic_sequence, category: observability, target_surface: persistence, endpoint_class: workflow_events}
+  - {family: worker_health_soak, subtype: heartbeat_resource_telemetry, category: production, target_surface: persistence, endpoint_class: worker_nodes}
+  - {family: artifact_lifecycle, subtype: private_retention_orphan, category: production, target_surface: persistence, endpoint_class: artifact_store}
+  - {family: rollback_operator_control, subtype: strict_cutover_reversal, category: operator_control, target_surface: safety, endpoint_class: release_gate}

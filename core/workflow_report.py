@@ -1,10 +1,14 @@
 """Evidence-linked workflow report generation."""
 
+import hashlib
+import json
 from typing import Any, Dict
 
 from core.evidence_service import redact
 from core.session_store import SessionStore
+from core.structured_contract import ReportClaimV1, ReportNarrativeV1
 from core.structured_repository import StructuredRepository
+from core.config_loader import get_setting
 
 
 class WorkflowReport:
@@ -20,7 +24,11 @@ class WorkflowReport:
             candidates = structured.list_candidates(session_id)
         except Exception:
             candidates = []
-        validated_candidates = [item for item in candidates if item.get("status") in {"validated", "validated_override"}]
+        validated_candidates = [
+            item for item in candidates
+            if item.get("status") in {"validated", "validated_override"}
+            and bool((item.get("metadata") or {}).get("evidence_ids") or item.get("observation_ids"))
+        ]
         open_candidates = [item for item in candidates if item.get("status") in {"suspected", "validating", "inconclusive"}]
         lines = [
             "# Evidence-Linked Security Workflow Report",
@@ -77,6 +85,11 @@ class WorkflowReport:
         lines.extend(["", "## Chains"])
         for chain in state.workflow.chains:
             lines.append(f"- [{chain.status}] {chain.name}: step {chain.current_step}/{len(chain.step_ids)}")
+            lines.append(f"  - Chain ID: `{chain.chain_id}` version `{getattr(chain, 'chain_version', 1)}`")
+            lines.append(f"  - Validation: `{getattr(chain, 'validation_status', 'inconclusive')}` ({getattr(chain, 'validation_source', 'machine')})")
+            lines.append(f"  - Graph digest: `{getattr(chain, 'graph_digest', '') or 'n/a'}`")
+            lines.append(f"  - Prerequisites: {', '.join(getattr(chain, 'prerequisite_ids', []) or chain.step_ids) or 'none'}")
+            lines.append(f"  - Evidence IDs: {', '.join(getattr(chain, 'evidence_ids', [])) or 'none'}")
         if not state.workflow.chains:
             lines.append("- No chains recorded.")
 
@@ -92,4 +105,57 @@ class WorkflowReport:
         if not state.workflow.retests:
             lines.append("- No retests recorded.")
 
-        return {"session_id": session_id, "markdown": "\n".join(lines), "workflow": state.workflow.to_dict()}
+        markdown = "\n".join(lines)
+        report_seed = {
+            "session_id": session_id,
+            "claims": [
+                {
+                    "candidate_id": item.get("candidate_id"),
+                    "status": item.get("status"),
+                    "evidence_ids": (item.get("metadata") or {}).get("evidence_ids") or item.get("observation_ids") or [],
+                }
+                for item in validated_candidates
+            ],
+            "legacy_findings": [
+                {"finding_id": item.finding_id, "status": item.status, "evidence_ids": list(item.evidence_ids)}
+                for item in state.workflow.findings
+                if item.status in {"validated", "validated_override", "impact_proven"} and item.evidence_ids
+            ],
+        }
+        report_id = f"report_{hashlib.sha256(json.dumps(report_seed, sort_keys=True).encode()).hexdigest()[:32]}"
+        claims = []
+        for finding in validated_candidates:
+            metadata = finding.get("metadata") or {}
+            evidence_ids = list(dict.fromkeys(metadata.get("evidence_ids") or finding.get("observation_ids") or []))
+            override = finding.get("status") == "validated_override"
+            claims.append(ReportClaimV1(
+                report_id=report_id, claim_type="finding",
+                text=f"{redact(finding.get('title', 'Finding'), 500)} ({redact(finding.get('vuln_type', 'unknown'), 200)}) is {finding.get('status')}.",
+                source_candidate_ids=[str(finding.get("candidate_id", ""))], evidence_ids=evidence_ids,
+                policy_versions={"validator": str(metadata.get("validator_version", "")), "policy": str(metadata.get("policy_version", ""))},
+                validated=True, override=override, grounded=bool(evidence_ids),
+            ))
+        for finding in state.workflow.findings:
+            if finding.status not in {"validated", "validated_override", "impact_proven"} or not finding.evidence_ids:
+                continue
+            claims.append(ReportClaimV1(
+                report_id=report_id, claim_type="finding",
+                text=f"{redact(finding.title, 500)} ({redact(finding.vuln_type, 200)}) is {finding.status}.",
+                source_candidate_ids=[finding.source_candidate_id] if finding.source_candidate_id else [],
+                evidence_ids=list(dict.fromkeys(finding.evidence_ids)),
+                validated=True, override=finding.validation_source == "human_override", grounded=True,
+            ))
+        grounded = all(item.grounded for item in claims)
+        source_digest = hashlib.sha256(json.dumps([item.model_dump(mode="json") for item in claims], sort_keys=True).encode()).hexdigest()
+        narrative = ReportNarrativeV1(
+            report_id=report_id, session_id=session_id, target=context["target_url"], objective=context["attack_goal"],
+            status="ready" if str(get_setting("report_intelligence_mode", "shadow")) == "strict" else "shadow",
+            finding_ids=list(dict.fromkeys([item for claim in claims for item in claim.source_candidate_ids] + [item.finding_id for item in state.workflow.findings if item.status in {"validated", "validated_override", "impact_proven"} and item.evidence_ids])),
+            claim_ids=[item.claim_id for item in claims], markdown=markdown,
+            grounding_complete=grounded, redaction_leaks=0, source_digest=source_digest,
+        )
+        return {
+            "session_id": session_id, "markdown": markdown, "workflow": state.workflow.to_dict(),
+            "narrative": narrative.model_dump(mode="json"), "claims": [item.model_dump(mode="json") for item in claims],
+            "grounding_complete": grounded, "redaction_leaks": 0,
+        }

@@ -1,0 +1,20 @@
+suite_id: stage27-recon-closure
+version: "1.0"
+name: Nexus Stage 27 Recon Intelligence Synthesis and Coverage Closure
+description: >-
+  Local deterministic benchmark for cross-lane recon synthesis, freshness,
+  contradiction visibility, provenance, coverage prioritization, and replay.
+  It is observation-only and never creates a vulnerability finding.
+domains:
+  - {family: perimeter-lane, subtype: dns-certificate-waf-provider-correlation}
+  - {family: surface-lane, subtype: endpoint-parameter-schema-protocol-correlation}
+  - {family: technology-lane, subtype: independent-signal-capability-correlation}
+  - {family: application-contract-lane, subtype: operation-input-flow-correlation}
+  - {family: identity-workflow-lane, subtype: auth-session-prerequisite-correlation}
+  - {family: cross-lane-deduplication, subtype: stable-reference-and-fingerprint-merge}
+  - {family: freshness-boundary, subtype: historical-and-stale-revalidation}
+  - {family: contradiction-visibility, subtype: conflicting-observation-preservation}
+  - {family: provenance-completeness, subtype: evidence-and-source-linkage}
+  - {family: coverage-prioritization, subtype: gap-priority-and-information-gain}
+  - {family: scope-and-redaction, subtype: external-and-secret-exclusion}
+  - {family: replay-and-stop, subtype: deterministic-plan-and-no-information-gain}

@@ -1,0 +1,33 @@
+suite_id: stage26-identity-workflow
+version: "1.0"
+name: Nexus Stage 26 Identity, Session and Workflow Intelligence
+description: >-
+  Local-only deterministic benchmark for passive authentication-surface
+  discovery, session lifecycle mapping, identity isolation, workflow state
+  prerequisites, ambiguity handling, scope enforcement, and redaction.
+  It never authenticates to an external target and never creates a finding.
+domains:
+  - family: login-and-registration
+    subtype: login_register_identity_binding
+  - family: logout-and-invalidation
+    subtype: logout_revoke_session_invalidation
+  - family: session-lifecycle
+    subtype: creation_rotation_refresh_expiry
+  - family: oauth-oidc
+    subtype: authorize_callback_issuer_audience
+  - family: pkce
+    subtype: challenge_verifier_binding_without_secret_persistence
+  - family: mfa
+    subtype: factor_and_recovery_step_mapping
+  - family: identity-isolation
+    subtype: owner_non_owner_clean_context_matrix
+  - family: tenant-and-role
+    subtype: tenant_role_trust_boundary_mapping
+  - family: workflow-prerequisites
+    subtype: auth_entity_role_tenant_state_requirements
+  - family: workflow-state-graph
+    subtype: prerequisite_transition_and_stop_state
+  - family: stale-and-contradictory
+    subtype: stale_session_ambiguity_inconclusive
+  - family: redaction-and-scope
+    subtype: secret_external_redirect_and_provider_exclusion

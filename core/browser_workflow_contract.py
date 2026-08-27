@@ -141,6 +141,20 @@ class BrowserWorkflowV1(BrowserContract):
     status: BrowserWorkflowStatus = "draft"
     version: int = 1
     identity_requirements: List[str] = Field(default_factory=list)
+    # Stage 26 identity/session/workflow intelligence. These are planning
+    # requirements, not proof that the target accepted an authorization.
+    workflow_class: Literal[
+        "navigation", "authentication", "resource", "approval",
+        "checkout", "upload", "role_change", "reset", "state_transition",
+        "unknown",
+    ] = "unknown"
+    required_role_labels: List[str] = Field(default_factory=list)
+    required_tenant_labels: List[str] = Field(default_factory=list)
+    required_entity_fingerprints: List[str] = Field(default_factory=list)
+    state_graph: Dict[str, List[str]] = Field(default_factory=dict)
+    auth_surface_ids: List[str] = Field(default_factory=list)
+    prerequisite_ids: List[str] = Field(default_factory=list)
+    ambiguity_reasons: List[str] = Field(default_factory=list)
     input_schema: Dict[str, Any] = Field(default_factory=dict)
     steps: List[BrowserStepV1] = Field(default_factory=list)
     preconditions: List[WorkflowCondition] = Field(default_factory=list)
@@ -169,6 +183,11 @@ class BrowserWorkflowV1(BrowserContract):
                     }
                     for step in self.steps
                 ],
+                "workflow_class": self.workflow_class,
+                "identity_requirements": sorted(self.identity_requirements),
+                "required_role_labels": sorted(self.required_role_labels),
+                "required_tenant_labels": sorted(self.required_tenant_labels),
+                "state_graph": self.state_graph,
             })
         return self
 
@@ -184,6 +203,10 @@ class BrowserStateSnapshotV1(BrowserContract):
     session_id: str = ""
     run_id: str = ""
     step_run_id: str = ""
+    identity_id: str = ""
+    graph_id: str = ""
+    tenant_label: str = ""
+    state_digest: str = ""
     url: str = ""
     title: str = ""
     dom_hash: str = ""
@@ -236,6 +259,10 @@ class BrowserRunV1(BrowserContract):
     approval_digest: str = ""
     approval_expires_at: Optional[str] = None
     parent_run_id: str = ""
+    graph_id: str = ""
+    matrix_id: str = ""
+    entity_fingerprints: List[str] = Field(default_factory=list)
+    clean_context: bool = False
     checkpoint_snapshot_id: str = ""
     state_digest: str = ""
     cleanup_refs: List[str] = Field(default_factory=list)
@@ -251,6 +278,44 @@ class BrowserRunV1(BrowserContract):
         return redact(str(value or ""))
 
 
+class WorkflowRunMatrixV1(BrowserContract):
+    """A deterministic set of the same workflow executed per identity/role."""
+
+    matrix_id: str = Field(default_factory=lambda: _id("matrix"))
+    session_id: str
+    workflow_id: str
+    workflow_version: int
+    graph_id: str = ""
+    entity_fingerprint: str = ""
+    run_roles: Dict[str, str] = Field(default_factory=dict)
+    identity_ids: List[str] = Field(default_factory=list)
+    auth_context_ids: List[str] = Field(default_factory=list)
+    required_roles: List[str] = Field(default_factory=lambda: ["baseline", "negative_control", "test", "reproduction"])
+    cleanup_required: bool = False
+    cleanup_verified: bool = False
+    approval_digest: str = ""
+    status: Literal["planned", "ready", "blocked", "running", "partial", "succeeded", "failed", "inconclusive"] = "planned"
+    missing_requirements: List[str] = Field(default_factory=list)
+    run_ids: List[str] = Field(default_factory=list)
+    digest: str = ""
+    created_at: str = Field(default_factory=now_iso)
+
+    def ensure_digest(self) -> "WorkflowRunMatrixV1":
+        if not self.digest:
+            self.digest = _fingerprint({
+                "session_id": self.session_id,
+                "workflow_id": self.workflow_id,
+                "workflow_version": self.workflow_version,
+                "graph_id": self.graph_id,
+                "entity_fingerprint": self.entity_fingerprint,
+                "run_roles": self.run_roles,
+                "identity_ids": sorted(self.identity_ids),
+                "auth_context_ids": sorted(self.auth_context_ids),
+                "required_roles": sorted(self.required_roles),
+            })
+        return self
+
+
 class BusinessEntityV1(BrowserContract):
     entity_id: str = Field(default_factory=lambda: _id("entity"))
     session_id: str
@@ -260,6 +325,9 @@ class BusinessEntityV1(BrowserContract):
     owner_identity_id: str = ""
     tenant_label: str = ""
     fields_redacted: Dict[str, Any] = Field(default_factory=dict)
+    state_digest: str = ""
+    graph_id: str = ""
+    identity_ids: List[str] = Field(default_factory=list)
     source_snapshot_ids: List[str] = Field(default_factory=list)
     source_observation_ids: List[str] = Field(default_factory=list)
     created_at: str = Field(default_factory=now_iso)
@@ -279,6 +347,11 @@ class BusinessStateTransitionV1(BrowserContract):
     transition_id: str = Field(default_factory=lambda: _id("transition"))
     session_id: str
     entity_id: str = ""
+    entity_fingerprint: str = ""
+    identity_id: str = ""
+    tenant_label: str = ""
+    graph_id: str = ""
+    clean_context: bool = False
     action: str
     before_snapshot_id: str
     after_snapshot_id: str
@@ -288,6 +361,7 @@ class BusinessStateTransitionV1(BrowserContract):
     observation_ids: List[str] = Field(default_factory=list)
     artifact_ids: List[str] = Field(default_factory=list)
     side_effects: List[Dict[str, Any]] = Field(default_factory=list)
+    state_digest: str = ""
     created_at: str = Field(default_factory=now_iso)
 
 
@@ -302,6 +376,13 @@ class BusinessInvariantV1(BrowserContract):
     rule: Dict[str, Any] = Field(default_factory=dict)
     required_workflow_ids: List[str] = Field(default_factory=list)
     required_identity_ids: List[str] = Field(default_factory=list)
+    required_role_labels: List[str] = Field(default_factory=list)
+    required_tenant_labels: List[str] = Field(default_factory=list)
+    required_entity_fingerprints: List[str] = Field(default_factory=list)
+    graph_id: str = ""
+    workflow_matrix_id: str = ""
+    compiler_version: str = "1.1"
+    compiled: bool = False
     source_observation_ids: List[str] = Field(default_factory=list)
     revision: int = 1
     created_at: str = Field(default_factory=now_iso)
@@ -336,6 +417,11 @@ class InvariantEvaluationV1(BrowserContract):
     evidence_ids: List[str] = Field(default_factory=list)
     run_ids: List[str] = Field(default_factory=list)
     candidate_id: str = ""
+    graph_id: str = ""
+    workflow_matrix_id: str = ""
+    compiler_version: str = "1.1"
+    input_digest: str = ""
+    cleanup_status: str = "unknown"
     created_at: str = Field(default_factory=now_iso)
 
     @field_validator("score")
@@ -347,4 +433,3 @@ class InvariantEvaluationV1(BrowserContract):
     @classmethod
     def redact_reason(cls, value: Any) -> str:
         return redact(str(value or ""))
-

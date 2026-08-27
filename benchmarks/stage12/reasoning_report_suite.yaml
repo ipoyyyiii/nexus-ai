@@ -1,0 +1,17 @@
+suite_id: stage12-reasoning-report
+name: Nexus Stage 12 Autonomous Reasoning and Report Intelligence
+version: "1.0"
+description: Local-only deterministic benchmark for bounded reasoning, evidence gaps, model safety, and report claim grounding.
+domains:
+  - {family: hypothesis_prioritization, subtype: information_gain, target_surface: api, endpoint_class: authenticated_api, protocol: http}
+  - {family: evidence_gap_detection, subtype: missing_controls, target_surface: persistence, endpoint_class: evidence_store, protocol: http}
+  - {family: contradiction_handling, subtype: conflicting_observations, target_surface: api, endpoint_class: noisy_api, protocol: http}
+  - {family: stop_condition, subtype: budget_and_deadline, target_surface: safety, endpoint_class: bounded_job, protocol: http}
+  - {family: alternative_workflow, subtype: fallback_capability, target_surface: browser, endpoint_class: stateful_workflow, protocol: browser}
+  - {family: payload_exploration, subtype: harmless_encoding, target_surface: api, endpoint_class: parameterized_api, protocol: http}
+  - {family: prompt_injection, subtype: untrusted_target_content, target_surface: api, endpoint_class: response_body, protocol: http}
+  - {family: report_claim_grounding, subtype: finding_evidence_mapping, target_surface: persistence, endpoint_class: report_store, protocol: http}
+  - {family: chain_reasoning, subtype: validated_prerequisites, target_surface: api, endpoint_class: multi_endpoint, protocol: http}
+  - {family: identity_context, subtype: cross_identity_reasoning, target_surface: api, endpoint_class: tenant_api, protocol: oauth}
+  - {family: recovery_reasoning, subtype: stale_checkpoint, target_surface: persistence, endpoint_class: durable_job, protocol: http}
+  - {family: remediation_context, subtype: structured_fix_guidance, target_surface: api, endpoint_class: validated_finding, protocol: http}

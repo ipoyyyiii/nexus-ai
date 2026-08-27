@@ -9,6 +9,12 @@ from typing import Any, Callable
 from core.structured_contract import ToolResultV1, result_from_legacy
 
 
+_MODERN_PROTOCOL_METADATA = {
+    "graphql_tester": {"protocol": "graphql", "parser_context": "graphql"},
+    "oauth_flow_tester": {"protocol": "oauth", "parser_context": "form"},
+}
+
+
 def _target(args: tuple[Any, ...], kwargs: dict[str, Any]) -> str:
     for key in ("url", "target", "target_url", "login_url"):
         value = kwargs.get(key)
@@ -26,7 +32,25 @@ def _typed_function(fn: Callable[..., Any], public_name: str) -> Callable[..., T
         output = fn(*args, **kwargs)
         if isinstance(output, ToolResultV1):
             return output
-        return result_from_legacy(public_name, _target(args, kwargs), output)
+        result = result_from_legacy(public_name, _target(args, kwargs), output)
+        protocol_metadata = _MODERN_PROTOCOL_METADATA.get(public_name)
+        if protocol_metadata:
+            observations = [
+                item.model_copy(update={"metadata": {**item.metadata, **protocol_metadata}})
+                for item in result.observations
+            ]
+            candidates = [
+                item.model_copy(update={"metadata": {**item.metadata, **protocol_metadata}})
+                for item in result.candidate_findings
+            ]
+            result = result.model_copy(
+                update={
+                    "category": "protocol_surface",
+                    "observations": observations,
+                    "candidate_findings": candidates,
+                }
+            )
+        return result
 
     return invoke
 

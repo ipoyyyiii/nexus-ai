@@ -1,0 +1,101 @@
+suite_id: stage11-modern-chain
+name: Nexus Stage 11 Modern Web/API Chains
+version: "1.0"
+description: Local-only deterministic benchmark for evidence-linked exploit chains and modern protocol surfaces.
+domains:
+  - family: auth_to_sensitive_api
+    subtype: session_or_oauth_to_api
+    category: chain
+    target_surface: api
+    endpoint_class: authenticated_api
+    protocol: oauth
+    identity: anonymous_user_admin
+    tenant: tenant_a
+  - family: jwt_to_privileged_action
+    subtype: token_lifecycle_to_action
+    category: chain
+    target_surface: api
+    endpoint_class: privileged_api
+    protocol: oidc
+    identity: user_admin
+    tenant: tenant_a
+  - family: idor_to_cross_tenant_impact
+    subtype: object_access_to_action
+    category: authorization
+    target_surface: api
+    endpoint_class: tenant_api
+    protocol: http
+    identity: owner_non_owner
+    tenant: tenant_a_tenant_b
+  - family: graphql_to_privileged_resolver
+    subtype: resolver_authorization_chain
+    category: protocol_chain
+    target_surface: api
+    endpoint_class: graphql
+    protocol: graphql
+    identity: user_admin
+    tenant: tenant_a
+  - family: browser_role_to_state_change
+    subtype: workflow_role_boundary
+    category: browser_chain
+    target_surface: browser
+    endpoint_class: approval_workflow
+    protocol: browser
+    identity: requester_approver
+    tenant: tenant_a
+  - family: upload_to_async_processor
+    subtype: upload_webhook_job
+    category: async_chain
+    target_surface: api
+    endpoint_class: upload_job
+    protocol: async_job
+    identity: user_service
+    tenant: tenant_a
+  - family: websocket_to_protected_event
+    subtype: websocket_auth_boundary
+    category: protocol_chain
+    target_surface: api
+    endpoint_class: websocket
+    protocol: websocket
+    identity: user_admin
+    tenant: tenant_a
+  - family: sse_to_protected_event
+    subtype: sse_auth_boundary
+    category: protocol_chain
+    target_surface: api
+    endpoint_class: sse
+    protocol: sse
+    identity: user_admin
+    tenant: tenant_a
+  - family: grpc_web_to_sensitive_method
+    subtype: grpc_web_auth_boundary
+    category: protocol_chain
+    target_surface: api
+    endpoint_class: grpc_web
+    protocol: grpc_web
+    identity: user_admin
+    tenant: tenant_a
+  - family: cache_gateway_to_cross_endpoint
+    subtype: cache_variant_impact
+    category: modern_web
+    target_surface: api
+    endpoint_class: gateway_cache
+    protocol: cache
+    identity: user_clean_session
+    tenant: tenant_a
+  - family: webhook_to_business_transition
+    subtype: callback_to_state_transition
+    category: async_chain
+    target_surface: api
+    endpoint_class: webhook
+    protocol: webhook
+    identity: service_user
+    tenant: tenant_a
+  - family: multi_finding_to_approved_objective
+    subtype: controlled_impact_proof
+    category: impact
+    target_surface: api
+    endpoint_class: test_owned_objective
+    protocol: http
+    identity: owner_non_owner
+    tenant: tenant_a_tenant_b

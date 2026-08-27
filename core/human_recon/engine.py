@@ -7,6 +7,7 @@ from urllib.parse import urljoin, urlparse
 
 from core.human_recon.page_snapshot import PageSnapshot
 from core.human_recon.planner import llm_next, heuristic_next
+from core.redact import redact
 
 
 def _normalize(u: str) -> str:
@@ -73,7 +74,7 @@ class HumanReconEngine:
 
         async def _crawl():
             browser = await _get_browser()
-            page, ctx = await _new_page(browser)
+            page, ctx = await _new_page(browser, origin=self.target)
             captured: List[Dict[str, Any]] = []
 
             def on_req(req):
@@ -99,7 +100,19 @@ class HumanReconEngine:
                 try:
                     from engines.stealth_engine import stealth
                     headers = stealth.get_browser_headers(url, is_api=False)
-                    await page.set_extra_http_headers({k: v for k, v in headers.items() if k.lower() not in ("user-agent",)})
+                    # Playwright already generates correct browser-controlled
+                    # headers (Sec-Fetch-*, Accept-Encoding, Connection, and
+                    # User-Agent). Replaying those values as synthetic extra
+                    # headers can make modern SPAs serve only their shell or
+                    # reject bootstrap/API requests. Keep only headers that
+                    # are safe to override at page level.
+                    safe_headers = {
+                        key: value
+                        for key, value in headers.items()
+                        if key.lower() in {"accept-language", "referer"}
+                    }
+                    if safe_headers:
+                        await page.set_extra_http_headers(safe_headers)
                     stealth.add_jitter(0.3, 0.8)
                 except Exception:
                     pass
@@ -111,8 +124,18 @@ class HumanReconEngine:
                     except Exception:
                         pass
                 try:
-                    await page.goto(url, wait_until="domcontentloaded")
-                    await page.wait_for_timeout(1500)
+                    # Modern SPAs often expose their actual routes, controls,
+                    # and API calls only after the bootstrap bundle settles.
+                    # Prefer network-idle, but keep a bounded fallback for
+                    # targets with long-polling or analytics requests.
+                    await page.goto(url, wait_until="networkidle", timeout=20000)
+                except Exception:
+                    try:
+                        await page.wait_for_load_state("domcontentloaded", timeout=5000)
+                    except Exception:
+                        pass
+                try:
+                    await page.wait_for_timeout(1000)
                     if await page.locator('[data-captcha], #captcha, [id*="captcha" i]').count() > 0:
                         self.interaction_log.append({"type": "pause", "url": url, "reason": "captcha detected"})
                         break
@@ -151,6 +174,20 @@ class HumanReconEngine:
                     if _normalize(nxt_url) not in self.visited:
                         self.frontier.append({"url": nxt_url, "depth": depth + 1, "reason": nxt.get("reason","")})
                 elif t == "click" and nxt.get("selector"):
+                    click_text = " ".join(str(nxt.get(key, "")) for key in ("reason", "text", "label")).lower()
+                    mutation_words = (
+                        "submit", "delete", "remove", "logout", "checkout", "purchase",
+                        "invite", "approve", "reject", "upload", "change password",
+                        "reset password", "role", "transfer", "create", "update",
+                    )
+                    if nxt.get("risk") in {"mutation", "high_risk"} or any(word in click_text for word in mutation_words):
+                        self.interaction_log.append({
+                            "type": "pause",
+                            "url": redact(url),
+                            "reason": "state-changing browser action requires approval",
+                            "action": "click",
+                        })
+                        continue
                     try:
                         await page.click(nxt["selector"], timeout=4000)
                         await page.wait_for_timeout(2000)
@@ -160,16 +197,15 @@ class HumanReconEngine:
                     except Exception as e:
                         self.interaction_log.append({"type": "click_fail", "selector": nxt["selector"], "error": str(e)[:150]})
                 elif t == "fill_form" and nxt.get("form_data"):
-                    try:
-                        for sel, val in (nxt.get("form_data") or {}).items():
-                            try:
-                                await page.fill(sel, str(val)[:100])
-                            except Exception:
-                                pass
-                        await page.keyboard.press("Enter")
-                        await page.wait_for_timeout(2000)
-                    except Exception:
-                        pass
+                    # Recon-only is observation-only.  Form filling and
+                    # pressing Enter can submit mutations, even when the
+                    # model describes it as exploration.
+                    self.interaction_log.append({
+                        "type": "pause",
+                        "url": redact(url),
+                        "reason": "form interaction requires explicit workflow approval",
+                        "action": "fill_form",
+                    })
                 elif t == "scroll":
                     await page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
                     await page.wait_for_timeout(1000)

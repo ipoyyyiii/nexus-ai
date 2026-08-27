@@ -119,3 +119,4 @@ from tools.hunter_pipeline import httpx_probe, naabu_scan, gowitness_shot, gau_u
 
 # ── Stateful browser and business logic ─────────────────────────────────────
 from tools.browser_workflow_tools import browser_workflow_discovery, stateful_browser_workflow, business_invariant_evaluator
+from tools.modern_protocol_tools import normalize_protocol_capture

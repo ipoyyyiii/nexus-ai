@@ -1,0 +1,21 @@
+suite_id: stage17-modern-detection
+name: Nexus Stage 17 Detection Depth and Native Modern Protocols
+version: "1.0"
+description: Local deterministic benchmark for semantic detection and modern web/API protocol validation.
+domains:
+  - {family: parser-context, subtype: json-form-multipart, protocol: http, target_surface: api, endpoint_class: typed_input}
+  - {family: semantic-comparison, subtype: noisy-response, protocol: http, target_surface: api, endpoint_class: differential}
+  - {family: graphql-schema, subtype: introspection-authorization, protocol: graphql, target_surface: api, endpoint_class: graphql_endpoint}
+  - {family: graphql-query-abuse, subtype: batch-depth-alias, protocol: graphql, target_surface: api, endpoint_class: graphql_endpoint}
+  - {family: websocket-authorization, subtype: handshake-message-tenant, protocol: websocket, target_surface: browser, endpoint_class: websocket_endpoint}
+  - {family: sse-access-control, subtype: stream-event-filtering, protocol: sse, target_surface: browser, endpoint_class: event_stream}
+  - {family: grpc-web-authorization, subtype: method-frame-metadata, protocol: grpc_web, target_surface: api, endpoint_class: grpc_web_endpoint}
+  - {family: oauth-oidc-lifecycle, subtype: state-pkce-redirect-replay, protocol: oauth, target_surface: api, endpoint_class: authorization_flow}
+  - {family: jwt-signed-url, subtype: claim-expiry-binding, protocol: oidc, target_surface: api, endpoint_class: tokenized_resource}
+  - {family: webhook-replay, subtype: signature-freshness-tenant, protocol: webhook, target_surface: api, endpoint_class: callback_endpoint}
+  - {family: async-job, subtype: ownership-idempotency-replay, protocol: async_job, target_surface: api, endpoint_class: job_endpoint}
+  - {family: gateway-normalization, subtype: origin-path-method, protocol: http, target_surface: api, endpoint_class: gateway}
+  - {family: cache-identity-separation, subtype: key-vary-invalidation, protocol: cache, target_surface: api, endpoint_class: cached_endpoint}
+  - {family: upload-pipeline, subtype: parser-storage-retrieval, protocol: http, target_surface: browser, endpoint_class: multipart_upload}
+  - {family: schema-type-confusion, subtype: field-and-type-binding, protocol: http, target_surface: api, endpoint_class: typed_schema}
+  - {family: evidence-scope-cleanup, subtype: replay-redaction-boundary, protocol: http, target_surface: persistence, endpoint_class: evidence_store}

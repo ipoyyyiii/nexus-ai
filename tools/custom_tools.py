@@ -769,9 +769,12 @@ def analyze_ssl_tls(domain: str) -> str:
     try:
         exec_logger.add_log(tool_name, "PROCESSING", "Connecting to server and extracting certificate")
         
+        # Certificate inspection must use the same verified TLS policy as the
+        # guarded HTTP path.  A tool-level ``verify=False`` would turn a
+        # transport observation into an unsafe policy bypass.
         context = ssl.create_default_context()
-        context.check_hostname = False
-        context.verify_mode = ssl.CERT_NONE
+        context.check_hostname = True
+        context.verify_mode = ssl.CERT_REQUIRED
         
         with socket.create_connection((domain, 443), timeout=5) as sock:
             with context.wrap_socket(sock, server_hostname=domain) as ssock:
@@ -855,7 +858,7 @@ def analyze_ssl_tls(domain: str) -> str:
         try:
             from core.tool_transport import guarded_requests as requests
             rate_limiter.wait(domain)
-            resp = requests.get(f"https://{domain}", timeout=5, verify=False, allow_redirects=False)
+            resp = requests.get(f"https://{domain}", timeout=5, verify=True, allow_redirects=False)
             hsts = resp.headers.get('Strict-Transport-Security', '')
             if not hsts:
                 findings["vulnerabilities"].append({
@@ -894,34 +897,44 @@ def enumerate_dns_subdomains(domain: str) -> str:
         dns_records = {
             "domain": domain,
             "A_records": [],
+            "AAAA_records": [],
+            "CNAME_records": [],
             "MX_records": [],
             "NS_records": [],
             "TXT_records": [],
+            "SRV_records": [],
+            "wildcard": {"detected": False, "control_host": "", "addresses": []},
             "subdomains": []
         }
-        
+
+        for record_type, field in (
+            ("A", "A_records"), ("AAAA", "AAAA_records"),
+            ("CNAME", "CNAME_records"), ("MX", "MX_records"),
+            ("NS", "NS_records"), ("TXT", "TXT_records"),
+            ("SRV", "SRV_records"),
+        ):
+            try:
+                answers = dns.resolver.resolve(domain, record_type)
+                dns_records[field] = sorted({str(rdata).rstrip(".") for rdata in answers})
+                exec_logger.add_log(tool_name, "SUCCESS", f"{record_type} records found: {len(dns_records[field])}")
+            except Exception:
+                exec_logger.add_log(tool_name, "WARNING", f"Could not resolve {record_type} records")
+
+        # A random control label distinguishes a real wildcard from a normal
+        # NXDOMAIN response.  This is a DNS observation only; it does not
+        # trigger HTTP requests or expand the execution scope.
         try:
-            # A Records
-            answers = dns.resolver.resolve(domain, 'A')
-            dns_records["A_records"] = [str(rdata) for rdata in answers]
-            exec_logger.add_log(tool_name, "SUCCESS", f"A records found: {len(dns_records['A_records'])}")
-        except:
-            exec_logger.add_log(tool_name, "WARNING", "Could not resolve A records")
-        
-        try:
-            # MX Records
-            answers = dns.resolver.resolve(domain, 'MX')
-            dns_records["MX_records"] = [str(rdata) for rdata in answers]
-            exec_logger.add_log(tool_name, "SUCCESS", f"MX records found: {len(dns_records['MX_records'])}")
-        except:
-            pass
-        
-        try:
-            # NS Records
-            answers = dns.resolver.resolve(domain, 'NS')
-            dns_records["NS_records"] = [str(rdata) for rdata in answers]
-            exec_logger.add_log(tool_name, "SUCCESS", f"NS records found: {len(dns_records['NS_records'])}")
-        except:
+            import hashlib
+            control = f"nexus-wildcard-{hashlib.sha256(domain.encode()).hexdigest()[:12]}.{domain}"
+            answers = dns.resolver.resolve(control, "A")
+            addresses = sorted({str(rdata) for rdata in answers})
+            if addresses and addresses != dns_records["A_records"]:
+                dns_records["wildcard"] = {
+                    "detected": True,
+                    "control_host": control,
+                    "addresses": addresses,
+                }
+        except Exception:
             pass
         
         # Common subdomains brute force

@@ -1,0 +1,25 @@
+schema_version: "1.0"
+base_images:
+  backend: python:3.11-slim@sha256:ff05d1a05204fb9f7444c435db8e8ec104e587a413280dc9ffc27a4797554182
+  frontend: node:20-alpine@sha256:afdf98210b07b586eb71fa22ba2e432e058e4cd1304d31ed60888755b8c865fb
+source_pins:
+  sqlmap: cef41c7fa2211434d5694e4338c4e3e443434133
+  commix: 8530a48964007cb9561da47d45f396d9aef38ced
+  tplmap: 616b0e527f62dd0930e6346ede6bef79e9bcf717
+  testssl: 1283aff3d49763dffe20bd47c664308c6ec076cf
+  graphql-cop: 2b7e086efae672f28b419c7fcdfe6b48d846c9dc
+  SecLists: e9d6a61ead7193f05a16194252115da4abb33c0e
+  hakrawler: 61905593d82e8bac87ff7a7cca32b2adde42bb60
+release_binaries:
+  nuclei: "3.1.0"
+  dalfox: "3.1.2"
+  gobuster: "3.6.0"
+  ffuf: "2.1.0"
+  katana: "1.1.0"
+  subfinder: "2.6.3"
+  httpx: "1.6.0"
+  naabu: "2.3.1"
+  gowitness: "2.4.2"
+  gau: "2.2.4"
+  hakrawler: "2.1"
+  amass: "4.2.0"

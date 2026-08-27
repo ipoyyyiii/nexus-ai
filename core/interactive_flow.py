@@ -10,6 +10,7 @@ Architecture:
 """
 
 from datetime import datetime
+import json
 from typing import Dict, List, Any, Optional
 from crewai import Agent, Task, Crew
 from core.target_state import TargetState, create_target_state, get_target_state
@@ -272,6 +273,65 @@ def build_phase3_agent(target: str, all_results: dict, target_state: TargetState
     return agent, task, "Risk Assessment"
 
 
+def _run_approved_recon_action(
+    *,
+    action_tools: Optional[List[str]],
+    target: str,
+    goal: str,
+    session_id: str,
+    job_id: str,
+) -> Optional[str]:
+    """Execute the canonical recon mission through the typed boundary.
+
+    The old implementation only dispatched ``human_recon_crawl``.  A model
+    narrative is not proof of execution, so recon-only now uses the
+    deterministic multi-lane coordinator.  Explicit planner selections are
+    accepted only when every selected name is a registered recon capability.
+    """
+    if not action_tools:
+        return None
+
+    from core.recon_orchestrator import RECON_MISSION_SENTINEL, ReconOrchestrator, recon_tool_names
+    from api import session_store, structured_repository
+
+    requested = list(action_tools)
+    selected_tools = None if requested == [RECON_MISSION_SENTINEL] else requested
+    if selected_tools is not None and not set(selected_tools).issubset(set(recon_tool_names())):
+        return None
+
+    mission = ReconOrchestrator(
+        session_store=session_store,
+        repository=structured_repository,
+    )
+    result = mission.execute(
+        target,
+        session_id,
+        goal=goal,
+        job_id=job_id,
+        selected_tools=selected_tools,
+    )
+    return json.dumps(result, ensure_ascii=False, sort_keys=True, default=str)
+
+
+def _select_recon_action_tools(
+    recommended_tools: Optional[List[str]],
+    scan_preset: str,
+) -> Optional[List[str]]:
+    """Choose the bounded read-only recon dispatch path.
+
+    A model may suggest a tool, but a narrative response is never treated as
+    proof that the tool ran.  For the explicit recon-only preset, use the
+    canonical deterministic crawler when the planner did not provide an
+    alternative.  This keeps local discovery reliable even when a provider
+    cannot emit CrewAI's textual tool-call protocol.
+    """
+    if recommended_tools is not None:
+        return list(recommended_tools)
+    if scan_preset == "recon-only":
+        return ["__recon_mission__"]
+    return None
+
+
 def run_phase1(job_id: str, session_id: str, target: str, goal: str,
                  memory_context: str, llm_recon, llm_analis, 
                  all_results: dict, all_reports: list,
@@ -304,15 +364,42 @@ def run_phase1(job_id: str, session_id: str, target: str, goal: str,
         update_job(job_id, status="running", message=f"Phase 1 - Data Gathering: {display_name}...")
         
         try:
-            crew = Crew(agents=[agent], tasks=[task], verbose=True)
-            result = crew.kickoff()
-            result_str = str(result)
+            direct_result = _run_approved_recon_action(
+                action_tools=(
+                    _select_recon_action_tools(recommended_tools, scan_preset)
+                    if phase_name == "recon"
+                    else None
+                ),
+                target=target,
+                goal=goal,
+                session_id=session_id,
+                job_id=job_id,
+            )
+            if direct_result is not None:
+                result_str = direct_result
+            else:
+                crew = Crew(agents=[agent], tasks=[task], verbose=True)
+                result = crew.kickoff()
+                result_str = str(result)
             all_results[phase_name] = result_str
-            if result_handler:
+            # Recon-only already persists authoritative structured tool runs
+            # and the knowledge graph.  Persisting the entire coordinator
+            # JSON again as a phase narrative is redundant and can create a
+            # very large Supabase write; narrative persistence remains for
+            # the legacy full workflow only.
+            if result_handler and scan_preset != "recon-only":
                 result_handler(phase_name, result_str, job_id)
             all_reports.append(f"## Phase: {display_name}\n\n{result_str}")
-            save_message(session_id, "agent", f"[Phase 1 - {display_name} Complete]\n\n{result_str[:8000]}")
+            print(f"[PHASE1] {phase_name} result assembled", flush=True)
+            # Recon-only is an authoritative structured mission.  Persisting
+            # its full coordinator JSON as a chat message is redundant and
+            # can block finalization on a large database write.  The typed
+            # tool runs and knowledge graph are the source of truth.
+            if scan_preset != "recon-only":
+                save_message(session_id, "agent", f"[Phase 1 - {display_name} Complete]\n\n{result_str[:8000]}")
+                print(f"[PHASE1] {phase_name} message persisted", flush=True)
             update_job(job_id, message=f"Phase 1 - {display_name} complete")
+            print(f"[PHASE1] {phase_name} job marker persisted", flush=True)
             
             # Update Target State
             if phase_name == "recon":
@@ -325,7 +412,9 @@ def run_phase1(job_id: str, session_id: str, target: str, goal: str,
             target_state.workflow.record_event("phase_result", phase=workflow_phase, job_id=job_id)
             try:
                 from api import session_store
+                print(f"[PHASE1] {phase_name} state persistence begin", flush=True)
                 session_store.save_state(session_id, target_state, phase=workflow_phase)
+                print(f"[PHASE1] {phase_name} state persistence complete", flush=True)
             except Exception as persist_err:
                 update_job(job_id, message=f"Workflow state persistence warning: {persist_err}")
                 

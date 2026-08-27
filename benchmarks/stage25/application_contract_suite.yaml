@@ -1,0 +1,33 @@
+suite_id: stage25-application-contract
+version: "1.0"
+name: Nexus Stage 25 Application Contract and Data-Flow Intelligence
+description: >-
+  Local-only deterministic benchmark for semantic API operation mapping,
+  input classification, schema linkage, auth/side-effect hints, contradiction
+  visibility, provenance, and bounded capability planning. It never contacts
+  an external target and never produces a vulnerability finding.
+domains:
+  - family: crud-operation-semantics
+    subtype: read_create_update_delete_operation_kinds
+  - family: auth-session-operation-map
+    subtype: login_logout_token_and_authenticated_routes
+  - family: tenant-identity-inputs
+    subtype: owner_actor_user_tenant_and_org_fields
+  - family: state-transition-inputs
+    subtype: status_action_approval_and_workflow_fields
+  - family: monetary-business-inputs
+    subtype: price_amount_total_balance_coupon_quantity
+  - family: identifier-resource-inputs
+    subtype: id_uuid_slug_object_and_resource_identity
+  - family: redirect-callback-inputs
+    subtype: redirect_uri_return_url_next_callback
+  - family: upload-file-contract
+    subtype: multipart_file_attachment_and_upload_operations
+  - family: schema-operation-linkage
+    subtype: openapi_swagger_graphql_operation_binding
+  - family: auth-and-side-effect-confidence
+    subtype: anonymous_authenticated_and_mutation_prerequisites
+  - family: contradiction-and-ambiguity
+    subtype: conflicting_auth_requirements_and_inconclusive_state
+  - family: data-flow-coverage-closure
+    subtype: endpoint_operation_input_schema_and_flow_digest

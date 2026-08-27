@@ -13,6 +13,7 @@ from core.browser_workflow_contract import (
     BusinessInvariantV1,
     BusinessStateTransitionV1,
     InvariantEvaluationV1,
+    WorkflowRunMatrixV1,
 )
 
 
@@ -97,6 +98,26 @@ class BrowserWorkflowRepository:
         self.sb.table("browser_runs").upsert(row, on_conflict="run_id").execute()
         return row
 
+    def save_run_matrix(self, matrix: WorkflowRunMatrixV1) -> Dict[str, Any]:
+        matrix.ensure_digest()
+        row = self._dump(matrix)
+        return self.sb.table("workflow_run_matrices").upsert(
+            row, on_conflict="matrix_id"
+        ).execute().data[0]
+
+    def get_run_matrix(self, session_id: str, matrix_id: str) -> Dict[str, Any]:
+        rows = self.sb.table("workflow_run_matrices").select("*").eq(
+            "session_id", session_id
+        ).eq("matrix_id", matrix_id).limit(1).execute().data or []
+        if not rows:
+            raise ValueError("Workflow run matrix not found.")
+        return rows[0]
+
+    def list_run_matrices(self, session_id: str, limit: int = 100) -> List[Dict[str, Any]]:
+        return self.sb.table("workflow_run_matrices").select("*").eq(
+            "session_id", session_id
+        ).order("created_at", desc=True).limit(min(limit, 200)).execute().data or []
+
     def get_run(self, session_id: str, run_id: str) -> Dict[str, Any]:
         rows = self.sb.table("browser_runs").select("*").eq(
             "session_id", session_id
@@ -130,7 +151,29 @@ class BrowserWorkflowRepository:
         entity.ensure_fingerprint()
         row = self._dump(entity)
         self.sb.table("business_entities").upsert(row, on_conflict="session_id,fingerprint").execute()
+        version_row = {
+            "entity_version_id": f"{entity.entity_id}_{entity.state_digest or entity.created_at}",
+            "entity_id": entity.entity_id,
+            "session_id": entity.session_id,
+            "fingerprint": entity.fingerprint,
+            "graph_id": entity.graph_id,
+            "identity_ids": entity.identity_ids,
+            "state_digest": entity.state_digest,
+            "fields_redacted": entity.fields_redacted,
+            "source_snapshot_ids": entity.source_snapshot_ids,
+        }
+        existing = self.sb.table("business_entity_versions").select("entity_version_id").eq(
+            "entity_version_id", version_row["entity_version_id"]
+        ).limit(1).execute().data or []
+        if not existing:
+            self.sb.table("business_entity_versions").insert(version_row).execute()
         return row
+
+    def list_entities(self, session_id: str, fingerprint: Optional[str] = None) -> List[Dict[str, Any]]:
+        query = self.sb.table("business_entities").select("*").eq("session_id", session_id)
+        if fingerprint:
+            query = query.eq("fingerprint", fingerprint)
+        return query.order("created_at", desc=True).limit(200).execute().data or []
 
     def save_transition(self, transition: BusinessStateTransitionV1) -> Dict[str, Any]:
         row = self._dump(transition)
@@ -140,6 +183,22 @@ class BrowserWorkflowRepository:
     def save_invariant(self, invariant: BusinessInvariantV1) -> Dict[str, Any]:
         row = self._dump(invariant)
         self.sb.table("business_invariants").upsert(row, on_conflict="invariant_id").execute()
+        version_id = f"{invariant.invariant_id}_r{invariant.revision}"
+        exists = self.sb.table("business_invariant_versions").select("invariant_version_id").eq(
+            "invariant_version_id", version_id
+        ).limit(1).execute().data or []
+        if not exists:
+            self.sb.table("business_invariant_versions").insert({
+                "invariant_version_id": version_id,
+                "invariant_id": invariant.invariant_id,
+                "session_id": invariant.session_id,
+                "revision": invariant.revision,
+                "compiler_version": invariant.compiler_version,
+                "rule_type": invariant.rule_type,
+                "rule": invariant.rule,
+                "compiled": invariant.compiled,
+                "input_digest": invariant.workflow_matrix_id or invariant.graph_id,
+            }).execute()
         return row
 
     def list_invariants(self, session_id: str, status: Optional[str] = None) -> List[Dict[str, Any]]:

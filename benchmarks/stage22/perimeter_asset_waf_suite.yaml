@@ -1,0 +1,24 @@
+suite_id: stage22-perimeter-asset-waf
+version: "1.0"
+name: Nexus Stage 22 Perimeter Asset and WAF Intelligence
+description: >-
+  Local-only deterministic benchmark for perimeter inventory, DNS and
+  certificate provenance, redirect/TLS policy, provider freshness, scope
+  handling, and bounded WAF scheduling. It never contacts an external target.
+domains:
+  - family: dns-records
+    subtype: A_AAAA_CNAME_MX_NS_TXT_SRV
+  - family: wildcard-detection
+    subtype: wildcard-control-and-subdomain-correlation
+  - family: dns-drift
+    subtype: resolution-change-and-revalidation
+  - family: certificate-redirect
+    subtype: certificate-san-chain-and-redirect-trace
+  - family: provider-provenance
+    subtype: CT_Wayback_GitHub_Shodan_Censys
+  - family: waf-behavior
+    subtype: passive-profile-and-bounded-strategy
+  - family: tls-policy
+    subtype: verification_hsts_protocol_metadata
+  - family: scope-boundary
+    subtype: origin_ip_provider_and_historical_scope

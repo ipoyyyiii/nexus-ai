@@ -223,11 +223,15 @@ class CleanupTaskV1(ExecutionModel):
     context_redacted: Dict[str, Any] = Field(default_factory=dict)
     status: str = "pending"
     attempts: int = 0
+    max_attempts: int = 3
+    verification_required: bool = True
+    last_error: str = ""
     verification: Dict[str, Any] = Field(default_factory=dict)
     created_at: str = Field(default_factory=now_iso)
 
     def model_post_init(self, __context: Any) -> None:
         self.context_redacted = redact(self.context_redacted)
+        self.last_error = redact(self.last_error)[:2000]
 
 
 class RaceExperimentV1(ExecutionModel):
@@ -255,4 +259,3 @@ class RaceExperimentV1(ExecutionModel):
     def bounded_schedule(cls, value: List[int]) -> List[int]:
         values = sorted({max(1, min(8, int(item))) for item in value})
         return values or [2, 4, 8]
-

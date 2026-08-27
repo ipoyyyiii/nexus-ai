@@ -1,0 +1,17 @@
+suite_id: stage13-production-readiness
+name: Nexus Stage 13 Production Excellence and Release Readiness
+version: "1.0"
+description: Local-only deterministic reliability, recovery, resource, cleanup, observability, and supply-chain benchmark.
+domains:
+  - {family: api_restart, subtype: control_plane_reconnect, target_surface: persistence, endpoint_class: durable_api, protocol: http}
+  - {family: worker_kill, subtype: read_only_resume, target_surface: persistence, endpoint_class: durable_worker, protocol: http}
+  - {family: lease_fencing, subtype: zombie_write_rejection, target_surface: safety, endpoint_class: leased_job, protocol: http}
+  - {family: checkpoint_resume, subtype: stale_state_rediscovery, target_surface: persistence, endpoint_class: checkpoint, protocol: http}
+  - {family: browser_crash, subtype: isolated_context_cleanup, target_surface: browser, endpoint_class: browser_run, protocol: browser}
+  - {family: cli_timeout, subtype: process_tree_termination, target_surface: cli, endpoint_class: sandbox, protocol: http}
+  - {family: mutation_recovery, subtype: unknown_outcome_no_replay, target_surface: safety, endpoint_class: approved_mutation, protocol: http}
+  - {family: cleanup_sweep, subtype: retention_and_orphan_detection, target_surface: persistence, endpoint_class: artifact_store, protocol: http}
+  - {family: budget_circuit, subtype: exhaustion_and_trip, target_surface: safety, endpoint_class: guarded_client, protocol: http}
+  - {family: provider_failure, subtype: bounded_degradation, target_surface: api, endpoint_class: external_provider, protocol: http}
+  - {family: duplicate_enqueue, subtype: idempotent_terminal_delivery, target_surface: persistence, endpoint_class: queue, protocol: http}
+  - {family: observability_supply_chain, subtype: redaction_integrity_and_pins, target_surface: safety, endpoint_class: release, protocol: http}

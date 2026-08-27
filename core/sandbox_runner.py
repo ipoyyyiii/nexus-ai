@@ -30,11 +30,16 @@ class CommandDefinition:
 
 
 COMMANDS: Dict[str, CommandDefinition] = {
-    "httpx_probe": CommandDefinition("httpx_probe", "httpx", ("-silent", "-status-code", "-title", "-tech-detect", "-timeout", "8")),
+    # The Python ``httpx`` dependency also installs a CLI named ``httpx``.
+    # Keep the ProjectDiscovery binary under a distinct executable name so
+    # pip cannot silently replace the scanner implementation.
+    "httpx_probe": CommandDefinition("httpx_probe", "httpx-pd", ("-silent", "-status-code", "-title", "-tech-detect", "-timeout", "8")),
     "naabu_scan": CommandDefinition("naabu_scan", "naabu", ("-top-ports", "1000", "-silent"), 120),
     "gowitness_shot": CommandDefinition("gowitness_shot", "gowitness", ("single", "--disable-db"), 120),
     "gau_urls": CommandDefinition("gau_urls", "gau", ("--threads", "5"), 120),
-    "hakrawler_crawl": CommandDefinition("hakrawler_crawl", "hakrawler", ("-depth", "2", "-plain"), 120),
+    # The installed hakrawler binary uses ``-d`` for depth and has no
+    # ``-plain`` flag. Output is already captured by the sandbox boundary.
+    "hakrawler_crawl": CommandDefinition("hakrawler_crawl", "hakrawler", ("-d", "2", "-u"), 120),
     "amass_enum": CommandDefinition("amass_enum", "amass", ("enum", "-passive", "-timeout", "2"), 180),
     "sqlmap_confirmation": CommandDefinition("sqlmap_confirmation", "sqlmap", ("--batch", "--disable-coloring"), 180),
     "commix_confirmation": CommandDefinition("commix_confirmation", "commix", ("--batch",), 180),
@@ -87,7 +92,7 @@ class SandboxedCommandRunner:
         tool_run_id: str = "",
         timeout_seconds: Optional[int] = None,
         memory_bytes: int = 1024 * 1024 * 1024,
-        process_limit: int = 64,
+        process_limit: int = 128,
     ) -> SandboxResult:
         if self.commands is COMMANDS:
             try:
@@ -111,7 +116,16 @@ class SandboxedCommandRunner:
             tool_run_id=tool_run_id, command_id=command_id, argv_redacted=[definition.executable, *user_args],
         )
         started = time.monotonic()
-        env = {"PATH": "/usr/local/bin:/usr/bin:/bin", "HOME": "/tmp/nexus-home", "LC_ALL": "C"}
+        # The VM exposes a large host CPU count while the service is capped
+        # to one CPU. Go-based scanners otherwise try to create a host-sized
+        # thread pool and can fail with ``newosproc`` before doing any work.
+        # Keep the process deterministic and within the container budget.
+        env = {
+            "PATH": "/usr/local/bin:/usr/bin:/bin",
+            "HOME": "/tmp/nexus-home",
+            "LC_ALL": "C",
+            "GOMAXPROCS": "1",
+        }
         with tempfile.TemporaryDirectory(prefix="nexus-sandbox-") as cwd:
             try:
                 proc = subprocess.Popen(
@@ -160,4 +174,3 @@ class SandboxedCommandRunner:
                 run.status = "failed"
                 run.error_code = type(exc).__name__
                 raise
-

@@ -18,7 +18,10 @@ from core.auth_store import auth_store
 from core.authorization_contract import (
     AuthorizationExpectationV1,
     AuthorizationReplayRunV1,
+    IdentityCoveragePlanV1,
+    IdentityGraphV1,
     IdentityV1,
+    IdentityRelationV1,
     ReplayAttemptV1,
     RequestTemplateV1,
     ResourceInstanceV1,
@@ -153,7 +156,10 @@ class AuthorizationReplayEngine:
             approval_digest=inherited.approval_digest if inherited else "",
             approval_granted=bool(approved or (inherited and inherited.approval_granted)),
         )):
-            request_kwargs: Dict[str, Any] = {"headers": headers, "timeout": self.timeout, "verify": False, "allow_redirects": False}
+            # TLS verification is a safety invariant.  A target-specific
+            # exception must be represented by the safety kernel, never by a
+            # replay helper silently disabling verification.
+            request_kwargs: Dict[str, Any] = {"headers": headers, "timeout": self.timeout, "verify": True, "allow_redirects": False}
             request_kwargs = auth_store.inject_into_kwargs(template.origin.split("//", 1)[-1].split("/", 1)[0], request_kwargs, session_id=session_id, identity_id=identity_id)
             if body is not None:
                 if template.protocol == "graphql" or isinstance(body, (dict, list)):
@@ -293,3 +299,107 @@ class AuthorizationReplayEngine:
                 "comparison": comparison or {},
             },
         )
+
+
+def build_identity_graph(
+    session_id: str,
+    identities: Iterable[IdentityV1 | Dict[str, Any]],
+    claims: Iterable[Dict[str, Any]] = (),
+    auth_contexts: Iterable[Dict[str, Any]] = (),
+    previous_version: int = 0,
+) -> IdentityGraphV1:
+    """Build a deterministic graph snapshot from session-local records.
+
+    This function does not infer permissions from labels.  It records only
+    explicit auth-context and claim relations, leaving access/ownership edges
+    to observed evidence or operator input.
+    """
+    nodes = []
+    for item in identities:
+        row = item if isinstance(item, dict) else item.model_dump(mode="json")
+        if str(row.get("session_id", session_id)) != session_id:
+            continue
+        identity_id = str(row.get("identity_id", ""))
+        if identity_id:
+            nodes.append(identity_id)
+    relations: List[IdentityRelationV1] = []
+    evidence: List[str] = []
+    for item in auth_contexts:
+        if str(item.get("identity_id", "")) not in nodes:
+            continue
+        relation = IdentityRelationV1(
+            session_id=session_id,
+            graph_version=previous_version + 1,
+            subject_id=str(item["identity_id"]),
+            relation="auth_context_for",
+            object_id=str(item.get("auth_context_id", "")),
+            evidence_ids=[],
+            source="observation",
+            confidence=1.0 if item.get("status") == "active" else 0.0,
+            status="active" if item.get("status") == "active" else "proposed",
+        )
+        relations.append(relation)
+    for item in claims:
+        identity_id = str(item.get("identity_id", ""))
+        if identity_id not in nodes:
+            continue
+        name = str(item.get("name", "")).lower()
+        value = str(item.get("value_redacted", ""))
+        relation_name = "member_of_tenant" if "tenant" in name else "role_of" if "role" in name else "derived_from"
+        if value:
+            relations.append(IdentityRelationV1(
+                session_id=session_id,
+                graph_version=previous_version + 1,
+                subject_id=identity_id,
+                relation=relation_name,
+                object_id=value,
+                evidence_ids=list(item.get("evidence_ids") or []),
+                source="observation",
+                confidence=float(item.get("confidence", 0.5)),
+                status="active" if item.get("evidence_ids") else "proposed",
+            ))
+            evidence.extend(item.get("evidence_ids") or [])
+    gaps = []
+    if len(nodes) < 2:
+        gaps.append("two_isolated_identities_required")
+    if not any(item.relation == "auth_context_for" and item.status == "active" for item in relations):
+        gaps.append("active_auth_context_required")
+    graph = IdentityGraphV1(
+        session_id=session_id,
+        version=previous_version + 1,
+        node_ids=sorted(set(nodes)),
+        relations=relations,
+        evidence_ids=sorted(set(evidence)),
+        gaps=sorted(set(gaps)),
+    )
+    return graph.ensure_digest()
+
+
+def plan_identity_coverage(
+    session_id: str,
+    graph: IdentityGraphV1,
+    required_identity_ids: Iterable[str],
+    required_resource_fingerprints: Iterable[str] = (),
+) -> IdentityCoveragePlanV1:
+    required = sorted(set(str(item) for item in required_identity_ids if item))
+    graph_nodes = set(graph.node_ids)
+    missing = [f"identity_missing:{item}" for item in required if item not in graph_nodes]
+    active_auth = {
+        item.object_id for item in graph.relations
+        if item.relation == "auth_context_for" and item.status == "active"
+    }
+    required_auth = [item.object_id for item in graph.relations if item.relation == "auth_context_for" and item.subject_id in required]
+    missing.extend(f"auth_context_missing:{item}" for item in required_auth if item not in active_auth)
+    if len(required) < 2:
+        missing.append("two_isolated_identities_required")
+    status = "ready" if not missing and not graph.gaps else "blocked"
+    return IdentityCoveragePlanV1(
+        session_id=session_id,
+        graph_id=graph.graph_id,
+        required_identity_ids=required,
+        required_relations=["auth_context_for", "same_resource_comparison"],
+        required_resource_fingerprints=sorted(set(str(item) for item in required_resource_fingerprints if item)),
+        required_auth_context_ids=required_auth,
+        missing_requirements=sorted(set(missing + list(graph.gaps))),
+        status=status,
+    )

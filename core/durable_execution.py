@@ -20,6 +20,7 @@ from core.execution_contract import (
     JobCheckpointV1,
     now_iso,
 )
+from core.config_loader import get_setting
 
 
 class LeaseConflict(RuntimeError):
@@ -30,6 +31,10 @@ class DurableExecutionRepository:
     def __init__(self, supabase: Any):
         self.sb = supabase
 
+    @staticmethod
+    def _strict() -> bool:
+        return str(get_setting("execution_platform_mode", "shadow")).lower() == "strict"
+
     def enqueue(self, job: ExecutionJobV1) -> ExecutionJobV1:
         existing = self.find_idempotent(job.session_id, job.idempotency_key)
         if existing and existing.get("status") not in {"succeeded", "failed", "cancelled", "dead_lettered"}:
@@ -38,6 +43,8 @@ class DurableExecutionRepository:
         try:
             self.sb.table("workflow_jobs").upsert(row, on_conflict="job_id").execute()
         except Exception:
+            if self._strict():
+                raise
             # Shadow compatibility before migration 004. The durable worker
             # never relies on this reduced row for claiming.
             self.sb.table("workflow_jobs").upsert({
@@ -91,6 +98,8 @@ class DurableExecutionRepository:
                 return ExecutionAttemptV1(**self._attempt_from_row(row))
             return None
         except Exception:
+            if self._strict():
+                raise
             # Shadow/local fallback.  Production strict mode requires the RPC
             # and should fail closed instead of silently claiming a job twice.
             return self._claim_fallback(worker_id, list(queues), lease_seconds)
@@ -136,6 +145,8 @@ class DurableExecutionRepository:
             }).execute()
             return bool(result.data)
         except Exception:
+            if self._strict():
+                raise
             result = (self.sb.table("workflow_jobs").update(payload)
                       .eq("job_id", job_id).eq("lease_owner", worker_id)
                       .eq("lease_token", lease_token).execute())
@@ -146,6 +157,13 @@ class DurableExecutionRepository:
             "cancel_requested_at": now_iso(), "status": "cancelling", "updated_at": now_iso(),
         }).eq("job_id", job_id).in_("status", ["queued", "leased", "running", "waiting_approval", "waiting_auth", "waiting_continue"]).execute())
         return bool(result.data)
+
+    def is_cancel_requested(self, job_id: str) -> bool:
+        result = self.sb.table("workflow_jobs").select("cancel_requested_at,status").eq("job_id", job_id).limit(1).execute()
+        if not result.data:
+            return False
+        row = result.data[0]
+        return bool(row.get("cancel_requested_at")) or row.get("status") == "cancelling"
 
     def save_checkpoint(self, checkpoint: JobCheckpointV1) -> JobCheckpointV1:
         self.sb.table("workflow_checkpoints").insert({
@@ -171,6 +189,8 @@ class DurableExecutionRepository:
         try:
             self.sb.table("workflow_events").insert(row).execute()
         except Exception:
+            if self._strict():
+                raise
             self.sb.table("workflow_events").insert({
                 "id": row["id"], "session_id": event.session_id,
                 "job_id": event.job_id or None, "event_type": event.event_type,
@@ -185,6 +205,33 @@ class DurableExecutionRepository:
     def persist_sandbox_run(self, run: Any) -> Any:
         self.sb.table("sandbox_runs").insert(run.model_dump(mode="json")).execute()
         return run
+
+    def record_worker_health(self, health: Any) -> Any:
+        """Persist an append-only worker health sample and update the live node."""
+        row = health.model_dump(mode="json")
+        # schema_version belongs to the versioned application contract, not
+        # to the telemetry table.  Keep the database row additive and avoid a
+        # silent PGRST204 failure in shadow mode.
+        row.pop("schema_version", None)
+        self.sb.table("worker_health_snapshots").insert(row).execute()
+        self.sb.table("worker_nodes").upsert({
+            "worker_id": health.worker_id,
+            "capabilities": health.capabilities,
+            "status": health.status,
+            "last_heartbeat_at": health.heartbeat_at,
+            "metadata": health.metadata,
+        }, on_conflict="worker_id").execute()
+        return health
+
+    def record_recovery(self, recovery: Any) -> Any:
+        self.sb.table("recovery_events").insert(recovery.model_dump(mode="json")).execute()
+        return recovery
+
+    def record_resource_sample(self, sample: Any) -> Any:
+        row = sample.model_dump(mode="json")
+        row.pop("schema_version", None)
+        self.sb.table("resource_samples").insert(row).execute()
+        return sample
 
     def consume_resource_budget(self, *, session_id: str, job_id: str, attempt_id: str,
                                 tool_run_id: str, origin: str, deltas: Dict[str, int],
@@ -280,6 +327,10 @@ class InMemoryExecutionRepository:
     def list_events(self, job_id: str, after_sequence: int = 0, limit: int = 200) -> List[Dict[str, Any]]:
         return [item.model_dump(mode="json") for item in self.events if item.job_id == job_id][-limit:]
 
+    def is_cancel_requested(self, job_id: str) -> bool:
+        job = self.jobs.get(job_id)
+        return bool(job and job.cancel_requested_at)
+
     def persist_safety_decision(self, decision: Any) -> Any:
         self.events.append(ExecutionEventV1(
             session_id=decision.session_id, job_id=decision.job_id,
@@ -309,4 +360,3 @@ class InMemoryExecutionRepository:
             return False
         usage.update(candidate)
         return True
-

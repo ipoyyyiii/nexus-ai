@@ -100,6 +100,10 @@ class StatefulBrowserRunner:
         approval_digest: str = "",
         parent_run_id: str = "",
         resume_from: Optional[BrowserRunV1] = None,
+        graph_id: str = "",
+        matrix_id: str = "",
+        entity_fingerprints: Optional[list[str]] = None,
+        clean_context: bool = False,
     ) -> BrowserRunV1:
         workflow.ensure_fingerprint()
         bindings = dict(bindings or {})
@@ -112,7 +116,18 @@ class StatefulBrowserRunner:
             role=role,
             total_steps=len(workflow.steps),
             parent_run_id=parent_run_id,
+            graph_id=graph_id,
+            matrix_id=matrix_id,
+            entity_fingerprints=list(entity_fingerprints or []),
+            clean_context=clean_context,
         )
+        if graph_id and not run.graph_id:
+            run.graph_id = graph_id
+        if matrix_id and not run.matrix_id:
+            run.matrix_id = matrix_id
+        if entity_fingerprints and not run.entity_fingerprints:
+            run.entity_fingerprints = list(entity_fingerprints)
+        run.clean_context = bool(clean_context or run.clean_context)
         if not run.approval_expires_at:
             ttl_minutes = max(1, int((get_setting("browser_workflow", {}) or {}).get("approval_ttl_minutes", 30)))
             run.approval_expires_at = (datetime.now(timezone.utc) + timedelta(minutes=ttl_minutes)).isoformat()
@@ -389,6 +404,9 @@ class StatefulBrowserRunner:
             session_id=run.session_id,
             run_id=run.run_id,
             step_run_id=step_run.step_run_id,
+            identity_id=run.identity_id,
+            graph_id=run.graph_id,
+            state_digest=_digest({"url": page.url, "dom_hash": dom_hash, "step": run.current_step}),
             url=redact(page.url),
             title=redact(title),
             dom_hash=dom_hash,

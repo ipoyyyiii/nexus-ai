@@ -22,7 +22,13 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from core.config_loader import get_setting
 from core.redact import redact
-from core.structured_contract import CandidateFindingV1, ObservationV1, ToolResultV1
+from core.structured_contract import (
+    CandidateFindingV1,
+    ObservationV1,
+    ProtocolExchangeV1,
+    SemanticComparisonV1,
+    ToolResultV1,
+)
 
 
 Decision = Literal["validated", "disproven", "inconclusive"]
@@ -206,6 +212,20 @@ class ValidationPolicyRegistryV2:
             _policy("xss.reflected_stored.v2", "xss", roles=("test", "browser", "negative_control", "reproduction"), cleanup=True, kinds=("browser_execution",), description="Executable-context reflection or storage plus browser execution and cleanup."),
             _policy("ssrf.xxe_oob.v2", "oob", roles=("test", "oob", "negative_control", "reproduction"), kinds=("oob_correlation",), description="Dynamic OOB correlation, attribution, stale rejection, control, and reproduction."),
             _policy("race_condition.v2", "race_condition", roles=("baseline", "test", "negative_control", "reproduction"), iterations=1, cleanup=True, kinds=("server_state",), description="Synchronized server-side effect difference with clean reproduction and cleanup."),
+            _policy("graphql.schema_and_authorization.v2", "graphql", subtypes=("schema", "authorization", "idor"), roles=("baseline", "test", "negative_control", "reproduction"), kinds=("schema_diff", "authorization_diff", "entity_state"), description="GraphQL schema and field/object authorization require semantic identity comparison."),
+            _policy("graphql.query_abuse.v2", "graphql", subtypes=("batch", "depth", "alias", "parser"), roles=("baseline", "test", "negative_control", "reproduction"), kinds=("resource_state", "query_cost"), description="GraphQL query abuse requires bounded cost or server-side impact, not acceptance alone."),
+            _policy("websocket.authorization.v2", "websocket", roles=("baseline", "test", "negative_control", "reproduction"), kinds=("message_authorization", "entity_state"), description="WebSocket handshake and per-message authorization across identities."),
+            _policy("sse.access_control.v2", "sse", roles=("baseline", "test", "negative_control", "reproduction"), kinds=("stream_access", "event_state"), description="SSE stream and event filtering must be compared across clean identities."),
+            _policy("grpc_web.authorization.v2", "grpc_web", roles=("baseline", "test", "negative_control", "reproduction"), kinds=("method_authorization", "entity_state"), description="gRPC-web method and metadata authorization with typed frame evidence."),
+            _policy("oauth_oidc.lifecycle.v2", "oauth", subtypes=("oauth", "oidc", "state", "pkce", "redirect", "replay"), roles=("baseline", "test", "negative_control", "reproduction"), kinds=("state_transition", "credential_binding"), description="OAuth/OIDC lifecycle invariants require pre/action/post state and negative controls."),
+            _policy("jwt.signed_url.integrity.v2", "authentication", subtypes=("jwt", "signed_url"), roles=("baseline", "test", "negative_control", "reproduction"), kinds=("claim_validation", "authorization_diff"), description="JWT and signed URL integrity requires a server-side authorization effect."),
+            _policy("webhook.replay_authentication.v2", "webhook", roles=("baseline", "test", "negative_control", "reproduction"), kinds=("signature_check", "state_transition"), description="Webhook signatures, freshness, tenant binding, and replay controls."),
+            _policy("async_job.authorization_idempotency.v2", "async_job", roles=("baseline", "test", "negative_control", "reproduction"), cleanup=True, kinds=("job_state", "entity_state"), description="Async job ownership, replay, and idempotency require server-side state evidence."),
+            _policy("gateway.normalization.v2", "gateway", roles=("baseline", "test", "negative_control", "reproduction"), kinds=("route_resolution", "authorization_diff"), description="Gateway/origin normalization requires a differential authorization impact."),
+            _policy("cache.identity_separation.v2", "cache", roles=("baseline", "test", "negative_control", "reproduction"), cleanup=True, kinds=("cache_state", "sensitive_response"), description="Cache behavior must demonstrate cross-identity data exposure and clean invalidation."),
+            _policy("upload.pipeline.v2", "upload", roles=("baseline", "test", "negative_control", "reproduction"), cleanup=True, kinds=("entity_state", "retrieval_authorization"), description="Upload pipeline validation uses harmless canaries, storage state, retrieval auth, and cleanup."),
+            _policy("schema.type_confusion.v2", "api_schema", subtypes=("type_confusion", "unknown_field", "method_schema"), roles=("baseline", "test", "negative_control", "reproduction"), kinds=("entity_state",), description="Typed schema mutation requires a reproducible unauthorized server-side state change."),
+            _policy("parser.context_mutation.v2", "parser", roles=("baseline", "test", "negative_control", "reproduction"), kinds=("parser_state", "entity_state"), description="Parser/context differential requires typed input and semantic state evidence."),
         ]
 
     def list(self, active_only: bool = True) -> List[ValidationPolicyV2]:
@@ -218,10 +238,61 @@ class ValidationPolicyRegistryV2:
     def fingerprint(self) -> str:
         return _digest([item.model_dump(mode="json") for item in self.list(False)])
 
-    def resolve(self, candidate: CandidateFindingV1) -> Optional[ValidationPolicyV2]:
+    def resolve(self, candidate: CandidateFindingV1 | str, subtype: str = "") -> Optional[ValidationPolicyV2]:
+        # Keep the candidate-based resolver as the canonical path, while
+        # allowing diagnostics/API callers to resolve a typed family directly.
+        # This does not create a generic policy: it still traverses the exact
+        # versioned registry below.
+        if isinstance(candidate, str):
+            candidate = CandidateFindingV1(
+                title=candidate,
+                vuln_type=candidate,
+                metadata={"protocol_family": candidate, "subtype": subtype},
+            )
         vuln = candidate.vuln_type.lower().replace("-", "_").replace(" ", "_")
         metadata = candidate.metadata or {}
         subtype = str(metadata.get("subtype") or "").lower()
+        protocol = str(metadata.get("protocol_family") or metadata.get("protocol") or metadata.get("protocol_name") or "").lower()
+        protocol = {
+            "parser-context": "parser", "semantic-comparison": "parser",
+            "gateway-normalization": "gateway", "upload-pipeline": "upload",
+            "schema-type-confusion": "schema", "evidence-scope-cleanup": "parser",
+            "graphql-schema": "graphql", "graphql-query-abuse": "graphql",
+            "websocket-authorization": "websocket", "sse-access-control": "sse",
+            "grpc-web-authorization": "grpc_web", "oauth-oidc-lifecycle": "oauth",
+            "jwt-signed-url": "signed_url", "webhook-replay": "webhook",
+            "async-job": "async_job", "cache-identity-separation": "cache",
+        }.get(protocol, protocol)
+        if protocol == "graphql":
+            return self.get("graphql.query_abuse.v2" if subtype in {"batch", "depth", "alias", "parser", "query_abuse"} else "graphql.schema_and_authorization.v2")
+        if protocol == "websocket":
+            return self.get("websocket.authorization.v2")
+        if protocol == "sse":
+            return self.get("sse.access_control.v2")
+        if protocol == "grpc_web":
+            return self.get("grpc_web.authorization.v2")
+        if protocol in {"oauth", "oidc"}:
+            return self.get("oauth_oidc.lifecycle.v2")
+        if protocol in {"jwt", "signed_url"} or subtype in {"jwt", "signed_url"}:
+            return self.get("jwt.signed_url.integrity.v2")
+        if protocol == "webhook":
+            return self.get("webhook.replay_authentication.v2")
+        if protocol == "async_job":
+            return self.get("async_job.authorization_idempotency.v2")
+        if protocol == "cache":
+            return self.get("cache.identity_separation.v2")
+        if protocol == "gateway":
+            return self.get("gateway.normalization.v2")
+        if protocol == "upload":
+            return self.get("upload.pipeline.v2")
+        if protocol == "parser":
+            return self.get("parser.context_mutation.v2")
+        if protocol == "gateway":
+            return self.get("gateway.normalization.v2")
+        if protocol == "upload":
+            return self.get("upload.pipeline.v2")
+        if protocol in {"schema", "type_confusion"}:
+            return self.get("schema.type_confusion.v2")
         if any(item in vuln for item in ("command_injection", "command injection", "ssti", "server_side_template")):
             return self.get("command_injection.ssti.v2")
         if any(item in vuln for item in ("idor", "bola", "tenant", "authorization", "access_control")):
@@ -425,7 +496,17 @@ class ValidationEngineV2:
             typed = str(meta.get("rule_type") or "") != "" and bool(meta.get("typed_rule", True))
             state = bool(meta.get("state_transition_evidence")) or any(item.kind in {"state_transition", "business_state"} for item in linked)
             violated = bool(meta.get("invariant_violated"))
-            checks = [add("typed_rule_compiled", typed, "Only a compiled typed rule can validate business logic.", linked, "unsupported_policy"), add("state_transition_evidence", state, "Before/after server state evidence is required.", linked), add("evaluation_id", bool(meta.get("evaluation_id")), "Deterministic invariant evaluation ID is required.", linked), add("clean_reproduction", bool(meta.get("reproduced", True)), "Violation must reproduce from a clean context.", roles.get("reproduction", [])), add("cleanup_verified", bool(meta.get("cleanup_verified")) or any(bool(item.metadata.get("cleanup_verified")) for item in linked), "Side effects must be cleaned and verified.", linked, "cleanup_error")]
+            identity_ids = set(str(item) for item in (meta.get("identity_ids") or []) if item)
+            identity_ids.update(str(item.metadata.get("identity_id")) for item in linked if item.metadata.get("identity_id"))
+            checks = [
+                add("typed_rule_compiled", typed, "Only a compiled typed rule can validate business logic.", linked, "unsupported_policy"),
+                add("state_transition_evidence", state, "Before/after server state evidence is required.", linked),
+                add("evaluation_id", bool(meta.get("evaluation_id")), "Deterministic invariant evaluation ID is required.", linked),
+                add("identity_graph_context", bool(meta.get("graph_id")) and bool(identity_ids), "Identity graph and identity context are required.", linked, "missing_evidence"),
+                add("workflow_entity_mapping", bool(meta.get("workflow_matrix_id")) and bool(meta.get("entity_fingerprint")), "The invariant must bind to a published workflow matrix and entity fingerprint.", linked, "missing_evidence"),
+                add("clean_reproduction", bool(meta.get("reproduced", True)), "Violation must reproduce from a clean context.", roles.get("reproduction", [])),
+                add("cleanup_verified", bool(meta.get("cleanup_verified")) or any(bool(item.metadata.get("cleanup_verified")) for item in linked), "Side effects must be cleaned and verified.", linked, "cleanup_error"),
+            ]
             return violated, checks, "Typed business invariant violation reproduced." if violated else "Typed business invariant held or was not shown violated.", None
 
         if policy.policy_id == "xss.reflected_stored.v2":
@@ -454,6 +535,61 @@ class ValidationEngineV2:
             signal = synchronized and effect and reproduced
             return signal, checks, "Deterministic race effect reproduced." if signal else "Concurrent response difference did not establish a server-side race effect.", None
 
+        modern_ids = {
+            "graphql.schema_and_authorization.v2", "graphql.query_abuse.v2",
+            "websocket.authorization.v2", "sse.access_control.v2",
+            "grpc_web.authorization.v2", "oauth_oidc.lifecycle.v2",
+            "jwt.signed_url.integrity.v2", "webhook.replay_authentication.v2",
+            "async_job.authorization_idempotency.v2", "gateway.normalization.v2",
+            "cache.identity_separation.v2", "upload.pipeline.v2",
+            "schema.type_confusion.v2", "parser.context_mutation.v2",
+        }
+        if policy.policy_id in modern_ids:
+            # All modern protocol families share the same evidence invariant:
+            # the transport signal must be tied to semantic state, identity,
+            # or a typed parser result.  A status/length change alone cannot
+            # enter the signal path.
+            semantic = bool(
+                meta.get("semantic_comparison")
+                or meta.get("semantic_impact")
+                or meta.get("server_state_changed")
+                or meta.get("entity_state_changed")
+                or meta.get("authorization_diff")
+            )
+            typed = bool(
+                meta.get("typed_probe")
+                or meta.get("parser_context")
+                or meta.get("schema_digest")
+                or meta.get("operation_schema")
+            )
+            replay_stable = bool(meta.get("replay_stable", True))
+            checks = [
+                add("typed_protocol_input", typed, "A protocol/parser-aware input description is required.", linked, "missing_evidence"),
+                add("semantic_comparison", semantic, "Protocol validation requires semantic or server-state comparison; status/length alone is insufficient.", linked, "missing_evidence"),
+                add("replay_stable", replay_stable, "The protocol signal must be stable across replay.", linked, "unstable_signal"),
+            ]
+            if policy.policy_id in {"graphql.schema_and_authorization.v2", "websocket.authorization.v2", "sse.access_control.v2", "grpc_web.authorization.v2"}:
+                identities = {str(item.metadata.get("identity_id")) for item in linked if item.metadata.get("identity_id")}
+                checks.append(add("identity_contexts", len(identities) >= 2 or bool(meta.get("identity_matrix")), "Cross-identity protocol behavior requires explicit identity context.", linked, "missing_evidence"))
+            if policy.policy_id in {"oauth_oidc.lifecycle.v2", "jwt.signed_url.integrity.v2", "webhook.replay_authentication.v2"}:
+                checks.append(add("typed_lifecycle_state", bool(meta.get("pre_state") or meta.get("state_transition") or meta.get("claim_validation")), "Authentication protocol checks require typed pre/action/post or claim state.", linked, "missing_evidence"))
+            if policy.requires_cleanup:
+                checks.append(add("protocol_cleanup_verified", bool(meta.get("cleanup_verified")) or any(bool(item.metadata.get("cleanup_verified")) for item in linked), "Protocol side effects must have verified cleanup.", linked, "cleanup_error"))
+
+            signal_keys = {
+                "unauthorized_access", "unexpected_allow", "sensitive_field_exposed",
+                "resource_impact", "cost_violation", "unauthorized_message",
+                "unauthorized_event", "stream_exposed", "method_unauthorized",
+                "invariant_violated", "replay_accepted", "state_unbound",
+                "pkce_missing", "redirect_bypass", "claim_tamper_accepted",
+                "signature_bypass", "duplicate_effect", "origin_mismatch",
+                "cross_identity_exposure", "unsafe_retrieval", "unsafe_state_change",
+                "type_confusion_impact", "parser_confusion_impact",
+            }
+            signal = any(bool(meta.get(key)) for key in signal_keys)
+            reason = "Modern protocol semantic impact reproduced." if signal else "Modern protocol signal was not shown to create an unauthorized semantic impact."
+            return signal, checks, reason, "unstable_signal" if not replay_stable else None
+
         return None, [add("known_family_signal", False, "Policy family has no deterministic signal evaluator.", linked, "unsupported_policy")], "Policy family is not supported by this validator version.", "unsupported_policy"
 
     @staticmethod
@@ -472,6 +608,86 @@ class ValidationEngineV2:
         threshold = float(policy.thresholds.get("min_median_delta_ms", 100.0))
         max_ratio = float(policy.thresholds.get("max_jitter_ratio", 0.25))
         return delta >= threshold and jitter / max(abs(delta), 1.0) <= max_ratio
+
+
+_DYNAMIC_KEYS = {
+    "timestamp", "time", "request_id", "trace_id", "span_id", "nonce",
+    "csrf", "csrf_token", "server_time", "date", "etag",
+}
+_TRANSPORT_KEYS = {"status_code", "response_length", "response_time_ms", "headers", "content_length"}
+
+
+def _semantic_normalize(value: Any) -> Any:
+    """Normalize transport noise while retaining security-relevant semantics."""
+    if isinstance(value, dict):
+        return {
+            str(key): _semantic_normalize(item)
+            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+            if str(key).lower() not in _DYNAMIC_KEYS
+        }
+    if isinstance(value, (list, tuple)):
+        return [_semantic_normalize(item) for item in value]
+    if isinstance(value, str):
+        return re.sub(r"\b(?:request|trace|span|corr)[-_]?[a-f0-9]{6,}\b", "<dynamic>", value, flags=re.I)
+    return value
+
+
+def semantic_response_compare(
+    baseline: Dict[str, Any],
+    test: Dict[str, Any],
+    control: Optional[Dict[str, Any]] = None,
+    *,
+    protocol: str = "http",
+    operation_id: str = "",
+    evidence_ids: Optional[List[str]] = None,
+) -> SemanticComparisonV1:
+    """Compare protocol responses without promoting a finding.
+
+    The comparator deliberately reports a signal only when a semantic field,
+    authorization result, or server-state digest differs from both the safe
+    baseline/control context.  Status and length are recorded as metadata but
+    never count as semantic impact by themselves.
+    """
+    base = _semantic_normalize(baseline or {})
+    test_without_replay = dict(test or {}) if isinstance(test, dict) else {}
+    replay = test_without_replay.pop("replay", None)
+    candidate = _semantic_normalize(test_without_replay)
+    safe_control = _semantic_normalize(control or baseline or {})
+    keys = set(base) | set(candidate) | set(safe_control)
+    transport_only = _TRANSPORT_KEYS
+    changed = sorted(key for key in keys if base.get(key) != candidate.get(key))
+    control_changed = sorted(key for key in keys if safe_control.get(key) != candidate.get(key))
+    changed_dimensions = sorted((set(changed) & set(control_changed) or set(control_changed)) - transport_only)
+    status_only = not changed_dimensions and baseline.get("status_code") != test.get("status_code")
+    length_only = not changed_dimensions and baseline.get("response_length") != test.get("response_length")
+    noise_fields = {"timestamp", "request_id", "trace_id", "date", "etag"}
+    noise_count = sum(1 for key in changed_dimensions if str(key).lower() in noise_fields)
+    noise_ratio = noise_count / max(1, len(changed_dimensions))
+    semantic = bool(changed_dimensions) and noise_ratio < 1.0
+    if replay is None:
+        stable = True
+    else:
+        replay_normalized = _semantic_normalize(replay)
+        stable = _semantic_normalize({key: value for key, value in candidate.items() if str(key).lower() not in _TRANSPORT_KEYS}) == _semantic_normalize({key: value for key, value in replay_normalized.items() if str(key).lower() not in _TRANSPORT_KEYS})
+    input_digest = hashlib.sha256(json.dumps({"baseline": base, "test": candidate, "control": safe_control}, sort_keys=True, default=str, separators=(",", ":")).encode()).hexdigest()
+    return SemanticComparisonV1(
+        operation_id=operation_id,
+        protocol=protocol if protocol in {"http", "graphql", "websocket", "sse", "grpc_web", "oauth", "oidc", "browser", "webhook", "async_job", "cache"} else "http",
+        changed_dimensions=changed_dimensions,
+        stable_dimensions=sorted(set(keys) - set(changed_dimensions)),
+        noise_ratio=min(1.0, noise_ratio),
+        signal_strength=1.0 if semantic else 0.0,
+        semantic_signal=semantic,
+        status_only_signal=status_only,
+        length_only_signal=length_only,
+        replay_stable=stable,
+        evidence_ids=list(evidence_ids or []),
+        input_digest=input_digest,
+        metadata={"control_changed_dimensions": control_changed, "baseline_status": baseline.get("status_code"), "test_status": test.get("status_code")},
+    )
+
+
+compare_protocol_semantics = semantic_response_compare
 
 
 validation_policy_registry_v2 = ValidationPolicyRegistryV2()

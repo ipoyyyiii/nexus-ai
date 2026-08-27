@@ -1,0 +1,32 @@
+suite_id: stage23-surface-endpoint-discovery
+version: "1.0"
+name: Nexus Stage 23 Surface and Endpoint Discovery
+description: >-
+  Local-only deterministic benchmark for endpoint, method, parameter, form,
+  JavaScript, browser-network, API-schema, and protocol-surface inventory.
+  No external target or network is contacted.
+domains:
+  - family: html-link-canonicalization
+    subtype: links_and_same_origin_routes
+  - family: form-input-inventory
+    subtype: methods_required_fields_and_form_controls
+  - family: browser-xhr-fetch
+    subtype: xhr_fetch_websocket_and_sse_capture
+  - family: javascript-route-extraction
+    subtype: spa_routes_api_hints_and_source_maps
+  - family: parameter-inventory
+    subtype: query_body_header_and_form_parameters
+  - family: openapi-swagger-hints
+    subtype: schema_document_discovery
+  - family: graphql-surface
+    subtype: graphql_endpoint_and_operation_hint
+  - family: websocket-sse-surface
+    subtype: realtime_protocol_endpoint_inventory
+  - family: method-preserving-dedupe
+    subtype: get_post_same_path_are_distinct
+  - family: scope-boundary
+    subtype: external_and_query_value_rejection
+  - family: provenance-correlation
+    subtype: evidence_and_source_linkage
+  - family: coverage-closure
+    subtype: endpoint_parameter_coverage_and_gaps

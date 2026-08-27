@@ -827,6 +827,7 @@ def postmessage_vulnerability_scanner(url: str) -> str:
     domain = _domain_of(url)
     auth_kwargs = get_auth_kwargs(domain)
     findings = {"vulnerabilities": [], "suspicious": [], "postmessage_usage": []}
+    scan_error = None
 
     try:
         rate_limiter.wait(domain)
@@ -913,6 +914,15 @@ def postmessage_vulnerability_scanner(url: str) -> str:
     except Exception as e:
         logger.add_log(tool_name, "ERROR", f"PostMessage scan error: {e}")
         findings["error"] = str(e)
+        scan_error = str(e)
+
+    if scan_error:
+        logger.add_log(tool_name, "ERROR", "PostMessage scan failed")
+        return json.dumps({
+            "status": "ERROR",
+            "findings": findings,
+            "error": scan_error[:500],
+        }, indent=2)
 
     result = {
         "status": "VULNERABLE" if findings["vulnerabilities"] else (

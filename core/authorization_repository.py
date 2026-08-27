@@ -5,14 +5,20 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from core.authorization_contract import (
+    AuthSurfaceObservationV1,
     AuthContextV1,
     AuthorizationExpectationV1,
     AuthorizationReplayRunV1,
+    IdentityGraphV1,
+    IdentityCoveragePlanV1,
     IdentityClaimV1,
+    IdentityRelationV1,
     IdentityV1,
     ReplayAttemptV1,
     RequestTemplateV1,
     ResourceInstanceV1,
+    SessionTransitionV1,
+    WorkflowPrerequisiteV1,
 )
 from core.redact import redact
 
@@ -58,6 +64,85 @@ class AuthorizationRepository:
         if identity_id:
             query = query.eq("identity_id", identity_id)
         return query.order("created_at").execute().data or []
+
+    def save_auth_surface(self, surface: AuthSurfaceObservationV1) -> Dict[str, Any]:
+        row = redact(surface.model_dump(mode="json"))
+        return self.sb.table("auth_surface_observations").upsert(row, on_conflict="observation_id").execute().data[0]
+
+    def list_auth_surfaces(self, session_id: str, identity_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        query = self.sb.table("auth_surface_observations").select("*").eq("session_id", session_id)
+        if identity_id:
+            query = query.eq("identity_id", identity_id)
+        return redact(query.order("created_at", desc=True).limit(500).execute().data or [])
+
+    def save_session_transition(self, transition: SessionTransitionV1) -> Dict[str, Any]:
+        row = redact(transition.model_dump(mode="json"))
+        return self.sb.table("auth_session_transitions").upsert(row, on_conflict="transition_id").execute().data[0]
+
+    def list_session_transitions(self, session_id: str, auth_context_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        query = self.sb.table("auth_session_transitions").select("*").eq("session_id", session_id)
+        if auth_context_id:
+            query = query.eq("auth_context_id", auth_context_id)
+        return redact(query.order("created_at").limit(500).execute().data or [])
+
+    def save_workflow_prerequisite(self, prerequisite: WorkflowPrerequisiteV1) -> Dict[str, Any]:
+        row = redact(prerequisite.model_dump(mode="json"))
+        return self.sb.table("workflow_prerequisite_versions").upsert(row, on_conflict="prerequisite_id").execute().data[0]
+
+    def list_workflow_prerequisites(self, session_id: str, workflow_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        query = self.sb.table("workflow_prerequisite_versions").select("*").eq("session_id", session_id)
+        if workflow_id:
+            query = query.eq("workflow_id", workflow_id)
+        return redact(query.order("created_at").limit(1000).execute().data or [])
+
+    def save_identity_graph(self, session_id: str, graph: IdentityGraphV1) -> Dict[str, Any]:
+        """Persist an immutable graph snapshot; never update an older version."""
+        graph.session_id = session_id
+        graph.ensure_digest()
+        row = redact(graph.model_dump(mode="json"))
+        self.sb.table("identity_graph_versions").insert({
+            "graph_id": row["graph_id"],
+            "session_id": session_id,
+            "version": row["version"],
+            "node_ids": row["node_ids"],
+            "evidence_ids": row["evidence_ids"],
+            "gaps": row["gaps"],
+            "digest": row["digest"],
+            "created_at": row["created_at"],
+        }).execute()
+        for relation in graph.relations:
+            relation.session_id = session_id
+            self.sb.table("identity_graph_edges").insert({
+                **redact(relation.model_dump(mode="json")),
+                "graph_id": graph.graph_id,
+            }).execute()
+        return row
+
+    def list_identity_graphs(self, session_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+        return self.sb.table("identity_graph_versions").select("*").eq(
+            "session_id", session_id
+        ).order("version", desc=True).limit(min(limit, 200)).execute().data or []
+
+    def identity_graph_detail(self, session_id: str, graph_id: str) -> Dict[str, Any]:
+        rows = self.sb.table("identity_graph_versions").select("*").eq(
+            "session_id", session_id
+        ).eq("graph_id", graph_id).limit(1).execute().data or []
+        if not rows:
+            raise ValueError("Identity graph not found.")
+        edges = self.sb.table("identity_graph_edges").select("*").eq(
+            "session_id", session_id
+        ).eq("graph_id", graph_id).order("created_at").execute().data or []
+        return {"graph": rows[0], "relations": edges}
+
+    def save_identity_coverage_plan(self, plan: IdentityCoveragePlanV1) -> Dict[str, Any]:
+        plan.ensure_digest() if hasattr(plan, "ensure_digest") else None
+        row = redact(plan.model_dump(mode="json"))
+        return self.sb.table("identity_coverage_plans").insert(row).execute().data[0]
+
+    def list_identity_coverage_plans(self, session_id: str, limit: int = 100) -> List[Dict[str, Any]]:
+        return self.sb.table("identity_coverage_plans").select("*").eq(
+            "session_id", session_id
+        ).order("created_at", desc=True).limit(min(limit, 200)).execute().data or []
 
     def create_expectation(self, session_id: str, expectation: AuthorizationExpectationV1) -> Dict[str, Any]:
         expectation.session_id = session_id

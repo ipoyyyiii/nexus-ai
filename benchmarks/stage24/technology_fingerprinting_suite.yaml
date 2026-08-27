@@ -1,0 +1,33 @@
+suite_id: stage24-technology-fingerprinting
+version: "1.0"
+name: Nexus Stage 24 Technology and Deployment Fingerprinting
+description: >-
+  Local-only deterministic benchmark for technology, framework, runtime,
+  deployment, protocol, authentication, cache, TLS, WAF, and contradiction
+  intelligence. It never contacts an external target and never creates a
+  vulnerability finding.
+domains:
+  - family: server-header
+    subtype: server-runtime-header-correlation
+  - family: framework-asset
+    subtype: framework-and-asset-path-signals
+  - family: cms-indicator
+    subtype: cms-path-and-html-signals
+  - family: session-cookie
+    subtype: cookie-metadata-without-secret-values
+  - family: javascript-stack
+    subtype: javascript-framework-and-library-hints
+  - family: api-schema
+    subtype: openapi-and-schema-capability-mapping
+  - family: graphql-protocol
+    subtype: graphql-capability-mapping
+  - family: realtime-protocol
+    subtype: websocket-and-sse-capability-mapping
+  - family: oauth-oidc
+    subtype: auth-protocol-hints
+  - family: tls-cdn
+    subtype: tls-and-cdn-observation
+  - family: cache-deployment
+    subtype: cache-and-source-map-behavior
+  - family: contradiction-confidence
+    subtype: independent-signal-version-and-conflict-handling

@@ -1,0 +1,17 @@
+suite_id: stage15-target-knowledge-coverage
+name: Nexus Stage 15 Target Knowledge & Coverage Closure
+version: "1.0"
+description: Local deterministic target knowledge graph, memory provenance, contradiction, and coverage-gap fixtures.
+domains:
+  - {family: asset-origin-normalization, subtype: canonical_origin, target_surface: api}
+  - {family: endpoint-operation-deduplication, subtype: endpoint_fingerprint, target_surface: api}
+  - {family: parameter-input-classification, subtype: parameter_schema, target_surface: api}
+  - {family: identity-role-tenant-mapping, subtype: trust_context, target_surface: api}
+  - {family: entity-resource-fingerprinting, subtype: object_mapping, target_surface: api}
+  - {family: workflow-state-relationship, subtype: state_transition, target_surface: browser}
+  - {family: protocol-surface-relationship, subtype: api_browser_protocol, target_surface: api}
+  - {family: evidence-source-lineage, subtype: provenance, target_surface: persistence}
+  - {family: duplicate-fact-merge, subtype: content_addressing, target_surface: persistence}
+  - {family: contradiction-preservation, subtype: conflict_review, target_surface: persistence}
+  - {family: stale-memory-rejection, subtype: freshness_boundary, target_surface: safety}
+  - {family: coverage-gap-mission-handoff, subtype: next_best_action, target_surface: api}

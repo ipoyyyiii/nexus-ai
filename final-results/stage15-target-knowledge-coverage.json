@@ -1,0 +1,5408 @@
+{
+  "coverage": {
+    "diagnostic": 0,
+    "failure_taxonomy": {
+      "inconclusive": 24,
+      "validator_gap": 12
+    },
+    "required": 72,
+    "samples": 72
+  },
+  "matrix": {
+    "baseline_id": "",
+    "created_at": "2026-08-23T12:49:24.622320+00:00",
+    "diagnostic_count": 0,
+    "dimension_coverage": {
+      "domains": [
+        "asset-origin-normalization",
+        "contradiction-preservation",
+        "coverage-gap-mission-handoff",
+        "duplicate-fact-merge",
+        "endpoint-operation-deduplication",
+        "entity-resource-fingerprinting",
+        "evidence-source-lineage",
+        "identity-role-tenant-mapping",
+        "parameter-input-classification",
+        "protocol-surface-relationship",
+        "stale-memory-rejection",
+        "workflow-state-relationship"
+      ],
+      "surfaces": [
+        "api",
+        "browser",
+        "persistence",
+        "safety"
+      ],
+      "variants": [
+        "gold_positive",
+        "gold_negative",
+        "contradiction",
+        "missing_evidence",
+        "ambiguous",
+        "recovery"
+      ]
+    },
+    "fixture_digest": "1b90a6204fecae1dfca710c46c3f460e8bc136f720076b6271ca41f62adb1524",
+    "matrix_id": "matrix_5f7991ab4f6d4170b137193a6d3e7ba6",
+    "required_count": 72,
+    "scenario_count": 72,
+    "schema_version": "1.0",
+    "suite_digest": "8536de40f11bd806ba17af5b42e58c9dbca3ff84bd5ec04bbce72c394072ddc8",
+    "suite_id": "stage15-target-knowledge-coverage",
+    "suite_version": "1.0",
+    "unsupported_capabilities": []
+  },
+  "model": {
+    "actions": 0,
+    "mode": "deterministic",
+    "provider": "none",
+    "status": "diagnostic_only",
+    "valid_actions": 0
+  },
+  "release_gate": {
+    "created_at": "2026-08-23T12:49:24.876515+00:00",
+    "decision": "ready",
+    "decision_id": "gate_2d5820582f164996802e367f1e382948",
+    "hard_gates": [
+      {
+        "actual": 1.0,
+        "assertion_id": "assert_c03a6ac15b26478bb5b2b1d6d9099841",
+        "evidence_ids": [],
+        "expected": 1.0,
+        "name": "required_positive_recall",
+        "passed": true,
+        "reason": "Required canonical facts and replay cases must succeed.",
+        "schema_version": "1.0"
+      },
+      {
+        "actual": 0.0,
+        "assertion_id": "assert_48b006ecc89c4651ab00d0e26ecf6320",
+        "evidence_ids": [],
+        "expected": 0.0,
+        "name": "required_negative_zero_success",
+        "passed": true,
+        "reason": "Negative/dedup cases must not become duplicate facts.",
+        "schema_version": "1.0"
+      },
+      {
+        "actual": 1.0,
+        "assertion_id": "assert_c60a662aadd248269cad80f90abd463e",
+        "evidence_ids": [],
+        "expected": 1.0,
+        "name": "incomplete_outcome_fidelity",
+        "passed": true,
+        "reason": "Contradictory and incomplete inputs remain explicit.",
+        "schema_version": "1.0"
+      },
+      {
+        "actual": 1.0,
+        "assertion_id": "assert_cf90bf55ad5c4b01bf5c563b247a9a13",
+        "evidence_ids": [],
+        "expected": 1.0,
+        "name": "coverage_gap_recall",
+        "passed": true,
+        "reason": "Required gaps must be surfaced.",
+        "schema_version": "1.0"
+      },
+      {
+        "actual": 1.0,
+        "assertion_id": "assert_40331bf8e5f04727a17ea8a65078393e",
+        "evidence_ids": [],
+        "expected": 1.0,
+        "name": "session_isolation",
+        "passed": true,
+        "reason": "Knowledge is session and target scoped.",
+        "schema_version": "1.0"
+      },
+      {
+        "actual": 0.0,
+        "assertion_id": "assert_6f7eb0c5262949d599255a839d2a2787",
+        "evidence_ids": [],
+        "expected": 0.0,
+        "name": "redaction_leaks_zero",
+        "passed": true,
+        "reason": "Secrets must not leak into graph records.",
+        "schema_version": "1.0"
+      }
+    ],
+    "metrics": {
+      "contradiction_preservation": 1.0,
+      "coverage_gap_recall": 1.0,
+      "deterministic_replay_stability": 1.0,
+      "duplicate_merge_accuracy": 1.0,
+      "evidence_completeness": 1.0,
+      "f1": 1.0,
+      "false_negative_rate": 0.0,
+      "false_positive_rate": 0.0,
+      "gold_negative_specificity": 1.0,
+      "graph_replay_stability": 1.0,
+      "incomplete_outcome_fidelity": 1.0,
+      "inconclusive_rate": 0.3333333333333333,
+      "precision": 1.0,
+      "recall": 1.0,
+      "redaction_leaks": 0.0,
+      "session_isolation": 1.0
+    },
+    "review_reason": "",
+    "reviewer_id": "",
+    "run_id": "eval15_c28402307d881eb625197f757ec683b6",
+    "schema_version": "1.0",
+    "signature": "",
+    "suite_id": "stage15-target-knowledge-coverage",
+    "suite_version": "1.0"
+  },
+  "run": {
+    "commit_sha": "",
+    "config_digest": "228e13760b19cad9e72ef16ad9b6d44208d038c33fc68457fc64687ba7d5a676",
+    "config_snapshot": {},
+    "created_at": "2026-08-23T12:49:24.622443+00:00",
+    "error_code": "",
+    "error_message": "",
+    "finished_at": "2026-08-23T12:49:24.876474+00:00",
+    "fixture_digest": "1b90a6204fecae1dfca710c46c3f460e8bc136f720076b6271ca41f62adb1524",
+    "image_digest": "",
+    "job_id": "",
+    "metrics": {
+      "contradiction_preservation": 1.0,
+      "coverage_gap_recall": 1.0,
+      "deterministic_replay_stability": 1.0,
+      "duplicate_merge_accuracy": 1.0,
+      "evidence_completeness": 1.0,
+      "f1": 1.0,
+      "false_negative_rate": 0.0,
+      "false_positive_rate": 0.0,
+      "gold_negative_specificity": 1.0,
+      "graph_replay_stability": 1.0,
+      "incomplete_outcome_fidelity": 1.0,
+      "inconclusive_rate": 0.3333333333333333,
+      "precision": 1.0,
+      "recall": 1.0,
+      "redaction_leaks": 0.0,
+      "session_isolation": 1.0
+    },
+    "mode": "deterministic",
+    "model_id": "",
+    "policy_versions": {
+      "coverage": "1.0",
+      "knowledge_graph": "15.0",
+      "memory": "1.0"
+    },
+    "prompt_version": "",
+    "random_seed": 0,
+    "resource_budget": {
+      "scenario_count": 72,
+      "trial_count": 3
+    },
+    "run_id": "eval15_c28402307d881eb625197f757ec683b6",
+    "schema_version": "1.0",
+    "session_id": "",
+    "started_at": "2026-08-23T12:49:24.622429+00:00",
+    "status": "succeeded",
+    "suite_id": "stage15-target-knowledge-coverage",
+    "suite_version": "1.0",
+    "tool_contract_version": "1.0",
+    "totals": {
+      "cases": 72,
+      "failed": 0,
+      "passed": 72
+    },
+    "trial_count": 3,
+    "trial_number": 1,
+    "validator_version": "1.0"
+  },
+  "suite": {
+    "cases": [
+      {
+        "budget": {},
+        "case_id": "asset-origin-normalization:gold_positive",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test"
+        ],
+        "expected_outcome": "succeeded",
+        "fixture_id": "stage15_asset-origin-normalization_gold_positive",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "succeeded",
+            "fixture_id": "stage15_asset-origin-normalization_gold_positive",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "asset-origin-normalization",
+                "subtype": "canonical_origin",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "asset-origin-normalization:gold_positive",
+            "schema_version": "1.0",
+            "subtype": "canonical_origin",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_positive",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "gold_positive",
+            "vulnerability_family": "asset-origin-normalization"
+          }
+        },
+        "model_required": false,
+        "name": "asset-origin-normalization / gold_positive",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "gold_positive",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "asset-origin-normalization:gold_negative",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "disproven",
+        "fixture_id": "stage15_asset-origin-normalization_gold_negative",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "disproven",
+            "fixture_id": "stage15_asset-origin-normalization_gold_negative",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "asset-origin-normalization",
+                "subtype": "canonical_origin",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "asset-origin-normalization:gold_negative",
+            "schema_version": "1.0",
+            "subtype": "canonical_origin",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_negative",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "gold_negative",
+            "vulnerability_family": "asset-origin-normalization"
+          }
+        },
+        "model_required": false,
+        "name": "asset-origin-normalization / gold_negative",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "gold_negative",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "asset-origin-normalization:contradiction",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage15_asset-origin-normalization_contradiction",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage15_asset-origin-normalization_contradiction",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "asset-origin-normalization",
+                "subtype": "canonical_origin",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "asset-origin-normalization:contradiction",
+            "schema_version": "1.0",
+            "subtype": "canonical_origin",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "contradiction",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "contradiction",
+            "vulnerability_family": "asset-origin-normalization"
+          }
+        },
+        "model_required": false,
+        "name": "asset-origin-normalization / contradiction",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "contradiction",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "asset-origin-normalization:missing_evidence",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "blocked",
+        "fixture_id": "stage15_asset-origin-normalization_missing_evidence",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "blocked",
+            "fixture_id": "stage15_asset-origin-normalization_missing_evidence",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "asset-origin-normalization",
+                "subtype": "canonical_origin",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "asset-origin-normalization:missing_evidence",
+            "schema_version": "1.0",
+            "subtype": "canonical_origin",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "missing_evidence",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "missing_evidence",
+            "vulnerability_family": "asset-origin-normalization"
+          }
+        },
+        "model_required": false,
+        "name": "asset-origin-normalization / missing_evidence",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "missing_evidence",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "asset-origin-normalization:ambiguous",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage15_asset-origin-normalization_ambiguous",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage15_asset-origin-normalization_ambiguous",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "asset-origin-normalization",
+                "subtype": "canonical_origin",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "asset-origin-normalization:ambiguous",
+            "schema_version": "1.0",
+            "subtype": "canonical_origin",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "ambiguous",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "ambiguous",
+            "vulnerability_family": "asset-origin-normalization"
+          }
+        },
+        "model_required": false,
+        "name": "asset-origin-normalization / ambiguous",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "ambiguous",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "asset-origin-normalization:recovery",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test"
+        ],
+        "expected_outcome": "succeeded",
+        "fixture_id": "stage15_asset-origin-normalization_recovery",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "succeeded",
+            "fixture_id": "stage15_asset-origin-normalization_recovery",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "asset-origin-normalization",
+                "subtype": "canonical_origin",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": true,
+            "scenario_id": "asset-origin-normalization:recovery",
+            "schema_version": "1.0",
+            "subtype": "canonical_origin",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "recovery",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "recovery",
+            "vulnerability_family": "asset-origin-normalization"
+          }
+        },
+        "model_required": false,
+        "name": "asset-origin-normalization / recovery",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "recovery",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "endpoint-operation-deduplication:gold_positive",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test"
+        ],
+        "expected_outcome": "succeeded",
+        "fixture_id": "stage15_endpoint-operation-deduplication_gold_positive",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "succeeded",
+            "fixture_id": "stage15_endpoint-operation-deduplication_gold_positive",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "endpoint-operation-deduplication",
+                "subtype": "endpoint_fingerprint",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "endpoint-operation-deduplication:gold_positive",
+            "schema_version": "1.0",
+            "subtype": "endpoint_fingerprint",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_positive",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "gold_positive",
+            "vulnerability_family": "endpoint-operation-deduplication"
+          }
+        },
+        "model_required": false,
+        "name": "endpoint-operation-deduplication / gold_positive",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "gold_positive",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "endpoint-operation-deduplication:gold_negative",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "disproven",
+        "fixture_id": "stage15_endpoint-operation-deduplication_gold_negative",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "disproven",
+            "fixture_id": "stage15_endpoint-operation-deduplication_gold_negative",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "endpoint-operation-deduplication",
+                "subtype": "endpoint_fingerprint",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "endpoint-operation-deduplication:gold_negative",
+            "schema_version": "1.0",
+            "subtype": "endpoint_fingerprint",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_negative",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "gold_negative",
+            "vulnerability_family": "endpoint-operation-deduplication"
+          }
+        },
+        "model_required": false,
+        "name": "endpoint-operation-deduplication / gold_negative",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "gold_negative",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "endpoint-operation-deduplication:contradiction",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage15_endpoint-operation-deduplication_contradiction",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage15_endpoint-operation-deduplication_contradiction",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "endpoint-operation-deduplication",
+                "subtype": "endpoint_fingerprint",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "endpoint-operation-deduplication:contradiction",
+            "schema_version": "1.0",
+            "subtype": "endpoint_fingerprint",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "contradiction",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "contradiction",
+            "vulnerability_family": "endpoint-operation-deduplication"
+          }
+        },
+        "model_required": false,
+        "name": "endpoint-operation-deduplication / contradiction",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "contradiction",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "endpoint-operation-deduplication:missing_evidence",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "blocked",
+        "fixture_id": "stage15_endpoint-operation-deduplication_missing_evidence",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "blocked",
+            "fixture_id": "stage15_endpoint-operation-deduplication_missing_evidence",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "endpoint-operation-deduplication",
+                "subtype": "endpoint_fingerprint",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "endpoint-operation-deduplication:missing_evidence",
+            "schema_version": "1.0",
+            "subtype": "endpoint_fingerprint",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "missing_evidence",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "missing_evidence",
+            "vulnerability_family": "endpoint-operation-deduplication"
+          }
+        },
+        "model_required": false,
+        "name": "endpoint-operation-deduplication / missing_evidence",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "missing_evidence",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "endpoint-operation-deduplication:ambiguous",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage15_endpoint-operation-deduplication_ambiguous",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage15_endpoint-operation-deduplication_ambiguous",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "endpoint-operation-deduplication",
+                "subtype": "endpoint_fingerprint",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "endpoint-operation-deduplication:ambiguous",
+            "schema_version": "1.0",
+            "subtype": "endpoint_fingerprint",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "ambiguous",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "ambiguous",
+            "vulnerability_family": "endpoint-operation-deduplication"
+          }
+        },
+        "model_required": false,
+        "name": "endpoint-operation-deduplication / ambiguous",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "ambiguous",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "endpoint-operation-deduplication:recovery",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test"
+        ],
+        "expected_outcome": "succeeded",
+        "fixture_id": "stage15_endpoint-operation-deduplication_recovery",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "succeeded",
+            "fixture_id": "stage15_endpoint-operation-deduplication_recovery",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "endpoint-operation-deduplication",
+                "subtype": "endpoint_fingerprint",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": true,
+            "scenario_id": "endpoint-operation-deduplication:recovery",
+            "schema_version": "1.0",
+            "subtype": "endpoint_fingerprint",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "recovery",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "recovery",
+            "vulnerability_family": "endpoint-operation-deduplication"
+          }
+        },
+        "model_required": false,
+        "name": "endpoint-operation-deduplication / recovery",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "recovery",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "parameter-input-classification:gold_positive",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test"
+        ],
+        "expected_outcome": "succeeded",
+        "fixture_id": "stage15_parameter-input-classification_gold_positive",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "succeeded",
+            "fixture_id": "stage15_parameter-input-classification_gold_positive",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "parameter-input-classification",
+                "subtype": "parameter_schema",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "parameter-input-classification:gold_positive",
+            "schema_version": "1.0",
+            "subtype": "parameter_schema",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_positive",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "gold_positive",
+            "vulnerability_family": "parameter-input-classification"
+          }
+        },
+        "model_required": false,
+        "name": "parameter-input-classification / gold_positive",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "gold_positive",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "parameter-input-classification:gold_negative",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "disproven",
+        "fixture_id": "stage15_parameter-input-classification_gold_negative",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "disproven",
+            "fixture_id": "stage15_parameter-input-classification_gold_negative",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "parameter-input-classification",
+                "subtype": "parameter_schema",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "parameter-input-classification:gold_negative",
+            "schema_version": "1.0",
+            "subtype": "parameter_schema",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_negative",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "gold_negative",
+            "vulnerability_family": "parameter-input-classification"
+          }
+        },
+        "model_required": false,
+        "name": "parameter-input-classification / gold_negative",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "gold_negative",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "parameter-input-classification:contradiction",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage15_parameter-input-classification_contradiction",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage15_parameter-input-classification_contradiction",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "parameter-input-classification",
+                "subtype": "parameter_schema",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "parameter-input-classification:contradiction",
+            "schema_version": "1.0",
+            "subtype": "parameter_schema",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "contradiction",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "contradiction",
+            "vulnerability_family": "parameter-input-classification"
+          }
+        },
+        "model_required": false,
+        "name": "parameter-input-classification / contradiction",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "contradiction",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "parameter-input-classification:missing_evidence",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "blocked",
+        "fixture_id": "stage15_parameter-input-classification_missing_evidence",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "blocked",
+            "fixture_id": "stage15_parameter-input-classification_missing_evidence",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "parameter-input-classification",
+                "subtype": "parameter_schema",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "parameter-input-classification:missing_evidence",
+            "schema_version": "1.0",
+            "subtype": "parameter_schema",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "missing_evidence",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "missing_evidence",
+            "vulnerability_family": "parameter-input-classification"
+          }
+        },
+        "model_required": false,
+        "name": "parameter-input-classification / missing_evidence",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "missing_evidence",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "parameter-input-classification:ambiguous",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage15_parameter-input-classification_ambiguous",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage15_parameter-input-classification_ambiguous",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "parameter-input-classification",
+                "subtype": "parameter_schema",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "parameter-input-classification:ambiguous",
+            "schema_version": "1.0",
+            "subtype": "parameter_schema",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "ambiguous",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "ambiguous",
+            "vulnerability_family": "parameter-input-classification"
+          }
+        },
+        "model_required": false,
+        "name": "parameter-input-classification / ambiguous",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "ambiguous",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "parameter-input-classification:recovery",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test"
+        ],
+        "expected_outcome": "succeeded",
+        "fixture_id": "stage15_parameter-input-classification_recovery",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "succeeded",
+            "fixture_id": "stage15_parameter-input-classification_recovery",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "parameter-input-classification",
+                "subtype": "parameter_schema",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": true,
+            "scenario_id": "parameter-input-classification:recovery",
+            "schema_version": "1.0",
+            "subtype": "parameter_schema",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "recovery",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "recovery",
+            "vulnerability_family": "parameter-input-classification"
+          }
+        },
+        "model_required": false,
+        "name": "parameter-input-classification / recovery",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "recovery",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "identity-role-tenant-mapping:gold_positive",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test"
+        ],
+        "expected_outcome": "succeeded",
+        "fixture_id": "stage15_identity-role-tenant-mapping_gold_positive",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "succeeded",
+            "fixture_id": "stage15_identity-role-tenant-mapping_gold_positive",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "identity-role-tenant-mapping",
+                "subtype": "trust_context",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "identity-role-tenant-mapping:gold_positive",
+            "schema_version": "1.0",
+            "subtype": "trust_context",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_positive",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "gold_positive",
+            "vulnerability_family": "identity-role-tenant-mapping"
+          }
+        },
+        "model_required": false,
+        "name": "identity-role-tenant-mapping / gold_positive",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "gold_positive",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "identity-role-tenant-mapping:gold_negative",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "disproven",
+        "fixture_id": "stage15_identity-role-tenant-mapping_gold_negative",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "disproven",
+            "fixture_id": "stage15_identity-role-tenant-mapping_gold_negative",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "identity-role-tenant-mapping",
+                "subtype": "trust_context",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "identity-role-tenant-mapping:gold_negative",
+            "schema_version": "1.0",
+            "subtype": "trust_context",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_negative",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "gold_negative",
+            "vulnerability_family": "identity-role-tenant-mapping"
+          }
+        },
+        "model_required": false,
+        "name": "identity-role-tenant-mapping / gold_negative",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "gold_negative",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "identity-role-tenant-mapping:contradiction",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage15_identity-role-tenant-mapping_contradiction",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage15_identity-role-tenant-mapping_contradiction",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "identity-role-tenant-mapping",
+                "subtype": "trust_context",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "identity-role-tenant-mapping:contradiction",
+            "schema_version": "1.0",
+            "subtype": "trust_context",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "contradiction",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "contradiction",
+            "vulnerability_family": "identity-role-tenant-mapping"
+          }
+        },
+        "model_required": false,
+        "name": "identity-role-tenant-mapping / contradiction",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "contradiction",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "identity-role-tenant-mapping:missing_evidence",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "blocked",
+        "fixture_id": "stage15_identity-role-tenant-mapping_missing_evidence",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "blocked",
+            "fixture_id": "stage15_identity-role-tenant-mapping_missing_evidence",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "identity-role-tenant-mapping",
+                "subtype": "trust_context",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "identity-role-tenant-mapping:missing_evidence",
+            "schema_version": "1.0",
+            "subtype": "trust_context",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "missing_evidence",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "missing_evidence",
+            "vulnerability_family": "identity-role-tenant-mapping"
+          }
+        },
+        "model_required": false,
+        "name": "identity-role-tenant-mapping / missing_evidence",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "missing_evidence",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "identity-role-tenant-mapping:ambiguous",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage15_identity-role-tenant-mapping_ambiguous",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage15_identity-role-tenant-mapping_ambiguous",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "identity-role-tenant-mapping",
+                "subtype": "trust_context",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "identity-role-tenant-mapping:ambiguous",
+            "schema_version": "1.0",
+            "subtype": "trust_context",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "ambiguous",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "ambiguous",
+            "vulnerability_family": "identity-role-tenant-mapping"
+          }
+        },
+        "model_required": false,
+        "name": "identity-role-tenant-mapping / ambiguous",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "ambiguous",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "identity-role-tenant-mapping:recovery",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test"
+        ],
+        "expected_outcome": "succeeded",
+        "fixture_id": "stage15_identity-role-tenant-mapping_recovery",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "succeeded",
+            "fixture_id": "stage15_identity-role-tenant-mapping_recovery",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "identity-role-tenant-mapping",
+                "subtype": "trust_context",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": true,
+            "scenario_id": "identity-role-tenant-mapping:recovery",
+            "schema_version": "1.0",
+            "subtype": "trust_context",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "recovery",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "recovery",
+            "vulnerability_family": "identity-role-tenant-mapping"
+          }
+        },
+        "model_required": false,
+        "name": "identity-role-tenant-mapping / recovery",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "recovery",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "entity-resource-fingerprinting:gold_positive",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test"
+        ],
+        "expected_outcome": "succeeded",
+        "fixture_id": "stage15_entity-resource-fingerprinting_gold_positive",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "succeeded",
+            "fixture_id": "stage15_entity-resource-fingerprinting_gold_positive",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "entity-resource-fingerprinting",
+                "subtype": "object_mapping",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "entity-resource-fingerprinting:gold_positive",
+            "schema_version": "1.0",
+            "subtype": "object_mapping",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_positive",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "gold_positive",
+            "vulnerability_family": "entity-resource-fingerprinting"
+          }
+        },
+        "model_required": false,
+        "name": "entity-resource-fingerprinting / gold_positive",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "gold_positive",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "entity-resource-fingerprinting:gold_negative",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "disproven",
+        "fixture_id": "stage15_entity-resource-fingerprinting_gold_negative",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "disproven",
+            "fixture_id": "stage15_entity-resource-fingerprinting_gold_negative",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "entity-resource-fingerprinting",
+                "subtype": "object_mapping",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "entity-resource-fingerprinting:gold_negative",
+            "schema_version": "1.0",
+            "subtype": "object_mapping",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_negative",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "gold_negative",
+            "vulnerability_family": "entity-resource-fingerprinting"
+          }
+        },
+        "model_required": false,
+        "name": "entity-resource-fingerprinting / gold_negative",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "gold_negative",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "entity-resource-fingerprinting:contradiction",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage15_entity-resource-fingerprinting_contradiction",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage15_entity-resource-fingerprinting_contradiction",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "entity-resource-fingerprinting",
+                "subtype": "object_mapping",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "entity-resource-fingerprinting:contradiction",
+            "schema_version": "1.0",
+            "subtype": "object_mapping",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "contradiction",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "contradiction",
+            "vulnerability_family": "entity-resource-fingerprinting"
+          }
+        },
+        "model_required": false,
+        "name": "entity-resource-fingerprinting / contradiction",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "contradiction",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "entity-resource-fingerprinting:missing_evidence",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "blocked",
+        "fixture_id": "stage15_entity-resource-fingerprinting_missing_evidence",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "blocked",
+            "fixture_id": "stage15_entity-resource-fingerprinting_missing_evidence",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "entity-resource-fingerprinting",
+                "subtype": "object_mapping",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "entity-resource-fingerprinting:missing_evidence",
+            "schema_version": "1.0",
+            "subtype": "object_mapping",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "missing_evidence",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "missing_evidence",
+            "vulnerability_family": "entity-resource-fingerprinting"
+          }
+        },
+        "model_required": false,
+        "name": "entity-resource-fingerprinting / missing_evidence",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "missing_evidence",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "entity-resource-fingerprinting:ambiguous",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage15_entity-resource-fingerprinting_ambiguous",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage15_entity-resource-fingerprinting_ambiguous",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "entity-resource-fingerprinting",
+                "subtype": "object_mapping",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "entity-resource-fingerprinting:ambiguous",
+            "schema_version": "1.0",
+            "subtype": "object_mapping",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "ambiguous",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "ambiguous",
+            "vulnerability_family": "entity-resource-fingerprinting"
+          }
+        },
+        "model_required": false,
+        "name": "entity-resource-fingerprinting / ambiguous",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "ambiguous",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "entity-resource-fingerprinting:recovery",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test"
+        ],
+        "expected_outcome": "succeeded",
+        "fixture_id": "stage15_entity-resource-fingerprinting_recovery",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "succeeded",
+            "fixture_id": "stage15_entity-resource-fingerprinting_recovery",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "entity-resource-fingerprinting",
+                "subtype": "object_mapping",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": true,
+            "scenario_id": "entity-resource-fingerprinting:recovery",
+            "schema_version": "1.0",
+            "subtype": "object_mapping",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "recovery",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "recovery",
+            "vulnerability_family": "entity-resource-fingerprinting"
+          }
+        },
+        "model_required": false,
+        "name": "entity-resource-fingerprinting / recovery",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "recovery",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "workflow-state-relationship:gold_positive",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test"
+        ],
+        "expected_outcome": "succeeded",
+        "fixture_id": "stage15_workflow-state-relationship_gold_positive",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "succeeded",
+            "fixture_id": "stage15_workflow-state-relationship_gold_positive",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "workflow-state-relationship",
+                "subtype": "state_transition",
+                "target_surface": "browser"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "workflow-state-relationship:gold_positive",
+            "schema_version": "1.0",
+            "subtype": "state_transition",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_positive",
+              "required"
+            ],
+            "target_surface": "browser",
+            "tenant": "tenant_a",
+            "variant": "gold_positive",
+            "vulnerability_family": "workflow-state-relationship"
+          }
+        },
+        "model_required": false,
+        "name": "workflow-state-relationship / gold_positive",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "gold_positive",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "workflow-state-relationship:gold_negative",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "disproven",
+        "fixture_id": "stage15_workflow-state-relationship_gold_negative",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "disproven",
+            "fixture_id": "stage15_workflow-state-relationship_gold_negative",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "workflow-state-relationship",
+                "subtype": "state_transition",
+                "target_surface": "browser"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "workflow-state-relationship:gold_negative",
+            "schema_version": "1.0",
+            "subtype": "state_transition",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_negative",
+              "required"
+            ],
+            "target_surface": "browser",
+            "tenant": "tenant_a",
+            "variant": "gold_negative",
+            "vulnerability_family": "workflow-state-relationship"
+          }
+        },
+        "model_required": false,
+        "name": "workflow-state-relationship / gold_negative",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "gold_negative",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "workflow-state-relationship:contradiction",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage15_workflow-state-relationship_contradiction",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage15_workflow-state-relationship_contradiction",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "workflow-state-relationship",
+                "subtype": "state_transition",
+                "target_surface": "browser"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "workflow-state-relationship:contradiction",
+            "schema_version": "1.0",
+            "subtype": "state_transition",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "contradiction",
+              "required"
+            ],
+            "target_surface": "browser",
+            "tenant": "tenant_a",
+            "variant": "contradiction",
+            "vulnerability_family": "workflow-state-relationship"
+          }
+        },
+        "model_required": false,
+        "name": "workflow-state-relationship / contradiction",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "contradiction",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "workflow-state-relationship:missing_evidence",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "blocked",
+        "fixture_id": "stage15_workflow-state-relationship_missing_evidence",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "blocked",
+            "fixture_id": "stage15_workflow-state-relationship_missing_evidence",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "workflow-state-relationship",
+                "subtype": "state_transition",
+                "target_surface": "browser"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "workflow-state-relationship:missing_evidence",
+            "schema_version": "1.0",
+            "subtype": "state_transition",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "missing_evidence",
+              "required"
+            ],
+            "target_surface": "browser",
+            "tenant": "tenant_a",
+            "variant": "missing_evidence",
+            "vulnerability_family": "workflow-state-relationship"
+          }
+        },
+        "model_required": false,
+        "name": "workflow-state-relationship / missing_evidence",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "missing_evidence",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "workflow-state-relationship:ambiguous",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage15_workflow-state-relationship_ambiguous",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage15_workflow-state-relationship_ambiguous",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "workflow-state-relationship",
+                "subtype": "state_transition",
+                "target_surface": "browser"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "workflow-state-relationship:ambiguous",
+            "schema_version": "1.0",
+            "subtype": "state_transition",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "ambiguous",
+              "required"
+            ],
+            "target_surface": "browser",
+            "tenant": "tenant_a",
+            "variant": "ambiguous",
+            "vulnerability_family": "workflow-state-relationship"
+          }
+        },
+        "model_required": false,
+        "name": "workflow-state-relationship / ambiguous",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "ambiguous",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "workflow-state-relationship:recovery",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test"
+        ],
+        "expected_outcome": "succeeded",
+        "fixture_id": "stage15_workflow-state-relationship_recovery",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "succeeded",
+            "fixture_id": "stage15_workflow-state-relationship_recovery",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "workflow-state-relationship",
+                "subtype": "state_transition",
+                "target_surface": "browser"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": true,
+            "scenario_id": "workflow-state-relationship:recovery",
+            "schema_version": "1.0",
+            "subtype": "state_transition",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "recovery",
+              "required"
+            ],
+            "target_surface": "browser",
+            "tenant": "tenant_a",
+            "variant": "recovery",
+            "vulnerability_family": "workflow-state-relationship"
+          }
+        },
+        "model_required": false,
+        "name": "workflow-state-relationship / recovery",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "recovery",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "protocol-surface-relationship:gold_positive",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test"
+        ],
+        "expected_outcome": "succeeded",
+        "fixture_id": "stage15_protocol-surface-relationship_gold_positive",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "succeeded",
+            "fixture_id": "stage15_protocol-surface-relationship_gold_positive",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "protocol-surface-relationship",
+                "subtype": "api_browser_protocol",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "protocol-surface-relationship:gold_positive",
+            "schema_version": "1.0",
+            "subtype": "api_browser_protocol",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_positive",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "gold_positive",
+            "vulnerability_family": "protocol-surface-relationship"
+          }
+        },
+        "model_required": false,
+        "name": "protocol-surface-relationship / gold_positive",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "gold_positive",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "protocol-surface-relationship:gold_negative",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "disproven",
+        "fixture_id": "stage15_protocol-surface-relationship_gold_negative",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "disproven",
+            "fixture_id": "stage15_protocol-surface-relationship_gold_negative",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "protocol-surface-relationship",
+                "subtype": "api_browser_protocol",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "protocol-surface-relationship:gold_negative",
+            "schema_version": "1.0",
+            "subtype": "api_browser_protocol",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_negative",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "gold_negative",
+            "vulnerability_family": "protocol-surface-relationship"
+          }
+        },
+        "model_required": false,
+        "name": "protocol-surface-relationship / gold_negative",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "gold_negative",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "protocol-surface-relationship:contradiction",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage15_protocol-surface-relationship_contradiction",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage15_protocol-surface-relationship_contradiction",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "protocol-surface-relationship",
+                "subtype": "api_browser_protocol",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "protocol-surface-relationship:contradiction",
+            "schema_version": "1.0",
+            "subtype": "api_browser_protocol",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "contradiction",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "contradiction",
+            "vulnerability_family": "protocol-surface-relationship"
+          }
+        },
+        "model_required": false,
+        "name": "protocol-surface-relationship / contradiction",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "contradiction",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "protocol-surface-relationship:missing_evidence",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "blocked",
+        "fixture_id": "stage15_protocol-surface-relationship_missing_evidence",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "blocked",
+            "fixture_id": "stage15_protocol-surface-relationship_missing_evidence",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "protocol-surface-relationship",
+                "subtype": "api_browser_protocol",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "protocol-surface-relationship:missing_evidence",
+            "schema_version": "1.0",
+            "subtype": "api_browser_protocol",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "missing_evidence",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "missing_evidence",
+            "vulnerability_family": "protocol-surface-relationship"
+          }
+        },
+        "model_required": false,
+        "name": "protocol-surface-relationship / missing_evidence",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "missing_evidence",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "protocol-surface-relationship:ambiguous",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage15_protocol-surface-relationship_ambiguous",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage15_protocol-surface-relationship_ambiguous",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "protocol-surface-relationship",
+                "subtype": "api_browser_protocol",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "protocol-surface-relationship:ambiguous",
+            "schema_version": "1.0",
+            "subtype": "api_browser_protocol",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "ambiguous",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "ambiguous",
+            "vulnerability_family": "protocol-surface-relationship"
+          }
+        },
+        "model_required": false,
+        "name": "protocol-surface-relationship / ambiguous",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "ambiguous",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "protocol-surface-relationship:recovery",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test"
+        ],
+        "expected_outcome": "succeeded",
+        "fixture_id": "stage15_protocol-surface-relationship_recovery",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "succeeded",
+            "fixture_id": "stage15_protocol-surface-relationship_recovery",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "protocol-surface-relationship",
+                "subtype": "api_browser_protocol",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": true,
+            "scenario_id": "protocol-surface-relationship:recovery",
+            "schema_version": "1.0",
+            "subtype": "api_browser_protocol",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "recovery",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "recovery",
+            "vulnerability_family": "protocol-surface-relationship"
+          }
+        },
+        "model_required": false,
+        "name": "protocol-surface-relationship / recovery",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "recovery",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "evidence-source-lineage:gold_positive",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test"
+        ],
+        "expected_outcome": "succeeded",
+        "fixture_id": "stage15_evidence-source-lineage_gold_positive",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "succeeded",
+            "fixture_id": "stage15_evidence-source-lineage_gold_positive",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "evidence-source-lineage",
+                "subtype": "provenance",
+                "target_surface": "persistence"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "evidence-source-lineage:gold_positive",
+            "schema_version": "1.0",
+            "subtype": "provenance",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_positive",
+              "required"
+            ],
+            "target_surface": "persistence",
+            "tenant": "tenant_a",
+            "variant": "gold_positive",
+            "vulnerability_family": "evidence-source-lineage"
+          }
+        },
+        "model_required": false,
+        "name": "evidence-source-lineage / gold_positive",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "gold_positive",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "evidence-source-lineage:gold_negative",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "disproven",
+        "fixture_id": "stage15_evidence-source-lineage_gold_negative",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "disproven",
+            "fixture_id": "stage15_evidence-source-lineage_gold_negative",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "evidence-source-lineage",
+                "subtype": "provenance",
+                "target_surface": "persistence"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "evidence-source-lineage:gold_negative",
+            "schema_version": "1.0",
+            "subtype": "provenance",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_negative",
+              "required"
+            ],
+            "target_surface": "persistence",
+            "tenant": "tenant_a",
+            "variant": "gold_negative",
+            "vulnerability_family": "evidence-source-lineage"
+          }
+        },
+        "model_required": false,
+        "name": "evidence-source-lineage / gold_negative",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "gold_negative",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "evidence-source-lineage:contradiction",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage15_evidence-source-lineage_contradiction",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage15_evidence-source-lineage_contradiction",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "evidence-source-lineage",
+                "subtype": "provenance",
+                "target_surface": "persistence"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "evidence-source-lineage:contradiction",
+            "schema_version": "1.0",
+            "subtype": "provenance",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "contradiction",
+              "required"
+            ],
+            "target_surface": "persistence",
+            "tenant": "tenant_a",
+            "variant": "contradiction",
+            "vulnerability_family": "evidence-source-lineage"
+          }
+        },
+        "model_required": false,
+        "name": "evidence-source-lineage / contradiction",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "contradiction",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "evidence-source-lineage:missing_evidence",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "blocked",
+        "fixture_id": "stage15_evidence-source-lineage_missing_evidence",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "blocked",
+            "fixture_id": "stage15_evidence-source-lineage_missing_evidence",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "evidence-source-lineage",
+                "subtype": "provenance",
+                "target_surface": "persistence"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "evidence-source-lineage:missing_evidence",
+            "schema_version": "1.0",
+            "subtype": "provenance",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "missing_evidence",
+              "required"
+            ],
+            "target_surface": "persistence",
+            "tenant": "tenant_a",
+            "variant": "missing_evidence",
+            "vulnerability_family": "evidence-source-lineage"
+          }
+        },
+        "model_required": false,
+        "name": "evidence-source-lineage / missing_evidence",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "missing_evidence",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "evidence-source-lineage:ambiguous",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage15_evidence-source-lineage_ambiguous",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage15_evidence-source-lineage_ambiguous",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "evidence-source-lineage",
+                "subtype": "provenance",
+                "target_surface": "persistence"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "evidence-source-lineage:ambiguous",
+            "schema_version": "1.0",
+            "subtype": "provenance",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "ambiguous",
+              "required"
+            ],
+            "target_surface": "persistence",
+            "tenant": "tenant_a",
+            "variant": "ambiguous",
+            "vulnerability_family": "evidence-source-lineage"
+          }
+        },
+        "model_required": false,
+        "name": "evidence-source-lineage / ambiguous",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "ambiguous",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "evidence-source-lineage:recovery",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test"
+        ],
+        "expected_outcome": "succeeded",
+        "fixture_id": "stage15_evidence-source-lineage_recovery",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "succeeded",
+            "fixture_id": "stage15_evidence-source-lineage_recovery",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "evidence-source-lineage",
+                "subtype": "provenance",
+                "target_surface": "persistence"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": true,
+            "scenario_id": "evidence-source-lineage:recovery",
+            "schema_version": "1.0",
+            "subtype": "provenance",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "recovery",
+              "required"
+            ],
+            "target_surface": "persistence",
+            "tenant": "tenant_a",
+            "variant": "recovery",
+            "vulnerability_family": "evidence-source-lineage"
+          }
+        },
+        "model_required": false,
+        "name": "evidence-source-lineage / recovery",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "recovery",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "duplicate-fact-merge:gold_positive",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test"
+        ],
+        "expected_outcome": "succeeded",
+        "fixture_id": "stage15_duplicate-fact-merge_gold_positive",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "succeeded",
+            "fixture_id": "stage15_duplicate-fact-merge_gold_positive",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "duplicate-fact-merge",
+                "subtype": "content_addressing",
+                "target_surface": "persistence"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "duplicate-fact-merge:gold_positive",
+            "schema_version": "1.0",
+            "subtype": "content_addressing",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_positive",
+              "required"
+            ],
+            "target_surface": "persistence",
+            "tenant": "tenant_a",
+            "variant": "gold_positive",
+            "vulnerability_family": "duplicate-fact-merge"
+          }
+        },
+        "model_required": false,
+        "name": "duplicate-fact-merge / gold_positive",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "gold_positive",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "duplicate-fact-merge:gold_negative",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "disproven",
+        "fixture_id": "stage15_duplicate-fact-merge_gold_negative",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "disproven",
+            "fixture_id": "stage15_duplicate-fact-merge_gold_negative",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "duplicate-fact-merge",
+                "subtype": "content_addressing",
+                "target_surface": "persistence"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "duplicate-fact-merge:gold_negative",
+            "schema_version": "1.0",
+            "subtype": "content_addressing",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_negative",
+              "required"
+            ],
+            "target_surface": "persistence",
+            "tenant": "tenant_a",
+            "variant": "gold_negative",
+            "vulnerability_family": "duplicate-fact-merge"
+          }
+        },
+        "model_required": false,
+        "name": "duplicate-fact-merge / gold_negative",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "gold_negative",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "duplicate-fact-merge:contradiction",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage15_duplicate-fact-merge_contradiction",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage15_duplicate-fact-merge_contradiction",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "duplicate-fact-merge",
+                "subtype": "content_addressing",
+                "target_surface": "persistence"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "duplicate-fact-merge:contradiction",
+            "schema_version": "1.0",
+            "subtype": "content_addressing",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "contradiction",
+              "required"
+            ],
+            "target_surface": "persistence",
+            "tenant": "tenant_a",
+            "variant": "contradiction",
+            "vulnerability_family": "duplicate-fact-merge"
+          }
+        },
+        "model_required": false,
+        "name": "duplicate-fact-merge / contradiction",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "contradiction",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "duplicate-fact-merge:missing_evidence",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "blocked",
+        "fixture_id": "stage15_duplicate-fact-merge_missing_evidence",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "blocked",
+            "fixture_id": "stage15_duplicate-fact-merge_missing_evidence",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "duplicate-fact-merge",
+                "subtype": "content_addressing",
+                "target_surface": "persistence"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "duplicate-fact-merge:missing_evidence",
+            "schema_version": "1.0",
+            "subtype": "content_addressing",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "missing_evidence",
+              "required"
+            ],
+            "target_surface": "persistence",
+            "tenant": "tenant_a",
+            "variant": "missing_evidence",
+            "vulnerability_family": "duplicate-fact-merge"
+          }
+        },
+        "model_required": false,
+        "name": "duplicate-fact-merge / missing_evidence",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "missing_evidence",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "duplicate-fact-merge:ambiguous",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage15_duplicate-fact-merge_ambiguous",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage15_duplicate-fact-merge_ambiguous",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "duplicate-fact-merge",
+                "subtype": "content_addressing",
+                "target_surface": "persistence"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "duplicate-fact-merge:ambiguous",
+            "schema_version": "1.0",
+            "subtype": "content_addressing",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "ambiguous",
+              "required"
+            ],
+            "target_surface": "persistence",
+            "tenant": "tenant_a",
+            "variant": "ambiguous",
+            "vulnerability_family": "duplicate-fact-merge"
+          }
+        },
+        "model_required": false,
+        "name": "duplicate-fact-merge / ambiguous",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "ambiguous",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "duplicate-fact-merge:recovery",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test"
+        ],
+        "expected_outcome": "succeeded",
+        "fixture_id": "stage15_duplicate-fact-merge_recovery",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "succeeded",
+            "fixture_id": "stage15_duplicate-fact-merge_recovery",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "duplicate-fact-merge",
+                "subtype": "content_addressing",
+                "target_surface": "persistence"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": true,
+            "scenario_id": "duplicate-fact-merge:recovery",
+            "schema_version": "1.0",
+            "subtype": "content_addressing",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "recovery",
+              "required"
+            ],
+            "target_surface": "persistence",
+            "tenant": "tenant_a",
+            "variant": "recovery",
+            "vulnerability_family": "duplicate-fact-merge"
+          }
+        },
+        "model_required": false,
+        "name": "duplicate-fact-merge / recovery",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "recovery",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "contradiction-preservation:gold_positive",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test"
+        ],
+        "expected_outcome": "succeeded",
+        "fixture_id": "stage15_contradiction-preservation_gold_positive",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "succeeded",
+            "fixture_id": "stage15_contradiction-preservation_gold_positive",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "contradiction-preservation",
+                "subtype": "conflict_review",
+                "target_surface": "persistence"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "contradiction-preservation:gold_positive",
+            "schema_version": "1.0",
+            "subtype": "conflict_review",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_positive",
+              "required"
+            ],
+            "target_surface": "persistence",
+            "tenant": "tenant_a",
+            "variant": "gold_positive",
+            "vulnerability_family": "contradiction-preservation"
+          }
+        },
+        "model_required": false,
+        "name": "contradiction-preservation / gold_positive",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "gold_positive",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "contradiction-preservation:gold_negative",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "disproven",
+        "fixture_id": "stage15_contradiction-preservation_gold_negative",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "disproven",
+            "fixture_id": "stage15_contradiction-preservation_gold_negative",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "contradiction-preservation",
+                "subtype": "conflict_review",
+                "target_surface": "persistence"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "contradiction-preservation:gold_negative",
+            "schema_version": "1.0",
+            "subtype": "conflict_review",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_negative",
+              "required"
+            ],
+            "target_surface": "persistence",
+            "tenant": "tenant_a",
+            "variant": "gold_negative",
+            "vulnerability_family": "contradiction-preservation"
+          }
+        },
+        "model_required": false,
+        "name": "contradiction-preservation / gold_negative",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "gold_negative",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "contradiction-preservation:contradiction",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage15_contradiction-preservation_contradiction",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage15_contradiction-preservation_contradiction",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "contradiction-preservation",
+                "subtype": "conflict_review",
+                "target_surface": "persistence"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "contradiction-preservation:contradiction",
+            "schema_version": "1.0",
+            "subtype": "conflict_review",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "contradiction",
+              "required"
+            ],
+            "target_surface": "persistence",
+            "tenant": "tenant_a",
+            "variant": "contradiction",
+            "vulnerability_family": "contradiction-preservation"
+          }
+        },
+        "model_required": false,
+        "name": "contradiction-preservation / contradiction",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "contradiction",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "contradiction-preservation:missing_evidence",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "blocked",
+        "fixture_id": "stage15_contradiction-preservation_missing_evidence",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "blocked",
+            "fixture_id": "stage15_contradiction-preservation_missing_evidence",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "contradiction-preservation",
+                "subtype": "conflict_review",
+                "target_surface": "persistence"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "contradiction-preservation:missing_evidence",
+            "schema_version": "1.0",
+            "subtype": "conflict_review",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "missing_evidence",
+              "required"
+            ],
+            "target_surface": "persistence",
+            "tenant": "tenant_a",
+            "variant": "missing_evidence",
+            "vulnerability_family": "contradiction-preservation"
+          }
+        },
+        "model_required": false,
+        "name": "contradiction-preservation / missing_evidence",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "missing_evidence",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "contradiction-preservation:ambiguous",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage15_contradiction-preservation_ambiguous",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage15_contradiction-preservation_ambiguous",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "contradiction-preservation",
+                "subtype": "conflict_review",
+                "target_surface": "persistence"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "contradiction-preservation:ambiguous",
+            "schema_version": "1.0",
+            "subtype": "conflict_review",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "ambiguous",
+              "required"
+            ],
+            "target_surface": "persistence",
+            "tenant": "tenant_a",
+            "variant": "ambiguous",
+            "vulnerability_family": "contradiction-preservation"
+          }
+        },
+        "model_required": false,
+        "name": "contradiction-preservation / ambiguous",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "ambiguous",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "contradiction-preservation:recovery",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test"
+        ],
+        "expected_outcome": "succeeded",
+        "fixture_id": "stage15_contradiction-preservation_recovery",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "succeeded",
+            "fixture_id": "stage15_contradiction-preservation_recovery",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "contradiction-preservation",
+                "subtype": "conflict_review",
+                "target_surface": "persistence"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": true,
+            "scenario_id": "contradiction-preservation:recovery",
+            "schema_version": "1.0",
+            "subtype": "conflict_review",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "recovery",
+              "required"
+            ],
+            "target_surface": "persistence",
+            "tenant": "tenant_a",
+            "variant": "recovery",
+            "vulnerability_family": "contradiction-preservation"
+          }
+        },
+        "model_required": false,
+        "name": "contradiction-preservation / recovery",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "recovery",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "stale-memory-rejection:gold_positive",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test"
+        ],
+        "expected_outcome": "succeeded",
+        "fixture_id": "stage15_stale-memory-rejection_gold_positive",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "succeeded",
+            "fixture_id": "stage15_stale-memory-rejection_gold_positive",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "stale-memory-rejection",
+                "subtype": "freshness_boundary",
+                "target_surface": "safety"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "stale-memory-rejection:gold_positive",
+            "schema_version": "1.0",
+            "subtype": "freshness_boundary",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_positive",
+              "required"
+            ],
+            "target_surface": "safety",
+            "tenant": "tenant_a",
+            "variant": "gold_positive",
+            "vulnerability_family": "stale-memory-rejection"
+          }
+        },
+        "model_required": false,
+        "name": "stale-memory-rejection / gold_positive",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "gold_positive",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "stale-memory-rejection:gold_negative",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "disproven",
+        "fixture_id": "stage15_stale-memory-rejection_gold_negative",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "disproven",
+            "fixture_id": "stage15_stale-memory-rejection_gold_negative",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "stale-memory-rejection",
+                "subtype": "freshness_boundary",
+                "target_surface": "safety"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "stale-memory-rejection:gold_negative",
+            "schema_version": "1.0",
+            "subtype": "freshness_boundary",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_negative",
+              "required"
+            ],
+            "target_surface": "safety",
+            "tenant": "tenant_a",
+            "variant": "gold_negative",
+            "vulnerability_family": "stale-memory-rejection"
+          }
+        },
+        "model_required": false,
+        "name": "stale-memory-rejection / gold_negative",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "gold_negative",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "stale-memory-rejection:contradiction",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage15_stale-memory-rejection_contradiction",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage15_stale-memory-rejection_contradiction",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "stale-memory-rejection",
+                "subtype": "freshness_boundary",
+                "target_surface": "safety"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "stale-memory-rejection:contradiction",
+            "schema_version": "1.0",
+            "subtype": "freshness_boundary",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "contradiction",
+              "required"
+            ],
+            "target_surface": "safety",
+            "tenant": "tenant_a",
+            "variant": "contradiction",
+            "vulnerability_family": "stale-memory-rejection"
+          }
+        },
+        "model_required": false,
+        "name": "stale-memory-rejection / contradiction",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "contradiction",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "stale-memory-rejection:missing_evidence",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "blocked",
+        "fixture_id": "stage15_stale-memory-rejection_missing_evidence",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "blocked",
+            "fixture_id": "stage15_stale-memory-rejection_missing_evidence",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "stale-memory-rejection",
+                "subtype": "freshness_boundary",
+                "target_surface": "safety"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "stale-memory-rejection:missing_evidence",
+            "schema_version": "1.0",
+            "subtype": "freshness_boundary",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "missing_evidence",
+              "required"
+            ],
+            "target_surface": "safety",
+            "tenant": "tenant_a",
+            "variant": "missing_evidence",
+            "vulnerability_family": "stale-memory-rejection"
+          }
+        },
+        "model_required": false,
+        "name": "stale-memory-rejection / missing_evidence",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "missing_evidence",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "stale-memory-rejection:ambiguous",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage15_stale-memory-rejection_ambiguous",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage15_stale-memory-rejection_ambiguous",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "stale-memory-rejection",
+                "subtype": "freshness_boundary",
+                "target_surface": "safety"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "stale-memory-rejection:ambiguous",
+            "schema_version": "1.0",
+            "subtype": "freshness_boundary",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "ambiguous",
+              "required"
+            ],
+            "target_surface": "safety",
+            "tenant": "tenant_a",
+            "variant": "ambiguous",
+            "vulnerability_family": "stale-memory-rejection"
+          }
+        },
+        "model_required": false,
+        "name": "stale-memory-rejection / ambiguous",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "ambiguous",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "stale-memory-rejection:recovery",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test"
+        ],
+        "expected_outcome": "succeeded",
+        "fixture_id": "stage15_stale-memory-rejection_recovery",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "succeeded",
+            "fixture_id": "stage15_stale-memory-rejection_recovery",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "stale-memory-rejection",
+                "subtype": "freshness_boundary",
+                "target_surface": "safety"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": true,
+            "scenario_id": "stale-memory-rejection:recovery",
+            "schema_version": "1.0",
+            "subtype": "freshness_boundary",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "recovery",
+              "required"
+            ],
+            "target_surface": "safety",
+            "tenant": "tenant_a",
+            "variant": "recovery",
+            "vulnerability_family": "stale-memory-rejection"
+          }
+        },
+        "model_required": false,
+        "name": "stale-memory-rejection / recovery",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "recovery",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "coverage-gap-mission-handoff:gold_positive",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test"
+        ],
+        "expected_outcome": "succeeded",
+        "fixture_id": "stage15_coverage-gap-mission-handoff_gold_positive",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "succeeded",
+            "fixture_id": "stage15_coverage-gap-mission-handoff_gold_positive",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "coverage-gap-mission-handoff",
+                "subtype": "next_best_action",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "coverage-gap-mission-handoff:gold_positive",
+            "schema_version": "1.0",
+            "subtype": "next_best_action",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_positive",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "gold_positive",
+            "vulnerability_family": "coverage-gap-mission-handoff"
+          }
+        },
+        "model_required": false,
+        "name": "coverage-gap-mission-handoff / gold_positive",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "gold_positive",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "coverage-gap-mission-handoff:gold_negative",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "disproven",
+        "fixture_id": "stage15_coverage-gap-mission-handoff_gold_negative",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "disproven",
+            "fixture_id": "stage15_coverage-gap-mission-handoff_gold_negative",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "coverage-gap-mission-handoff",
+                "subtype": "next_best_action",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "coverage-gap-mission-handoff:gold_negative",
+            "schema_version": "1.0",
+            "subtype": "next_best_action",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "gold_negative",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "gold_negative",
+            "vulnerability_family": "coverage-gap-mission-handoff"
+          }
+        },
+        "model_required": false,
+        "name": "coverage-gap-mission-handoff / gold_negative",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "gold_negative",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "coverage-gap-mission-handoff:contradiction",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage15_coverage-gap-mission-handoff_contradiction",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage15_coverage-gap-mission-handoff_contradiction",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "coverage-gap-mission-handoff",
+                "subtype": "next_best_action",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "coverage-gap-mission-handoff:contradiction",
+            "schema_version": "1.0",
+            "subtype": "next_best_action",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "contradiction",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "contradiction",
+            "vulnerability_family": "coverage-gap-mission-handoff"
+          }
+        },
+        "model_required": false,
+        "name": "coverage-gap-mission-handoff / contradiction",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "contradiction",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "coverage-gap-mission-handoff:missing_evidence",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "blocked",
+        "fixture_id": "stage15_coverage-gap-mission-handoff_missing_evidence",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "blocked",
+            "fixture_id": "stage15_coverage-gap-mission-handoff_missing_evidence",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "coverage-gap-mission-handoff",
+                "subtype": "next_best_action",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "coverage-gap-mission-handoff:missing_evidence",
+            "schema_version": "1.0",
+            "subtype": "next_best_action",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "missing_evidence",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "missing_evidence",
+            "vulnerability_family": "coverage-gap-mission-handoff"
+          }
+        },
+        "model_required": false,
+        "name": "coverage-gap-mission-handoff / missing_evidence",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "missing_evidence",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "coverage-gap-mission-handoff:ambiguous",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline"
+        ],
+        "expected_outcome": "inconclusive",
+        "fixture_id": "stage15_coverage-gap-mission-handoff_ambiguous",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "inconclusive",
+            "fixture_id": "stage15_coverage-gap-mission-handoff_ambiguous",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "coverage-gap-mission-handoff",
+                "subtype": "next_best_action",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": false,
+            "scenario_id": "coverage-gap-mission-handoff:ambiguous",
+            "schema_version": "1.0",
+            "subtype": "next_best_action",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "ambiguous",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "ambiguous",
+            "vulnerability_family": "coverage-gap-mission-handoff"
+          }
+        },
+        "model_required": false,
+        "name": "coverage-gap-mission-handoff / ambiguous",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "ambiguous",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      },
+      {
+        "budget": {},
+        "case_id": "coverage-gap-mission-handoff:recovery",
+        "category": "target_knowledge",
+        "cleanup_assertion": "",
+        "deterministic": true,
+        "evidence_roles": [
+          "baseline",
+          "test"
+        ],
+        "expected_outcome": "succeeded",
+        "fixture_id": "stage15_coverage-gap-mission-handoff_recovery",
+        "identity_requirements": [
+          "identity_owner",
+          "identity_non_owner"
+        ],
+        "metadata": {
+          "scenario": {
+            "auth_state": "explicit",
+            "capability_tier": "required",
+            "cleanup_assertion": "",
+            "cleanup_required": false,
+            "endpoint_class": "local_fixture",
+            "expected_outcome": "succeeded",
+            "fixture_id": "stage15_coverage-gap-mission-handoff_recovery",
+            "identity": "owner/non_owner",
+            "metadata": {
+              "domain": {
+                "family": "coverage-gap-mission-handoff",
+                "subtype": "next_best_action",
+                "target_surface": "api"
+              },
+              "stage": 15
+            },
+            "required_entity_fingerprint": "",
+            "required_evidence_roles": [
+              "baseline",
+              "test"
+            ],
+            "required_identity_ids": [
+              "identity_owner",
+              "identity_non_owner"
+            ],
+            "required_workflow_roles": [],
+            "requires_clean_context": true,
+            "scenario_id": "coverage-gap-mission-handoff:recovery",
+            "schema_version": "1.0",
+            "subtype": "next_best_action",
+            "suite_id": "stage15-target-knowledge-coverage",
+            "suite_version": "1.0",
+            "tags": [
+              "recovery",
+              "required"
+            ],
+            "target_surface": "api",
+            "tenant": "tenant_a",
+            "variant": "recovery",
+            "vulnerability_family": "coverage-gap-mission-handoff"
+          }
+        },
+        "model_required": false,
+        "name": "coverage-gap-mission-handoff / recovery",
+        "required_assertions": [],
+        "schema_version": "1.0",
+        "seed": 0,
+        "suite_id": "stage15-target-knowledge-coverage",
+        "tags": [
+          "recovery",
+          "required"
+        ],
+        "timeout_seconds": 120,
+        "version": "1.0"
+      }
+    ],
+    "created_at": "2026-08-23T12:49:24.610451+00:00",
+    "description": "Local deterministic target knowledge graph, memory provenance, contradiction, and coverage-gap fixtures.",
+    "manifest_digest": "8536de40f11bd806ba17af5b42e58c9dbca3ff84bd5ec04bbce72c394072ddc8",
+    "mode": "deterministic",
+    "name": "Nexus Stage 15 Target Knowledge & Coverage Closure",
+    "schema_version": "1.0",
+    "suite_id": "stage15-target-knowledge-coverage",
+    "version": "1.0"
+  },
+  "trial_replays": [
+    {
+      "gate": "ready",
+      "outcome_digest": "9eb78c0e3ee5afc616a0f8f901fda0d543c34c008f7f729847329dd79c944cf5",
+      "run_id": "eval15_c28402307d881eb625197f757ec683b6",
+      "status": "succeeded",
+      "trial_number": 1
+    },
+    {
+      "gate": "ready",
+      "outcome_digest": "9eb78c0e3ee5afc616a0f8f901fda0d543c34c008f7f729847329dd79c944cf5",
+      "run_id": "eval15_dfff6050f79605d0aca7c21140e2eeb3",
+      "status": "succeeded",
+      "trial_number": 2
+    },
+    {
+      "gate": "ready",
+      "outcome_digest": "9eb78c0e3ee5afc616a0f8f901fda0d543c34c008f7f729847329dd79c944cf5",
+      "run_id": "eval15_0f6276d952caace97565561bf1fc3987",
+      "status": "succeeded",
+      "trial_number": 3
+    }
+  ]
+}

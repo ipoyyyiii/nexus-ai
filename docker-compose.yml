@@ -15,6 +15,28 @@ services:
       - OOB_LOGS_ENDPOINT=${OOB_LOGS_ENDPOINT:-}
       - OOB_AUTH_TOKEN=${OOB_AUTH_TOKEN:-}
       - PYTHONUNBUFFERED=1
+    user: "10001:10001"
+    # The host bind-mounted reports directory is owned by the deployment
+    # operator's non-root group (GID 1000). Keep the service UID non-root but
+    # grant only that group membership so report persistence is writable.
+    group_add:
+      - "1000"
+    init: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 1g
+    cpus: 1.0
+    pids_limit: 512
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/health/live >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     restart: always
     volumes:
       - ./stored_reports:/app/reports
@@ -38,7 +60,44 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
+    init: true
+    mem_limit: 2g
+    cpus: 1.0
+    pids_limit: 512
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/nexus-worker.health && test $$(($(date +%s) - $$(cut -d. -f1 /tmp/nexus-worker.health))) -lt 90"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     restart: always
+
+  # Stage 19 short multi-worker smoke only. Disabled in the normal deployment.
+  nexus-worker-smoke:
+    container_name: nexus_execution_worker_smoke
+    profiles: ["stage19-smoke"]
+    build: .
+    command: ["python", "worker.py", "--capability", "general"]
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+      - /home/nexus:size=64m,mode=700,uid=10001,gid=10001
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    init: true
+    mem_limit: 1g
+    cpus: 0.5
+    pids_limit: 256
+    stop_grace_period: 30s
+    restart: "no"
 
   # Explicit opt-in only; keep raw-network capability disabled by default.
   nexus-raw-network-worker:
@@ -61,6 +120,10 @@ services:
       - ALL
     cap_add:
       - NET_RAW
+    init: true
+    mem_limit: 2g
+    cpus: 1.0
+    pids_limit: 512
     restart: always
 
   # Local deterministic fixture app. Optional; never part of production services.
@@ -107,6 +170,24 @@ services:
     environment:
       - BACKEND_API_URL=${BACKEND_API_URL:-http://pentest-ai-backend:8000}
       - NEXUS_API_KEY=${NEXUS_API_KEY}
+    init: true
+    user: "nexus"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000 >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     restart: always
 
 volumes:

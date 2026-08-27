@@ -7,6 +7,7 @@ code must use core.tool_transport; it must not import requests/socket directly.
 from __future__ import annotations
 
 import ipaddress
+import fnmatch
 import socket
 import threading
 import time
@@ -246,8 +247,32 @@ class SafetyKernel:
             }
         except OSError as exc:
             raise SafetyViolation("dns_failed", f"DNS resolution failed: {redact(str(exc))[:300]}") from exc
+        if not allow_private:
+            allow_private = self._scope_explicitly_allows_private(session_id, parsed.hostname)
         if not allow_private and any(self._is_private_or_reserved(item) for item in addresses):
             raise SafetyViolation("private_ip_rejected", "Resolved target includes a private or reserved IP.")
+
+    def _scope_explicitly_allows_private(self, session_id: str, hostname: str) -> bool:
+        """Allow private fixture addresses only with an explicit session rule.
+
+        The global safety default remains deny. A local lab must opt in on the
+        exact allow rule, e.g. ``allow_private: true`` for ``localhost`` or a
+        Docker fixture hostname; this flag is never inferred from the target.
+        """
+        if not self.session_store or not session_id:
+            return False
+        try:
+            context = self.session_store.get(session_id) or {}
+        except Exception:
+            return False
+        for rule in context.get("scope_rules") or []:
+            if (
+                rule.get("rule_type") == "allow"
+                and bool(rule.get("allow_private", False))
+                and fnmatch.fnmatch(hostname.lower(), str(rule.get("pattern", "")).lower())
+            ):
+                return True
+        return False
 
     @staticmethod
     def _is_private_or_reserved(value: str) -> bool:

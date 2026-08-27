@@ -26,6 +26,8 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from urllib.parse import urlparse
 
+from core.redact import redact
+
 
 @dataclass
 class PortInfo:
@@ -103,6 +105,20 @@ class TargetState:
         # Core state
         self.ports: List[PortInfo] = []
         self.tech_stack = TechStack()
+        # Stage 24 redacted technology intelligence.  The legacy TechStack
+        # fields remain the compatibility projection used by older planners;
+        # the immutable inventory/digest stays separate from raw recon text.
+        self.technology_inventory: Dict[str, Any] = {}
+        self.technology_capabilities: List[Dict[str, Any]] = []
+        # Stage 25 semantic application contract.  This is a redacted
+        # planning projection; it is never treated as authorization proof.
+        self.application_contract_inventory: Dict[str, Any] = {}
+        self.application_contract_capabilities: List[Dict[str, Any]] = []
+        # Stage 26 redacted identity/session/workflow intelligence. This is a
+        # planning projection; authorization and finding status remain owned
+        # by the deterministic replay/validation engines.
+        self.identity_workflow_inventory: Dict[str, Any] = {}
+        self.identity_workflow_gaps: List[str] = []
         self.endpoints: List[EndpointInfo] = []
         self.vulnerabilities: List[VulnerabilityInfo] = []
         self.auth_info = AuthInfo()
@@ -137,6 +153,126 @@ class TargetState:
         self.interaction_log: List[Dict[str, Any]] = []
         self.attack_surface: Dict[str, Any] = {}
         self.exploit_plans: List[Dict[str, Any]] = []
+        # Stage 15 canonical knowledge is persisted separately.  This field is
+        # a redacted compatibility projection used by legacy workflow code.
+        self.knowledge_graph: Dict[str, Any] = {}
+        self.coverage: List[Dict[str, Any]] = []
+        self.coverage_gaps: List[Dict[str, Any]] = []
+
+    def apply_knowledge_graph(self, compiled: Dict[str, Any]) -> None:
+        """Attach a redacted Stage 15 projection without making raw text canonical."""
+        graph = dict(compiled.get("graph") or {})
+        self.knowledge_graph = redact({
+            "graph_id": graph.get("graph_id", ""),
+            "version": graph.get("version", 0),
+            "digest": graph.get("digest", ""),
+            "target_fingerprint": graph.get("target_fingerprint", ""),
+            "node_count": len(compiled.get("nodes") or []),
+            "edge_count": len(compiled.get("edges") or []),
+            "contradiction_count": len(compiled.get("contradictions") or []),
+        })
+        self.coverage = redact(list(compiled.get("coverage") or []))[:10000]
+        self.coverage_gaps = redact(list(compiled.get("gaps") or []))[:10000]
+        self.attack_surface = redact({
+            "graph_id": graph.get("graph_id", ""),
+            "graph_version": graph.get("version", 0),
+            "digest": graph.get("digest", ""),
+            "nodes": [
+                {"kind": item.get("node_type"), "url": item.get("canonical_locator") or item.get("reference_id"), "risk": (item.get("metadata") or {}).get("risk", 0.0)}
+                for item in (compiled.get("nodes") or [])
+                if item.get("node_type") in {"asset", "origin", "service", "endpoint", "operation", "parameter", "workflow"}
+            ][:200],
+        })
+
+    def apply_technology_inventory(self, inventory: Dict[str, Any]) -> None:
+        """Apply only supported, redacted Stage 24 claims to legacy state.
+
+        Contradictory or inconclusive fingerprints remain diagnostic and are
+        never allowed to overwrite the compatibility TechStack projection.
+        """
+        data = redact(dict(inventory or {}))
+        self.technology_inventory = {
+            "schema_version": data.get("schema_version", "24.0"),
+            "digest": data.get("digest", ""),
+            "fingerprints": [
+                item for item in data.get("fingerprints", [])
+                if isinstance(item, dict) and item.get("status") in {"supported", "observed"}
+            ][:500],
+        }
+        self.technology_capabilities = [
+            item for item in data.get("capabilities", [])
+            if isinstance(item, dict) and item.get("status") == "suggested"
+        ][:500]
+        for fingerprint in self.technology_inventory["fingerprints"]:
+            family = str(fingerprint.get("family") or "")
+            name = str(fingerprint.get("name") or "")
+            if not name:
+                continue
+            if family == "server" and not self.tech_stack.server:
+                self.tech_stack.server = name
+            elif family == "runtime" and not self.tech_stack.language:
+                self.tech_stack.language = name
+            elif family == "framework" and not self.tech_stack.framework:
+                self.tech_stack.framework = name
+            elif family == "cms" and not self.tech_stack.cms:
+                self.tech_stack.cms = name
+            elif family == "cdn" and not self.tech_stack.cdn:
+                self.tech_stack.cdn = name
+            elif family == "waf" and not self.tech_stack.waf:
+                self.tech_stack.waf = name
+                self.waf_detected = name
+                self.waf_confidence = str(fingerprint.get("confidence") or "")
+            elif family in {"protocol", "auth", "cache", "tls", "deployment", "security_control", "library"}:
+                marker = f"{family}:{name}"
+                if marker not in self.tech_stack.other:
+                    self.tech_stack.other.append(marker)
+
+    def apply_application_contract(self, inventory: Dict[str, Any]) -> None:
+        """Apply Stage 25 semantic operation metadata without raw payloads."""
+        data = redact(dict(inventory or {}))
+        self.application_contract_inventory = {
+            "schema_version": data.get("schema_version", "25.0"),
+            "digest": data.get("digest", ""),
+            "operations": [
+                item for item in data.get("operations", [])
+                if isinstance(item, dict)
+            ][:1000],
+            "input_semantics": [
+                item for item in data.get("input_semantics", [])
+                if isinstance(item, dict)
+            ][:3000],
+            "schemas": [
+                item for item in data.get("schemas", [])
+                if isinstance(item, dict)
+            ][:500],
+            "data_flows": [
+                item for item in data.get("data_flows", [])
+                if isinstance(item, dict)
+            ][:5000],
+            "contradictions": [
+                item for item in data.get("contradictions", [])
+                if isinstance(item, dict)
+            ][:500],
+        }
+        self.application_contract_capabilities = [
+            item for item in data.get("capability_hints", [])
+            if isinstance(item, dict)
+        ][:100]
+
+    def apply_identity_workflow_intelligence(self, inventory: Dict[str, Any]) -> None:
+        """Apply only redacted Stage 26 auth/session/workflow metadata."""
+        data = redact(dict(inventory or {}))
+        self.identity_workflow_inventory = {
+            "schema_version": data.get("schema_version", "26.0"),
+            "digest": data.get("digest", ""),
+            "workflow_id": data.get("workflow_id", ""),
+            "auth_surfaces": [item for item in data.get("auth_surfaces", []) if isinstance(item, dict)][:500],
+            "session_transitions": [item for item in data.get("session_transitions", []) if isinstance(item, dict)][:500],
+            "workflow": redact(data.get("workflow") or {}),
+            "prerequisites": [item for item in data.get("prerequisites", []) if isinstance(item, dict)][:1000],
+            "gaps": [str(item)[:500] for item in data.get("gaps", []) if item][:500],
+        }
+        self.identity_workflow_gaps = list(self.identity_workflow_inventory["gaps"])
     
     def _extract_domain(self, url: str) -> str:
         """Extract domain from URL."""
@@ -454,7 +590,57 @@ class TargetState:
             context_parts.append(f"CDN: {self.tech_stack.cdn}")
         if self.tech_stack.waf:
             context_parts.append(f"WAF: {self.tech_stack.waf} (confidence: {self.waf_confidence})")
+        if self.technology_capabilities:
+            context_parts.append("Technology-driven capabilities: " + ", ".join(sorted({str(item.get('capability')) for item in self.technology_capabilities if item.get('capability')})[:20]))
         context_parts.append("")
+
+        if self.application_contract_inventory:
+            contract = self.application_contract_inventory
+            context_parts.append("=== APPLICATION CONTRACT (OBSERVATION ONLY) ===")
+            context_parts.append(
+                f"Operations: {len(contract.get('operations') or [])} · "
+                f"Inputs: {len(contract.get('input_semantics') or [])} · "
+                f"Contradictions: {len(contract.get('contradictions') or [])}"
+            )
+            for operation in (contract.get("operations") or [])[:20]:
+                if not isinstance(operation, dict):
+                    continue
+                context_parts.append(
+                    f"  {operation.get('method', 'GET')} {operation.get('path', '/')}: "
+                    f"{operation.get('operation_kind', 'unknown')} / "
+                    f"auth={operation.get('auth_expectation', 'unknown')} / "
+                    f"side_effect={operation.get('side_effect', 'unknown')}"
+                )
+            semantic_types = sorted({
+                str(item.get("semantic_type"))
+                for item in (contract.get("input_semantics") or [])
+                if isinstance(item, dict) and item.get("semantic_type")
+            })
+            if semantic_types:
+                context_parts.append("Input semantic types: " + ", ".join(semantic_types[:20]))
+            context_parts.append("Contract metadata is heuristic and cannot authorize mutations or validate findings.")
+            context_parts.append("")
+
+        if self.identity_workflow_inventory:
+            intelligence = self.identity_workflow_inventory
+            workflow = intelligence.get("workflow") or {}
+            context_parts.append("=== IDENTITY / SESSION / WORKFLOW INTELLIGENCE (OBSERVATION ONLY) ===")
+            context_parts.append(
+                f"Auth surfaces: {len(intelligence.get('auth_surfaces') or [])} · "
+                f"Session transitions: {len(intelligence.get('session_transitions') or [])} · "
+                f"Prerequisites: {len(intelligence.get('prerequisites') or [])} · "
+                f"Gaps: {len(intelligence.get('gaps') or [])}"
+            )
+            if workflow:
+                context_parts.append(
+                    f"Workflow class: {workflow.get('workflow_class', 'unknown')} · "
+                    f"identities: {len(workflow.get('identity_requirements') or [])} · "
+                    f"mutating: {bool(workflow.get('has_mutations'))}"
+                )
+            for gap in (intelligence.get("gaps") or [])[:12]:
+                context_parts.append(f"  GAP: {str(gap)[:220]}")
+            context_parts.append("Auth/session metadata is redacted and cannot authorize actions or validate findings.")
+            context_parts.append("")
         
         # Open Ports
         if self.ports:
@@ -512,6 +698,14 @@ class TargetState:
             for n in self.attack_surface.get("nodes", [])[:12]:
                 context_parts.append(f"  {n.get('kind')}: {n.get('url')} risk {n.get('risk')}")
             context_parts.append("")
+        if self.knowledge_graph:
+            context_parts.append("=== TARGET KNOWLEDGE GRAPH ===")
+            context_parts.append(f"Graph: {self.knowledge_graph.get('graph_id', '')} v{self.knowledge_graph.get('version', 0)}")
+            context_parts.append(f"Nodes: {self.knowledge_graph.get('node_count', 0)} · Edges: {self.knowledge_graph.get('edge_count', 0)}")
+            context_parts.append(f"Coverage gaps: {len(self.coverage_gaps)}")
+            for gap in self.coverage_gaps[:8]:
+                context_parts.append(f"  - {gap.get('reason', 'coverage incomplete')[:220]}")
+            context_parts.append("")
         # Recent evidence (dynamic verification)
         recent_ev = getattr(self, "workflow", None)
         if recent_ev and getattr(recent_ev, "evidence", None):
@@ -538,6 +732,12 @@ class TargetState:
             "goal": self.goal,
             "ports": [asdict(p) for p in self.ports],
             "tech_stack": asdict(self.tech_stack),
+            "technology_inventory": self.technology_inventory,
+            "technology_capabilities": self.technology_capabilities,
+            "application_contract_inventory": self.application_contract_inventory,
+            "application_contract_capabilities": self.application_contract_capabilities,
+            "identity_workflow_inventory": self.identity_workflow_inventory,
+            "identity_workflow_gaps": self.identity_workflow_gaps,
             "endpoints": [asdict(e) for e in self.endpoints],
             "vulnerabilities": [asdict(v) for v in self.vulnerabilities],
             "auth_info": asdict(self.auth_info),
@@ -561,6 +761,9 @@ class TargetState:
             "interaction_log": self.interaction_log,
             "attack_surface": self.attack_surface,
             "exploit_plans": self.exploit_plans,
+            "knowledge_graph": self.knowledge_graph,
+            "coverage": self.coverage,
+            "coverage_gaps": self.coverage_gaps,
             "workflow": self.workflow.to_dict(),
         }
     
@@ -571,6 +774,12 @@ class TargetState:
         
         state.ports = [PortInfo(**p) for p in data.get("ports", [])]
         state.tech_stack = TechStack(**data.get("tech_stack", {}))
+        state.technology_inventory = redact(data.get("technology_inventory", {}))
+        state.technology_capabilities = redact(data.get("technology_capabilities", []))
+        state.application_contract_inventory = redact(data.get("application_contract_inventory", {}))
+        state.application_contract_capabilities = redact(data.get("application_contract_capabilities", []))
+        state.identity_workflow_inventory = redact(data.get("identity_workflow_inventory", {}))
+        state.identity_workflow_gaps = redact(data.get("identity_workflow_gaps", []))
         state.endpoints = [EndpointInfo(**e) for e in data.get("endpoints", [])]
         state.vulnerabilities = [VulnerabilityInfo(**v) for v in data.get("vulnerabilities", [])]
         state.auth_info = AuthInfo(**data.get("auth_info", {}))
@@ -594,6 +803,9 @@ class TargetState:
         state.interaction_log = data.get("interaction_log", [])
         state.attack_surface = data.get("attack_surface", {})
         state.exploit_plans = data.get("exploit_plans", [])
+        state.knowledge_graph = redact(data.get("knowledge_graph", {}))
+        state.coverage = redact(data.get("coverage", []))
+        state.coverage_gaps = redact(data.get("coverage_gaps", []))
         from core.workflow_models import WorkflowState
         state.workflow = WorkflowState.from_dict(data.get("workflow"))
         

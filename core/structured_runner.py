@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import copy
 import time
 import uuid
 from typing import Any, Dict, Optional
@@ -34,6 +35,7 @@ class StructuredToolRunner:
         identity_id: str = "",
         auth_context_id: str = "",
         job_id: str = "",
+        runtime_config: Optional[Dict[str, Any]] = None,
     ) -> ToolResultV1:
         tool_name = getattr(tool, "name", None) or getattr(tool, "__name__", "unknown_tool")
         run_id = f"run_{uuid.uuid4().hex}"
@@ -43,6 +45,13 @@ class StructuredToolRunner:
             capability = get_tool_capability(tool_name)
             if capability is None and str(get_setting("tool_boundary_mode", "shadow")).lower() == "strict":
                 raise SafetyViolation("tool_not_registered", f"Tool '{tool_name}' is not present in the canonical registry.")
+            config_snapshot = copy.deepcopy(
+                inherited.config_snapshot if inherited and inherited.config_snapshot else get_config()
+            )
+            if runtime_config:
+                runtime = dict(config_snapshot.get("_runtime") or {})
+                runtime.update(copy.deepcopy(runtime_config))
+                config_snapshot["_runtime"] = runtime
             context = ToolExecutionContext(
                 session_id=session_id or (inherited.session_id if inherited else ""),
                 job_id=job_id or (inherited.job_id if inherited else ""),
@@ -56,7 +65,7 @@ class StructuredToolRunner:
                 auto_pilot=inherited.auto_pilot if inherited else False,
                 stealth_mode=inherited.stealth_mode if inherited else False,
                 budget=(inherited.budget if inherited and inherited.budget else ResourceBudgetV1()),
-                config_snapshot=(inherited.config_snapshot if inherited else get_config()),
+                config_snapshot=config_snapshot,
                 safety_kernel=self.safety_kernel,
                 repository=self.repository,
                 secret_vault=inherited.secret_vault if inherited else None,

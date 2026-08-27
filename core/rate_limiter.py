@@ -64,11 +64,22 @@ class DomainRateLimiter:
 
     def wait(self, domain: str):
         """Wait sampai rate limit for domain this terpenuhi."""
+        runtime_rate = None
+        try:
+            from core.identity_context import get_execution_context
+            context = get_execution_context()
+            runtime = (context.config_snapshot or {}).get("_runtime", {}) if context else {}
+            strategy = runtime.get("waf_strategy") or {}
+            strategy_domain = str(strategy.get("domain") or "").lower()
+            if strategy_domain and strategy_domain == str(domain).lower():
+                runtime_rate = float(strategy.get("rate_limit", 0) or 0)
+        except Exception:
+            runtime_rate = None
         # Apply stealth mode rate if enabled
         if is_stealth_mode():
-            rate = min(self._domain_rates.get(domain, self._default_rate), 0.5)
+            rate = min(runtime_rate or self._domain_rates.get(domain, self._default_rate), 0.5)
         else:
-            rate = self._domain_rates.get(domain, self._default_rate)
+            rate = runtime_rate or self._domain_rates.get(domain, self._default_rate)
         
         min_interval = 1.0 / rate
 

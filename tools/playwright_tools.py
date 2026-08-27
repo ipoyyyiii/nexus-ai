@@ -22,17 +22,34 @@ except ImportError:
 
 _browser = None
 _playwright = None
+_browser_loop = None
 
 
 async def _get_browser():
-    global _browser, _playwright
+    global _browser, _playwright, _browser_loop
     if not PLAYWRIGHT_AVAILABLE:
         raise RuntimeError(
             "Playwright not yet diinstall. Jalankan:\n"
             "  pip install playwright --break-system-packages\n"
             "  playwright install chromium"
         )
-    if _browser is None or not _browser.is_connected():
+    current_loop = asyncio.get_running_loop()
+    browser_is_usable = False
+    if _browser is not None and _browser_loop is current_loop:
+        try:
+            browser_is_usable = bool(_browser.is_connected())
+        except Exception:
+            browser_is_usable = False
+
+    # Async Playwright objects are bound to the event loop that created them.
+    # The legacy recon tools are synchronous wrappers and may be invoked from
+    # different worker threads, so a browser from a previous loop must never
+    # be reused.  The managed runner below closes the normal previous
+    # instance; this branch also fails safe if a loop died unexpectedly.
+    if not browser_is_usable:
+        _browser = None
+        _playwright = None
+        _browser_loop = current_loop
         _playwright = await async_playwright().start()
         _browser = await _playwright.chromium.launch(
             headless=True,
@@ -45,13 +62,32 @@ async def _get_browser():
     return _browser
 
 
+async def _close_browser_for_current_loop() -> None:
+    """Release browser resources before the invocation's loop is closed."""
+    global _browser, _playwright, _browser_loop
+    current_loop = asyncio.get_running_loop()
+    if _browser_loop is not current_loop:
+        return
+    browser, playwright = _browser, _playwright
+    _browser = None
+    _playwright = None
+    _browser_loop = None
+    if browser is not None:
+        try:
+            await browser.close()
+        finally:
+            if playwright is not None:
+                await playwright.stop()
+    elif playwright is not None:
+        await playwright.stop()
+
+
 async def _new_page(browser, timeout_ms: int = 15000, origin: str = ""):
     """Buat page baru with stealth settings dasar."""
     proxy_dict = proxy_router.get_proxy()
     proxy_server = proxy_dict["http"] if proxy_dict else None
 
     context_args = {
-        "proxy": {"server": proxy_server},
         "user_agent": (
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -114,17 +150,23 @@ def _domain_of(url: str) -> str:
 
 def _run_async(coro):
     """Run async coroutine from sync tool context."""
+    async def managed():
+        try:
+            return await coro
+        finally:
+            await _close_browser_for_current_loop()
+
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                future = pool.submit(asyncio.run, coro)
-                return future.result(timeout=60)
-        else:
-            return loop.run_until_complete(coro)
-    except Exception:
-        return asyncio.run(coro)
+        running_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        running_loop = None
+
+    if running_loop is not None:
+        import concurrent.futures
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(asyncio.run, managed()).result(timeout=90)
+    return asyncio.run(managed())
 
 
 # ── Exec logger accessor (sama kayak custom_tools.py) ─────────────────────────
@@ -228,7 +270,11 @@ def browser_storage_security_scanner(url: str) -> str:
         browser = await _get_browser()
         page, ctx = await _new_page(browser, origin=url)
         try:
-            await page.goto(url, wait_until="networkidle")
+            # SPAs may keep XHR/WebSocket activity open indefinitely.  A
+            # recon primitive must not wait for global network idleness;
+            # DOM readiness is the bounded signal and the caller can still
+            # perform its explicit short wait below.
+            await page.goto(url, wait_until="domcontentloaded")
             await page.wait_for_timeout(2000)
 
             findings = []
@@ -696,7 +742,7 @@ def browser_extract_surface(url: str) -> str:
         browser = await _get_browser()
         page, ctx = await _new_page(browser)
         try:
-            await page.goto(url, wait_until="networkidle")
+            await page.goto(url, wait_until="domcontentloaded")
             await page.wait_for_timeout(1500)
 
             base = f"{urlparse(url).scheme}://{urlparse(url).netloc}"
@@ -791,7 +837,7 @@ def browser_cookie_inspector(url: str) -> str:
         browser = await _get_browser()
         page, ctx = await _new_page(browser)
         try:
-            await page.goto(url, wait_until="networkidle")
+            await page.goto(url, wait_until="domcontentloaded")
             await page.wait_for_timeout(2000)
 
             cookies = await page.context.cookies()
@@ -892,7 +938,7 @@ def browser_storage_inspector(url: str) -> str:
         browser = await _get_browser()
         page, ctx = await _new_page(browser)
         try:
-            await page.goto(url, wait_until="networkidle")
+            await page.goto(url, wait_until="domcontentloaded")
             await page.wait_for_timeout(2000)
 
             # Extract localStorage
@@ -1020,7 +1066,7 @@ def browser_js_debugger(url: str) -> str:
         page.on("pageerror", on_error)
 
         try:
-            await page.goto(url, wait_until="networkidle")
+            await page.goto(url, wait_until="domcontentloaded")
             await page.wait_for_timeout(3000)
 
             # Check for eval() calls in page source
@@ -1116,7 +1162,7 @@ def browser_network_modifier(url: str, modify_headers: str = "") -> str:
         page.set_default_timeout(15000)
 
         try:
-            response = await page.goto(url, wait_until="networkidle")
+            response = await page.goto(url, wait_until="domcontentloaded")
             await page.wait_for_timeout(2000)
 
             title = await page.title()
@@ -1206,7 +1252,7 @@ def browser_intercept_requests(url: str) -> str:
         page.on("response", on_response)
 
         try:
-            await page.goto(url, wait_until="networkidle")
+            await page.goto(url, wait_until="domcontentloaded")
             await page.wait_for_timeout(3000)  # Extra wait for lazy-loaded requests
 
             # Scroll ke bawah for trigger lazy load

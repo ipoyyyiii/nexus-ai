@@ -17,6 +17,17 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from urllib.parse import parse_qsl, urlsplit
 
 from core.config_loader import get_config
+from core.structured_contract import (
+    EvidenceGapV1,
+    ModelActionTraceV1,
+    PlannerActionV1,
+    ReasoningAdaptationV1,
+    ReasoningBranchTransitionV1,
+    ReasoningBranchV1,
+    ReasoningCycleV1,
+    ReasoningDecisionV1,
+    StopConditionV1,
+)
 from core.workflow_models import (
     ActionProposal,
     HypothesisRecord,
@@ -76,6 +87,42 @@ def _as_dict(value: Any) -> Dict[str, Any]:
     return {}
 
 
+def _stable_reasoning_value(value: Any) -> Any:
+    """Remove runtime-only IDs/timestamps before replay digesting a cycle."""
+    volatile = {
+        "cycle_id", "hypothesis_id", "action_id", "gap_id", "stop_condition_id",
+        "trace_id", "branch_id", "transition_id", "adaptation_id", "created_at",
+        "finished_at", "record_id", "reasoning_gap_ids",
+        "required_action_ids", "evidence_gap_ids", "selected_action_ids",
+        "hypothesis_ids", "action_ids", "stop_condition_ids",
+        "proposal_id", "last_updated",
+    }
+    if isinstance(value, dict):
+        return {key: _stable_reasoning_value(item) for key, item in sorted(value.items()) if key not in volatile}
+    if isinstance(value, (list, tuple)):
+        return [_stable_reasoning_value(item) for item in value]
+    if hasattr(value, "model_dump"):
+        return _stable_reasoning_value(value.model_dump(mode="json"))
+    if hasattr(value, "__dict__"):
+        return _stable_reasoning_value(value.__dict__)
+    if isinstance(value, str):
+        # Workflow models intentionally use runtime UUIDs for operational
+        # identity.  They must not make a replay digest change when the same
+        # snapshot is evaluated in a fresh process.
+        value = re.sub(
+            r"\b(?:hyp|action|r_action|gap|stop|trace|branch|transition|adapt|plan)_[0-9a-f]{16,}\b",
+            "<runtime-id>",
+            value,
+            flags=re.IGNORECASE,
+        )
+        return re.sub(
+            r"\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})\b",
+            "<timestamp>",
+            value,
+        )
+    return value
+
+
 @dataclass(frozen=True)
 class PlannerCapability:
     category: str
@@ -97,7 +144,7 @@ class PlannerCapability:
 
 CAPABILITIES: Dict[str, PlannerCapability] = {
     "surface_mapping": PlannerCapability(
-        "surface_mapping", ("human_recon_crawl",), action="attack_surface_mapping",
+        "surface_mapping", ("__recon_mission__",), action="attack_surface_mapping",
         cost=1.5, risk="low", risk_score=0.12, discriminating_power=0.9,
         expected_evidence="Reachable endpoints, parameters, technologies, identities, and trust boundaries.",
     ),
@@ -218,6 +265,10 @@ class PlanningSnapshot:
     observations: List[Dict[str, Any]] = field(default_factory=list)
     tool_runs: List[Dict[str, Any]] = field(default_factory=list)
     identities: List[Dict[str, Any]] = field(default_factory=list)
+    identity_graphs: List[Dict[str, Any]] = field(default_factory=list)
+    workflow_matrices: List[Dict[str, Any]] = field(default_factory=list)
+    business_entities: List[Dict[str, Any]] = field(default_factory=list)
+    published_workflows: List[Dict[str, Any]] = field(default_factory=list)
 
     def digest(self) -> str:
         stable = {
@@ -229,6 +280,10 @@ class PlanningSnapshot:
             "errors": list(self.errors),
             "tool_runs": [(item.get("tool_run_id"), item.get("status")) for item in self.tool_runs],
             "identities": [(item.get("identity_id"), item.get("status")) for item in self.identities],
+            "identity_graphs": [(item.get("graph_id"), item.get("digest")) for item in self.identity_graphs],
+            "workflow_matrices": [(item.get("matrix_id"), item.get("status")) for item in self.workflow_matrices],
+            "business_entities": [(item.get("fingerprint"), item.get("state_digest")) for item in self.business_entities],
+            "published_workflows": [(item.get("workflow_id"), item.get("current_version")) for item in self.published_workflows],
         }
         return _digest(stable)
 
@@ -238,6 +293,20 @@ class PlanningResult:
     hypotheses: List[HypothesisRecord]
     proposals: List[ActionProposal]
     decision: PlannerDecisionRecord
+
+
+@dataclass
+class ReasoningCycleResult:
+    cycle: ReasoningCycleV1
+    hypotheses: List[Dict[str, Any]]
+    actions: List[Dict[str, Any]]
+    evidence_gaps: List[Dict[str, Any]]
+    stop_conditions: List[Dict[str, Any]]
+    decision: Dict[str, Any]
+    model_traces: List[Dict[str, Any]] = field(default_factory=list)
+    branches: List[Dict[str, Any]] = field(default_factory=list)
+    branch_transitions: List[Dict[str, Any]] = field(default_factory=list)
+    adaptation: Dict[str, Any] = field(default_factory=dict)
 
 
 class AdaptiveHypothesisPlanner:
@@ -260,6 +329,13 @@ class AdaptiveHypothesisPlanner:
             "risk_penalty": float(weights.get("risk_penalty", 0.22)),
             "failure_penalty": float(weights.get("failure_penalty", 0.10)),
         }
+        self.search_strategy = str(self.config.get("search_strategy", "best_first"))
+        if self.search_strategy not in {"best_first", "beam", "bounded_backtrack", "explore_exploit"}:
+            self.search_strategy = "best_first"
+        self.max_branch_factor = max(1, min(12, int(self.config.get("max_branch_factor", 4))))
+        self.max_backtracks = max(0, min(20, int(self.config.get("max_backtracks", 3))))
+        self.min_information_gain = _clamp(float(self.config.get("min_information_gain", 0.10)))
+        self.repetition_penalty = _clamp(float(self.config.get("repetition_penalty", 0.20)))
 
     def plan(
         self,
@@ -412,6 +488,344 @@ class AdaptiveHypothesisPlanner:
         )
         workflow.add_planner_decision(decision)
         return PlanningResult(current, proposals, decision)
+
+    def build_search_branches(
+        self,
+        context: Dict[str, Any],
+        snapshot: PlanningSnapshot,
+        planned: PlanningResult,
+        cycle_id: str,
+        *,
+        failed_action_ids: Optional[Sequence[str]] = None,
+        backtrack_count: int = 0,
+    ) -> Tuple[List[ReasoningBranchV1], List[ReasoningBranchTransitionV1], ReasoningAdaptationV1]:
+        """Compile bounded, replay-stable search branches from deterministic proposals.
+
+        This is intentionally separate from execution. A branch only describes a
+        possible next action; the durable executor, safety kernel, and approval
+        service remain the authority that can dispatch it.
+        """
+        failed = {str(item) for item in (failed_action_ids or []) if item}
+        candidates: List[Tuple[float, ActionProposal, Dict[str, float]]] = []
+        for proposal in planned.proposals:
+            score = _clamp(float(proposal.priority_score))
+            breakdown = dict(proposal.score_breakdown or {})
+            if proposal.action_id in failed or proposal.recommended_tool in failed:
+                score = _clamp(score - self.repetition_penalty)
+                breakdown["failure_penalty"] = min(1.0, float(breakdown.get("failure_penalty", 0.0)) + self.repetition_penalty)
+            if self.search_strategy == "explore_exploit":
+                # Deterministic novelty bonus favors a different capability only
+                # when its base score is close to the incumbent.
+                novelty = float(breakdown.get("novelty", 0.0))
+                score = _clamp(score + 0.08 * novelty)
+                breakdown["exploration_bonus"] = 0.08 * novelty
+            breakdown["search_score"] = score
+            candidates.append((score, proposal, breakdown))
+        candidates.sort(key=lambda item: (-item[0], item[1].fingerprint, item[1].action_id))
+        candidates = candidates[: self.max_branch_factor]
+
+        branches: List[ReasoningBranchV1] = []
+        transitions: List[ReasoningBranchTransitionV1] = []
+        for ordinal, (score, proposal, breakdown) in enumerate(candidates):
+            branch_id = f"branch_{_digest(cycle_id, proposal.fingerprint, snapshot.digest(), ordinal, length=32)}"
+            status = "ready" if score >= self.min_information_gain else "blocked"
+            reason = "Candidate action passed deterministic search preconditions." if status == "ready" else "Information gain is below the configured minimum."
+            branch = ReasoningBranchV1(
+                branch_id=branch_id,
+                cycle_id=cycle_id,
+                session_id=str(context.get("session_id", "")),
+                status=status,
+                hypothesis_ids=[proposal.hypothesis_id] if proposal.hypothesis_id else [],
+                action_ids=[proposal.action_id],
+                evidence_snapshot_digest=snapshot.digest(),
+                search_depth=1,
+                score=score,
+                score_breakdown=breakdown,
+                estimated_cost=float(proposal.estimated_cost),
+                risk_score=_clamp(float(proposal.risk_score)),
+                backtrack_count=max(0, int(backtrack_count)),
+                stop_reason="" if status == "ready" else reason,
+                input_digest=_digest(snapshot.digest(), proposal.fingerprint, self.search_strategy),
+            )
+            branches.append(branch)
+            transitions.append(ReasoningBranchTransitionV1(
+                branch_id=branch_id,
+                cycle_id=cycle_id,
+                session_id=str(context.get("session_id", "")),
+                transition_type="created",
+                from_status="",
+                to_status=status,
+                reason=reason,
+                action_id=proposal.action_id,
+                input_digest=branch.input_digest,
+            ))
+
+        selected = next((item for item in branches if item.status == "ready"), None)
+        if selected:
+            transitions.append(ReasoningBranchTransitionV1(
+                branch_id=selected.branch_id,
+                cycle_id=cycle_id,
+                session_id=str(context.get("session_id", "")),
+                transition_type="selected",
+                from_status=selected.status,
+                to_status="running",
+                reason="Selected highest-scoring branch; dispatch remains separately gated.",
+                action_id=selected.action_ids[0] if selected.action_ids else "",
+                input_digest=selected.input_digest,
+            ))
+            selected_action = selected.action_ids[0] if selected.action_ids else ""
+            adaptation = ReasoningAdaptationV1(
+                cycle_id=cycle_id,
+                session_id=str(context.get("session_id", "")),
+                strategy=self.search_strategy,
+                selected_branch_id=selected.branch_id,
+                selected_action_id=selected_action,
+                alternative_action_ids=[item.action_ids[0] for item in branches if item.branch_id != selected.branch_id and item.action_ids],
+                reason="Selected the highest information-gain branch after deterministic cost, risk, novelty, and failure adjustment.",
+                information_gain=selected.score,
+                uncertainty_before=_clamp(1.0 - selected.score),
+                uncertainty_after=_clamp(1.0 - selected.score * 0.8),
+                backtracked=backtrack_count > 0,
+                input_digest=_digest(snapshot.digest(), [item.branch_id for item in branches]),
+            )
+        else:
+            adaptation = ReasoningAdaptationV1(
+                cycle_id=cycle_id,
+                session_id=str(context.get("session_id", "")),
+                strategy=self.search_strategy,
+                reason="No branch met the minimum information-gain threshold; planner recommends waiting or stopping.",
+                stop_recommended=True,
+                backtracked=backtrack_count > 0,
+                input_digest=_digest(snapshot.digest(), [item.branch_id for item in branches]),
+            )
+        return branches, transitions, adaptation
+
+    def build_reasoning_cycle(
+        self,
+        context: Dict[str, Any],
+        state: Any,
+        snapshot: Optional[PlanningSnapshot] = None,
+        request: str = "",
+        *,
+        model_actions: Optional[Sequence[Dict[str, Any]]] = None,
+        model_id: str = "",
+        mode: str = "shadow",
+    ) -> ReasoningCycleResult:
+        """Run one bounded reasoning cycle around the existing deterministic planner.
+
+        The LLM is an optional proposal source. Deterministic planning, scope,
+        approval, cleanup, and validation remain the source of truth.
+        """
+        snapshot = snapshot or PlanningSnapshot()
+        planned = self.plan(context, state, snapshot, request)
+        cycle_id = planned.decision.cycle_id
+        config = get_config().get("reasoning", {}) or {}
+        max_actions = max(1, min(20, int(config.get("max_actions_per_cycle", self.max_proposals))))
+        max_cycles = max(1, min(100, int(config.get("max_cycles", 10))))
+        search_branches, branch_transitions, adaptation = self.build_search_branches(
+            context, snapshot, planned, cycle_id,
+            failed_action_ids=[
+                str(item.get("action_id") or item.get("tool_name") or "")
+                for item in snapshot.tool_runs
+                if str(item.get("status") or "") in {"failed", "cancelled"}
+            ],
+        )
+        branch_by_action = {
+            action_id: branch
+            for branch in search_branches
+            for action_id in branch.action_ids
+        }
+        hypothesis_branch = {
+            hypothesis_id: branch.branch_id
+            for branch in search_branches
+            for hypothesis_id in branch.hypothesis_ids
+        }
+        evidence_ids = {str(item.get("observation_id") or item.get("evidence_id") or "") for item in snapshot.observations}
+        evidence_ids.discard("")
+        stale_evidence_ids = {
+            str(item.get("observation_id") or item.get("evidence_id") or "")
+            for item in snapshot.observations
+            if str(item.get("status") or "") == "stale" or bool((item.get("metadata") or {}).get("stale"))
+        }
+        evidence_ids.update(str(item.get("evidence_id") or "") for item in getattr(state.workflow, "evidence", []) if getattr(item, "evidence_id", ""))
+        known_targets = {str(item.get("target_url") or "") for item in snapshot.observations if item.get("target_url")}
+        known_targets.update(str(item.get("url") or "") for item in getattr(state, "endpoints", []) or [] if isinstance(item, dict) and item.get("url"))
+        known_targets.add(str(context.get("target_url") or ""))
+        known_tools = {tool for capability in CAPABILITIES.values() for tool in capability.tools}
+
+        hypotheses: List[Dict[str, Any]] = []
+        gaps: List[EvidenceGapV1] = []
+        for item in planned.hypotheses:
+            required_roles = self._required_evidence_roles(item.category)
+            item_evidence = list(dict.fromkeys(item.supporting_evidence_ids + item.contradicting_evidence_ids))
+            item_gaps: List[EvidenceGapV1] = []
+            if set(item_evidence) & stale_evidence_ids:
+                item_gaps.append(EvidenceGapV1(
+                    session_id=str(context.get("session_id", "")), cycle_id=cycle_id,
+                    hypothesis_id=item.hypothesis_id, gap_type="state",
+                    description="The hypothesis references stale evidence and must be revalidated from a current snapshot.",
+                    required_role="current_observation", evidence_ids=sorted(set(item_evidence) & stale_evidence_ids),
+                ))
+            if not item_evidence:
+                item_gaps.append(EvidenceGapV1(session_id=str(context.get("session_id", "")), cycle_id=cycle_id, hypothesis_id=item.hypothesis_id, gap_type="baseline", description="No evidence is linked to this hypothesis.", required_role="baseline"))
+            if item.contradicting_evidence_ids:
+                item_gaps.append(EvidenceGapV1(session_id=str(context.get("session_id", "")), cycle_id=cycle_id, hypothesis_id=item.hypothesis_id, gap_type="contradiction", description="Supporting and contradicting signals require deterministic revalidation.", required_role="reproduction", evidence_ids=item.contradicting_evidence_ids))
+            if item.category in {"authorization", "business_logic", "session_security"} and len(snapshot.identities) < 2:
+                item_gaps.append(EvidenceGapV1(session_id=str(context.get("session_id", "")), cycle_id=cycle_id, hypothesis_id=item.hypothesis_id, gap_type="identity", description="At least two explicit identity contexts are required.", required_role="identity"))
+            for gap_type, role in required_roles:
+                if not any(str(observation.get("role")) == role for observation in snapshot.observations):
+                    item_gaps.append(EvidenceGapV1(session_id=str(context.get("session_id", "")), cycle_id=cycle_id, hypothesis_id=item.hypothesis_id, gap_type=gap_type, description=f"Required evidence role '{role}' is not present.", required_role=role))
+            gaps.extend(item_gaps)
+            item.metadata = {**(item.metadata or {}), "required_evidence_roles": [role for _, role in required_roles], "reasoning_gap_ids": [gap.gap_id for gap in item_gaps]}
+            hypotheses.append({
+                **item.__dict__,
+                "cycle_id": cycle_id,
+                "branch_id": hypothesis_branch.get(item.hypothesis_id, ""),
+                "search_depth": 1,
+                "evidence_gap_ids": [gap.gap_id for gap in item_gaps],
+                "required_evidence_roles": [role for _, role in required_roles],
+            })
+
+        actions: List[PlannerActionV1] = []
+        for proposal in planned.proposals[:max_actions]:
+            side_effect = "mutation" if proposal.cleanup_required or proposal.risk in {"high", "critical"} else "read"
+            branch = branch_by_action.get(proposal.action_id)
+            actions.append(PlannerActionV1(
+                cycle_id=cycle_id, action_type="run_read_only" if side_effect == "read" else "request_approval",
+                tool_name=proposal.recommended_tool, endpoint_ref=proposal.target_url,
+                hypothesis_id=proposal.hypothesis_id, risk="high_risk" if side_effect == "mutation" else "read_only",
+                side_effect_class=side_effect, evidence_ids=proposal.evidence_ids,
+                expected_evidence_roles=["baseline", "test", "negative_control"],
+                requires_approval=bool(proposal.requires_approval or side_effect == "mutation"),
+                cleanup_ref="registered_cleanup" if proposal.cleanup_required else "",
+                expected_information_gain=_clamp(proposal.information_gain), rationale=proposal.rationale,
+                status="proposed", source="deterministic", input_digest=_digest(proposal.fingerprint, proposal.target_url, proposal.recommended_tool, proposal.evidence_ids),
+                capability_id=proposal.action,
+                branch_id=branch.branch_id if branch else "",
+                target_digest=_digest(proposal.target_url, length=32),
+                input_bindings=dict(proposal.input_bindings or {}),
+                expected_observation_kinds=["baseline", "test", "negative_control"],
+                budget_snapshot={"estimated_cost": proposal.estimated_cost},
+                metadata={"proposal_id": proposal.action_id, "alternative_tools": proposal.alternative_tools},
+            ))
+
+        blocking_hypotheses = {
+            gap.hypothesis_id for gap in gaps
+            if gap.blocking and gap.gap_type in {"scope", "approval", "state"}
+        }
+        actions = [item for item in actions if item.hypothesis_id not in blocking_hypotheses]
+        traces = self.validate_model_actions(
+            cycle_id, model_actions or [], known_targets=known_targets,
+            known_evidence=evidence_ids, known_tools=known_tools, model_id=model_id,
+            stale_evidence=stale_evidence_ids,
+        )
+        triggered: List[StopConditionV1] = []
+        if not actions:
+            kind = "blocked" if gaps else "no_information_gain"
+            triggered.append(StopConditionV1(cycle_id=cycle_id, kind=kind, triggered=True, reason=planned.decision.rationale, evidence_ids=sorted(evidence_ids)))
+        if len(planned.hypotheses) >= self.max_hypotheses:
+            triggered.append(StopConditionV1(cycle_id=cycle_id, kind="max_cycles", triggered=True, reason="Hypothesis bound reached."))
+        if any(gap.blocking for gap in gaps) and not actions:
+            triggered.append(StopConditionV1(cycle_id=cycle_id, kind="blocked", triggered=True, reason="Blocking evidence gaps remain."))
+        decision = ReasoningDecisionV1(
+            cycle_id=cycle_id, snapshot_digest=snapshot.digest(),
+            selected_action_ids=[item.action_id for item in actions],
+            rejected_action_ids=[item.trace_id for item in traces if not item.valid],
+            evidence_gap_ids=[gap.gap_id for gap in gaps],
+            stop_condition_ids=[item.stop_condition_id for item in triggered],
+            rationale=planned.decision.rationale,
+            deterministic=True, input_digest=_digest(snapshot.digest(), request, _stable_reasoning_value(model_actions or [])),
+            selected_branch_id=adaptation.selected_branch_id,
+            score_breakdown=next((item.score_breakdown for item in search_branches if item.branch_id == adaptation.selected_branch_id), {}),
+            rejected_alternatives=[
+                {"branch_id": item.branch_id, "action_ids": item.action_ids, "score": item.score, "status": item.status}
+                for item in search_branches if item.branch_id != adaptation.selected_branch_id
+            ],
+            replan_reason=adaptation.reason,
+        )
+        cycle_status = "stopped" if triggered else ("partial" if any(not item.valid for item in traces) else "succeeded")
+        cycle = ReasoningCycleV1(
+            cycle_id=cycle_id, session_id=str(context.get("session_id", "")), objective=str(context.get("attack_goal") or request),
+            mode=mode if mode in {"shadow", "strict"} else "shadow", status=cycle_status,
+            snapshot_digest=snapshot.digest(), model_id=model_id, action_budget=max_actions,
+            max_cycles=max_cycles, selected_action_ids=[item.action_id for item in actions],
+            hypothesis_ids=[item.get("hypothesis_id", "") for item in hypotheses],
+            branch_ids=[item.branch_id for item in search_branches],
+            current_branch_id=adaptation.selected_branch_id,
+            search_strategy=self.search_strategy,
+            search_depth=max((item.search_depth for item in search_branches), default=0),
+            replan_count=1 if adaptation.backtracked else 0,
+            budget_snapshot={"max_actions": max_actions, "max_cycles": max_cycles},
+            evidence_gap_ids=[item.gap_id for item in gaps], stop_condition_ids=[item.stop_condition_id for item in triggered],
+            stop_reason=triggered[0].reason if triggered else "Cycle completed with bounded actions.",
+            input_digest=decision.input_digest,
+            output_digest=_digest(_stable_reasoning_value({"hypotheses": hypotheses, "actions": actions, "gaps": gaps, "stops": triggered})),
+        )
+        return ReasoningCycleResult(
+            cycle=cycle, hypotheses=hypotheses, actions=[item.model_dump(mode="json") for item in actions],
+            evidence_gaps=[item.model_dump(mode="json") for item in gaps],
+            stop_conditions=[item.model_dump(mode="json") for item in triggered],
+            decision=decision.model_dump(mode="json"), model_traces=[item.model_dump(mode="json") for item in traces],
+            branches=[item.model_dump(mode="json") for item in search_branches],
+            branch_transitions=[item.model_dump(mode="json") for item in branch_transitions],
+            adaptation=adaptation.model_dump(mode="json"),
+        )
+
+    @staticmethod
+    def _required_evidence_roles(category: str) -> List[Tuple[str, str]]:
+        if category in {"sql_injection", "command_injection", "ssti", "path_traversal"}:
+            return [("baseline", "baseline"), ("negative_control", "negative_control"), ("reproduction", "reproduction")]
+        if category in {"xss", "open_redirect", "cors"}:
+            return [("baseline", "baseline"), ("negative_control", "negative_control"), ("reproduction", "reproduction")]
+        if category in {"ssrf", "xxe"}:
+            return [("correlation", "oob"), ("negative_control", "negative_control"), ("reproduction", "reproduction")]
+        if category in {"authorization", "business_logic"}:
+            return [("baseline", "baseline"), ("negative_control", "negative_control"), ("reproduction", "reproduction")]
+        return [("baseline", "baseline")]
+
+    @staticmethod
+    def validate_model_actions(
+        cycle_id: str, raw_actions: Sequence[Dict[str, Any]], *, known_targets: set[str],
+        known_evidence: set[str], known_tools: set[str], model_id: str = "",
+        stale_evidence: Optional[set[str]] = None,
+    ) -> List[ModelActionTraceV1]:
+        traces: List[ModelActionTraceV1] = []
+        for raw in list(raw_actions)[:20]:
+            digest = _digest(raw, length=64)
+            try:
+                action = PlannerActionV1(**{**dict(raw), "cycle_id": cycle_id})
+            except Exception as exc:
+                traces.append(ModelActionTraceV1(cycle_id=cycle_id, model_id=model_id, raw_output_digest=digest, valid=False, rejection_reason=f"Invalid structured action: {type(exc).__name__}"))
+                continue
+            reasons: List[str] = []
+            unknown_tool = bool(action.tool_name and action.tool_name not in known_tools)
+            hallucinated = bool(action.endpoint_ref and action.endpoint_ref not in known_targets and not any(action.endpoint_ref.startswith(target) for target in known_targets if target))
+            invented = any(item not in known_evidence for item in action.evidence_ids)
+            stale_context = bool(set(action.evidence_ids) & set(stale_evidence or set()))
+            unsafe = action.is_mutating() and (not action.requires_approval or not action.cleanup_ref)
+            if unknown_tool:
+                reasons.append("Tool is not registered for this session capability.")
+            if not action.tool_name and action.action_type not in {"stop", "hypothesize"}:
+                reasons.append("Executable action must identify a registered tool.")
+            if hallucinated:
+                reasons.append("Endpoint reference was not observed in the session.")
+            if invented:
+                reasons.append("Evidence ID is not present in the session snapshot.")
+            if stale_context:
+                reasons.append("Action references stale evidence and requires a fresh snapshot.")
+            if unsafe:
+                reasons.append("Mutation/high-risk action lacks exact approval and cleanup binding.")
+            if action.action_type == "run_read_only" and action.is_mutating():
+                reasons.append("Read-only action cannot carry a mutating side effect class.")
+            valid = not reasons
+            action = action.model_copy(update={"status": "accepted" if valid else "rejected", "rejection_reason": "; ".join(reasons)})
+            traces.append(ModelActionTraceV1(
+                cycle_id=cycle_id, model_id=model_id, raw_output_digest=digest, action=action,
+                valid=valid, rejection_reason="; ".join(reasons), hallucinated_reference=hallucinated,
+                unsafe_mutation=unsafe, invented_evidence=invented, unknown_tool=unknown_tool,
+                unsupported_capability=unknown_tool, stale_context=stale_context,
+            ))
+        return traces
 
     @staticmethod
     def _sync_validated_findings(workflow: WorkflowState, snapshot: PlanningSnapshot) -> None:
@@ -768,6 +1182,15 @@ class AdaptiveHypothesisPlanner:
                 f"authorization comparison requires {capability.min_identities} isolated identities; "
                 f"{len(active_identities)} available"
             )
+        if capability.category in {"browser_baseline", "business_logic", "business_logic_mutation"}:
+            if snapshot.published_workflows and not any(str(item.get("status")) == "published" for item in snapshot.published_workflows):
+                unmet.append("a published browser workflow is required")
+            if capability.category != "browser_baseline" and snapshot.identity_graphs and not any(item.get("graph_id") for item in snapshot.identity_graphs):
+                unmet.append("an identity graph is required")
+            if capability.category in {"business_logic", "business_logic_mutation"} and snapshot.business_entities and not any(item.get("fingerprint") for item in snapshot.business_entities):
+                unmet.append("a server-side business entity fingerprint is required")
+            if capability.category == "business_logic_mutation" and snapshot.workflow_matrices and not any(item.get("cleanup_required") and item.get("status") == "ready" for item in snapshot.workflow_matrices):
+                unmet.append("a ready workflow matrix with cleanup is required before mutation")
         return unmet
 
     def _score(
@@ -858,4 +1281,3 @@ class AdaptiveHypothesisPlanner:
             "score_breakdown": breakdown or {},
             "action_id": action_id,
         }
-

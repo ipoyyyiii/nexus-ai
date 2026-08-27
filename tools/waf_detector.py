@@ -29,8 +29,11 @@ Usage:
 import re
 from core.tool_transport import guarded_requests as requests
 import time
+import copy
+import hashlib
 from typing import Dict, Any, Optional, List
 from urllib.parse import urlparse
+from core.config_loader import get_setting
 
 
 def _domain_of(url: str) -> str:
@@ -203,7 +206,16 @@ class WAFDetector:
     def __init__(self):
         self._cache: Dict[str, Dict] = {}
 
-    def detect(self, url: str, exec_logger=None) -> Dict[str, Any]:
+    def detect(
+        self,
+        url: str,
+        exec_logger=None,
+        active: bool = False,
+        *,
+        authorized: bool = False,
+        approval_granted: bool = False,
+        refresh: bool = False,
+    ) -> Dict[str, Any]:
         """
         Detect WAF on target URL.
         
@@ -217,10 +229,16 @@ class WAFDetector:
             }
         """
         domain = _domain_of(url)
+        requested_active = bool(active)
+        # ``active`` is never a capability grant by itself.  This prevents a
+        # legacy caller from turning on behavior probes without the explicit
+        # operator authorization and exact run approval.
+        active = bool(active and authorized and approval_granted)
+        cache_key = f"{domain}|{'active' if active else 'passive'}"
 
         # Check cache
-        if domain in self._cache:
-            return self._cache[domain]
+        if not refresh and cache_key in self._cache:
+            return copy.deepcopy(self._cache[cache_key])
 
         if exec_logger:
             exec_logger.add_log("WAF Detector", "START", f"Detecting WAF on {domain}")
@@ -233,7 +251,12 @@ class WAFDetector:
             from core.rate_limiter import rate_limiter
             from core.auth_store import auth_get, auth_post
             rate_limiter.wait(domain)
-            resp = auth_get(url, timeout=10, verify=False, allow_redirects=True)
+            resp = auth_get(
+                url,
+                timeout=10,
+                verify=bool(get_setting("safety.tls_verify", True)),
+                allow_redirects=True,
+            )
             headers_str = str(dict(resp.headers)).lower()
             body = resp.text.lower()
             status = resp.status_code
@@ -272,36 +295,42 @@ class WAFDetector:
             if exec_logger:
                 exec_logger.add_log("WAF Detector", "WARNING", f"Passive detection error: {str(e)[:100]}")
 
-        # ── 2. Active probing (send malicious payloads) ───────────────────────
-        if exec_logger:
-            exec_logger.add_log("WAF Detector", "PROCESSING", "Active WAF probing")
+        # ── 2. Optional authorized behavior probe ────────────────────────────
+        # Passive profiling is the recon default.  Active probes are only
+        # enabled by the recon coordinator after an explicit authorized mode
+        # and approval; they never make a vulnerability decision.
+        if active:
+            if exec_logger:
+                exec_logger.add_log("WAF Detector", "PROCESSING", "Authorized WAF behavior probing")
 
-        for probe_url, probe_type in WAF_PROBE_PAYLOADS[:3]:  # Limit to 3 probes
-            try:
-                from core.rate_limiter import rate_limiter
-                from core.auth_store import auth_get, auth_post
-                rate_limiter.wait(domain)
-                test_url = f"{url}{probe_url}"
-                resp = auth_get(test_url, timeout=5, verify=False)
+            for probe_url, probe_type in WAF_PROBE_PAYLOADS[:3]:  # bounded
+                try:
+                    from core.rate_limiter import rate_limiter
+                    from core.auth_store import auth_get
+                    rate_limiter.wait(domain)
+                    test_url = f"{url}{probe_url}"
+                    resp = auth_get(
+                        test_url,
+                        timeout=5,
+                        verify=bool(get_setting("safety.tls_verify", True)),
+                    )
 
-                # If WAF blocked us (403, 406, etc.) = WAF detected
-                if resp.status_code in [403, 406, 429, 503]:
-                    body = resp.text.lower()
-                    for waf_name, signatures in WAF_SIGNATURES.items():
-                        for error_page in signatures.get("error_pages", []):
-                            if error_page.lower() in body:
-                                # Check if this WAF already detected
-                                already = any(d["waf"] == waf_name for d in detected_wafs)
-                                if not already:
-                                    detected_wafs.append({
-                                        "waf": waf_name,
-                                        "matches": [f"Active probe blocked by {waf_name}"],
-                                        "match_count": 1,
-                                        "confidence": "medium",
-                                    })
-                                break
-            except Exception:
-                pass
+                    if resp.status_code in [403, 406, 429, 503]:
+                        body = resp.text.lower()
+                        for waf_name, signatures in WAF_SIGNATURES.items():
+                            for error_page in signatures.get("error_pages", []):
+                                if error_page.lower() in body:
+                                    already = any(d["waf"] == waf_name for d in detected_wafs)
+                                    if not already:
+                                        detected_wafs.append({
+                                            "waf": waf_name,
+                                            "matches": [f"Authorized probe blocked by {waf_name}"],
+                                            "match_count": 1,
+                                            "confidence": "medium",
+                                        })
+                                    break
+                except Exception:
+                    pass
 
         # ── 3. Determine result ───────────────────────────────────────────────
         if detected_wafs:
@@ -313,11 +342,13 @@ class WAFDetector:
 
             best_detection = detected_wafs[0]
             waf_name = best_detection["waf"]
-            strategy = WAF_SIGNATURES.get(waf_name, {}).get("strategy", {})
+            strategy = self._safe_strategy(WAF_SIGNATURES.get(waf_name, {}).get("strategy", {}))
 
             result = {
                 "waf": waf_name,
                 "confidence": best_detection["confidence"],
+                "mode": "authorized_behavior" if active else "passive",
+                "estimated_threshold": "inconclusive",
                 "all_detected": [d["waf"] for d in detected_wafs],
                 "strategy": strategy,
                 "evidence": best_detection["matches"],
@@ -327,19 +358,29 @@ class WAFDetector:
             result = {
                 "waf": "None",
                 "confidence": "none",
+                "mode": "authorized_behavior" if active else "passive",
+                "estimated_threshold": "inconclusive",
                 "all_detected": [],
-                "strategy": {
+                "strategy": self._safe_strategy({
                     "rate_limit": 2.0,
                     "skip_tools": [],
-                    "bypass_priority": [],
+                    "approved_variants": [],
                     "max_requests_before_block": 200,
-                },
+                }),
                 "evidence": ["No WAF signatures detected"],
                 "recommendations": ["No WAF detected — standard scanning strategy can be used"],
             }
 
+        result["profile_id"] = "waf_" + hashlib.sha256(
+            f"{domain}|{result.get('waf')}|{result.get('mode')}|{result.get('confidence')}".encode()
+        ).hexdigest()[:24]
+        result["domain"] = domain
+        result["active_requested"] = requested_active
+        result["active_blocked_without_approval"] = bool(requested_active and not active)
+        result["strategy"] = self._safe_strategy(result.get("strategy") or {})
+
         # Cache result
-        self._cache[domain] = result
+        self._cache[cache_key] = copy.deepcopy(result)
 
         if exec_logger:
             exec_logger.add_log("WAF Detector", "SUCCESS",
@@ -368,9 +409,12 @@ class WAFDetector:
         if skip_tools:
             recs.append(f"Skip tools: {', '.join(skip_tools)} (will be blocked)")
 
-        bypass_priority = strategy.get("bypass_priority", [])
-        if bypass_priority:
-            recs.append(f"Use bypass techniques: {', '.join(bypass_priority)}")
+        approved_variants = strategy.get("approved_variants", [])
+        if approved_variants:
+            recs.append(
+                "Use only bounded, approved request variants for resilience testing: "
+                + ", ".join(approved_variants)
+            )
 
         max_req = strategy.get("max_requests_before_block", 200)
         recs.append(f"Max {max_req} requests before potential block")
@@ -380,6 +424,21 @@ class WAFDetector:
             recs.append("Avoid rapid-fire requests — Cloudflare tracks request patterns")
 
         return recs
+
+    @staticmethod
+    def _safe_strategy(strategy: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize WAF advice into a scheduler policy, never an evasion plan."""
+        value = dict(strategy or {})
+        variants = value.pop("bypass_priority", value.get("approved_variants", [])) or []
+        value["approved_variants"] = [str(item) for item in variants[:5]]
+        value["skip_tools"] = sorted({str(item) for item in (value.get("skip_tools") or []) if item})
+        value["rate_limit"] = max(0.05, min(2.0, float(value.get("rate_limit", 2.0) or 2.0)))
+        value["max_requests_before_block"] = max(1, min(200, int(value.get("max_requests_before_block", 200) or 200)))
+        value["stop_on_429"] = True
+        value["stop_on_error_spike"] = True
+        value["requires_approval_for_active"] = True
+        value["evasion_mode"] = False
+        return value
 
     def get_strategy(self, url: str) -> Dict[str, Any]:
         """Get scanning strategy for target URL."""

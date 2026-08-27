@@ -31,6 +31,10 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any
 from urllib.parse import urlparse
 
+from core.knowledge_graph_contract import TargetMemoryRecordV1
+from core.knowledge_graph_engine import TargetKnowledgeGraphEngine
+from core.redact import redact
+
 
 def _domain_of(url: str) -> str:
     try:
@@ -41,8 +45,9 @@ def _domain_of(url: str) -> str:
 
 
 class SessionMemory:
-    def __init__(self, supabase_client):
+    def __init__(self, supabase_client, knowledge_repository=None):
         self.sb = supabase_client
+        self.knowledge_repository = knowledge_repository
 
     def save(
         self,
@@ -56,6 +61,7 @@ class SessionMemory:
         (domain + type + content key utama), update instead of insert.
         """
         domain = _domain_of(target)
+        content = redact(content)
         try:
             self.sb.table("session_memory").insert({
                 "target_domain": domain,
@@ -68,6 +74,41 @@ class SessionMemory:
         except Exception as e:
             print(f"[MEMORY] Save failed: {e}")
             return False
+
+    def save_knowledge(self, record: TargetMemoryRecordV1) -> bool:
+        """Persist provenance-aware memory; this never overwrites old memory."""
+        try:
+            self.sb.table("target_memory_records").insert(redact(record.model_dump(mode="json"))).execute()
+            return True
+        except Exception as exc:
+            # Memory is advisory.  A failed advisory write must not become
+            # permission to use an unpersisted fact as current evidence.
+            print(f"[MEMORY] Knowledge save failed: {redact(str(exc))[:300]}")
+            return False
+
+    def load_knowledge(
+        self,
+        target: str,
+        *,
+        session_id: str = "",
+        scope: Any = None,
+        include_historical: bool = True,
+        limit: int = 200,
+    ) -> List[Dict[str, Any]]:
+        target_fp = TargetKnowledgeGraphEngine.target_fingerprint(target)
+        scope_fp = TargetKnowledgeGraphEngine.scope_fingerprint(scope)
+        try:
+            query = self.sb.table("target_memory_records").select("*").eq("target_fingerprint", target_fp)
+            if scope_fp:
+                query = query.eq("scope_fingerprint", scope_fp)
+            if session_id:
+                query = query.or_(f"session_id.eq.{session_id},source_session_id.eq.{session_id}")
+            if not include_historical:
+                query = query.eq("status", "current")
+            return redact(query.order("created_at", desc=True).limit(min(1000, max(1, limit))).execute().data or [])
+        except Exception as exc:
+            print(f"[MEMORY] Knowledge load failed: {redact(str(exc))[:300]}")
+            return []
 
     def load(self, target: str, memory_type: Optional[str] = None) -> List[Dict]:
         """
@@ -91,11 +132,20 @@ class SessionMemory:
         Return string that siap dipaste sebagai backstory tambahan agent.
         """
         all_memories = self.load(target)
+        knowledge = self.load_knowledge(target, include_historical=True, limit=200)
         if not all_memories:
-            return ""
+            if not knowledge:
+                return ""
 
         domain = _domain_of(target)
         context_parts = [f"\n## Previous Intelligence on {domain}\n"]
+
+        if knowledge:
+            context_parts.append("**Knowledge graph memory (historical until revalidated):**")
+            for item in knowledge[:20]:
+                content = item.get("content") or {}
+                context_parts.append(f"  - [{item.get('status', 'historical')}] {item.get('memory_type', 'unknown')}: {redact(str(content))[:300]}")
+            context_parts.append("Do not treat historical memory as live evidence without a current structured observation.")
 
         # Group by type
         by_type: Dict[str, List] = {}
@@ -124,9 +174,14 @@ class SessionMemory:
                 context_parts.append(f"  - {vuln_type} on {param}: {status}")
 
         if "finding" in by_type:
-            context_parts.append(f"\n**Confirmed Findings (DO NOT re-test these):**")
+            context_parts.append(f"\n**Historical finding claims (must be revalidated):**")
             for f in by_type["finding"][:10]:
                 context_parts.append(f"  - [{f.get('severity', '?')}] {f.get('title', str(f))}")
+
+        if "legacy_report_observation" in by_type:
+            context_parts.append("\n**Legacy report observations (diagnostic only; not canonical evidence):**")
+            for item in by_type["legacy_report_observation"][:10]:
+                context_parts.append(f"  - {redact(str(item))[:300]}")
 
         if "tested_params" in by_type:
             context_parts.append(f"\n**Already Tested Parameters (skip these):**")
@@ -157,7 +212,11 @@ class SessionMemory:
             re.IGNORECASE
         )
         for match in severity_pattern.finditer(report):
-            self.save(target, "finding", {
+            # Compatibility-only parser.  A regex over narrative/report text
+            # is never admitted to the canonical knowledge graph or treated
+            # as a validated finding; retain it as historical diagnostics.
+            self.save(target, "legacy_report_observation", {
+                "kind": "finding_claim",
                 "severity": match.group(1).upper(),
                 "title": match.group(2),
                 "session_id": session_id,
@@ -170,7 +229,8 @@ class SessionMemory:
             re.IGNORECASE
         )
         for match in subdomain_pattern.finditer(report):
-            self.save(target, "subdomain", {
+            self.save(target, "legacy_report_observation", {
+                "kind": "subdomain_claim",
                 "subdomain": match.group(1).lower(),
             }, session_id)
 

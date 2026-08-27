@@ -25,7 +25,7 @@ class AdaptivePlannerTests(unittest.TestCase):
 
     def test_empty_snapshot_proposes_surface_mapping(self):
         result = self.planner.plan(self.context, self.state(), PlanningSnapshot(), "map target")
-        self.assertEqual(result.proposals[0].recommended_tool, "human_recon_crawl")
+        self.assertEqual(result.proposals[0].recommended_tool, "__recon_mission__")
         self.assertEqual(result.proposals[0].action, "attack_surface_mapping")
         audited = self.planner.plan(self.context, self.state(), PlanningSnapshot(errors=["candidate table unavailable"]), "map")
         self.assertIn("Evidence source unavailable: candidate table unavailable", audited.decision.knowledge_gaps)

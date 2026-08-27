@@ -51,6 +51,7 @@ def client_side_security_scanner(url: str) -> str:
         "cache_issues": [],
         "vulnerabilities": []
     }
+    scan_error = None
 
     try:
         rate_limiter.wait(domain)
@@ -199,6 +200,15 @@ def client_side_security_scanner(url: str) -> str:
     except Exception as e:
         logger.add_log(tool_name, "ERROR", f"Client-side scan error: {str(e)}")
         findings["error"] = str(e)
+        scan_error = str(e)
+
+    if scan_error:
+        logger.add_log(tool_name, "ERROR", "Client-side security scan failed")
+        return json.dumps({
+            "status": "ERROR",
+            "findings": findings,
+            "error": scan_error[:500],
+        }, indent=2)
 
     total = len(findings["vulnerabilities"])
     result = {

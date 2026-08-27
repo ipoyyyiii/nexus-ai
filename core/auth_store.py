@@ -301,8 +301,8 @@ def authenticated_request(
     """
     from core.tool_transport import guarded_requests as requests
     from urllib.parse import urlparse
-    from auth_detection import detect_login_wall
-    from auth_checkpoint import request_auth
+    from core.auth_detection import detect_login_wall
+    from core.auth_checkpoint import request_auth
 
     def _domain_of(url: str) -> str:
         try:
@@ -353,8 +353,14 @@ def authenticated_request(
     except Exception as e:
         return None, None
 
-    # Check for login wall
-    needs_auth_result, login_wall = detect_login_wall(response, url)
+    # ``detect_login_wall`` returns the typed result directly.  The older
+    # helper returned ``(needs_auth, result)``; unpacking it here caused every
+    # guarded request made by client-side/postMessage recon to fail with
+    # ``cannot unpack non-iterable LoginWallResult``.
+    login_wall = detect_login_wall(response, url)
+    needs_auth_result = bool(login_wall.detected)
+    if not needs_auth_result:
+        login_wall = None
 
     if needs_auth_result and exec_logger:
         # Trigger auth checkpoint
@@ -374,7 +380,7 @@ def authenticated_request(
             if mode == "credentials":
                 # Try auto-login
                 try:
-                    from playwright_tools import login_automator
+                    from tools.playwright_tools import login_automator
                     login_url = auth_data.get("login_url", url)
                     login_automator.invoke({
                         "url": login_url,
@@ -402,7 +408,7 @@ def authenticated_request(
                 headers_dict = auth_data.get("headers", {})
 
                 if cookies_str:
-                    from playwright_tools import inject_session
+                    from tools.playwright_tools import inject_session
                     inject_session.invoke({
                         "url": url,
                         "cookies": cookies_str,

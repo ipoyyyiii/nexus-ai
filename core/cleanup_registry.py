@@ -1,7 +1,11 @@
-"""Allowlisted cleanup handlers for reversible workflow side effects."""
+"""Allowlisted, serializable cleanup handlers for reversible side effects.
+
+The callable form remains for old local integrations, but durable workers must
+use ``execute_durable`` with a registered handler and redacted JSON context.
+"""
 
 from dataclasses import dataclass
-from typing import Callable, Dict
+from typing import Callable, Dict, Optional
 
 
 @dataclass
@@ -9,6 +13,7 @@ class CleanupHandler:
     name: str
     handler: Callable[[dict], dict]
     description: str
+    durable: bool = True
 
 
 class CleanupRegistry:
@@ -27,9 +32,25 @@ class CleanupRegistry:
             raise ValueError("Cleanup handlers must return a result with success.")
         return result
 
+    def execute_durable(self, name: str, context: dict) -> dict:
+        """Execute only a JSON-serializable cleanup context.
+
+        A callable hidden in the context would disappear on worker restart and
+        therefore cannot be the only rollback mechanism.
+        """
+        if not isinstance(context, dict) or any(callable(value) for value in context.values()):
+            return {"success": False, "status": "cleanup_failed", "error": "non_serializable_context"}
+        try:
+            result = self.execute(name, context)
+        except Exception as exc:
+            return {"success": False, "status": "cleanup_failed", "error": type(exc).__name__}
+        if result.get("success") is not True:
+            return {**result, "status": "cleanup_failed"}
+        return {**result, "status": "succeeded"}
+
     def available(self) -> list[dict]:
         return [
-            {"name": item.name, "description": item.description}
+            {"name": item.name, "description": item.description, "durable": item.durable}
             for item in self._handlers.values()
         ]
 
