@@ -54,8 +54,9 @@ class GuardedSession:
         self.proxies: dict[str, str] | None = None
 
     def request(self, method: str, url: str, **kwargs: Any):
-        if self.proxies:
-            raise SafetyViolation("proxy_not_configured", "Arbitrary proxy use is disabled; use an operator-configured egress reference.")
+        requested_proxies = kwargs.pop("proxies", None)
+        if self.proxies and requested_proxies is None:
+            requested_proxies = self.proxies
         headers = dict(self.headers)
         headers.update(kwargs.pop("headers", {}) or {})
         cookies = dict(self.cookies)
@@ -65,6 +66,8 @@ class GuardedSession:
         if cookies:
             kwargs["cookies"] = cookies
         kwargs.setdefault("verify", self.verify)
+        if requested_proxies:
+            kwargs["proxies"] = requested_proxies
         response = _client().request(method, url, **kwargs)
         try:
             self.cookies.update(response.cookies.get_dict())
@@ -190,6 +193,11 @@ class GuardedSocket:
             return 13
         try:
             context.safety_kernel.require(context.session_id, "tcp_connect", f"https://{host}:{port}", job_id=context.job_id, attempt_id=context.attempt_id, identity_id=context.identity_id, tool_run_id=context.tool_run_id, budget=context.budget or ResourceBudgetV1(), approved=context.approval_granted)
+            context.safety_kernel.account(
+                context.session_id, context.job_id, f"https://{host}:{port}",
+                budget=context.budget or ResourceBudgetV1(),
+                attempt_id=context.attempt_id, tool_run_id=context.tool_run_id,
+            )
             return self._sock.connect_ex(address)
         except Exception:
             return 13
@@ -215,6 +223,11 @@ class _SocketFacade:
         if context.safety_kernel is None:
             raise SafetyViolation("missing_safety_kernel", "TCP capability has no safety kernel.")
         context.safety_kernel.require(context.session_id, "tcp_connect", f"https://{host}:{port}", job_id=context.job_id, attempt_id=context.attempt_id, identity_id=context.identity_id, tool_run_id=context.tool_run_id, budget=context.budget or ResourceBudgetV1(), approved=context.approval_granted)
+        context.safety_kernel.account(
+            context.session_id, context.job_id, f"https://{host}:{port}",
+            budget=context.budget or ResourceBudgetV1(),
+            attempt_id=context.attempt_id, tool_run_id=context.tool_run_id,
+        )
         return _socket.create_connection(address, timeout=timeout, source_address=source_address)
 
 

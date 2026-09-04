@@ -1,0 +1,1453 @@
+schema_version: "1.0"
+scorecard_id: nexus-world-class-web-pentest
+last_updated: "2026-09-03"
+purpose: >-
+  Evidence-backed scorecard for Nexus. It measures capability changes; it does
+  not treat code volume, job completion, tool invocation, or candidate count as
+  validated success.
+
+governance:
+  baseline_is_immutable: true
+  append_only_run_records: true
+  gold_labels_hidden_from_runtime: true
+  score_requires_exit_criteria: true
+  partial_or_inconclusive_is_not_pass: true
+  unproven_is_not_zero: true
+  secrets_allowed: false
+  rating_change_requires:
+    - relevant_live_or_benchmark_test
+    - actual_metrics
+    - evidence_references
+    - known_limitations_update
+
+scope:
+  product: autonomous web/API pentesting
+  included:
+    - reconnaissance
+    - REST/API
+    - browser workflows
+    - authentication/session
+    - access control
+    - injection and client-side testing
+    - SSRF/OOB
+    - business logic
+    - evidence and reporting
+  excluded:
+    - mobile
+    - active directory
+    - malware
+    - phishing
+    - unrestricted cloud or enterprise red-team operations
+
+baseline:
+  id: BASELINE-2026-08-31
+  source:
+    reference_commit: ab377a12
+    reference_commit_message: "upgrade"
+    working_tree: dirty
+    note: >-
+      Existing upgrade changes are present but not yet represented by a clean
+      checkpoint. Future architecture comparisons must record the new commit
+      and working-tree state explicitly.
+  environment:
+    operating_system: macOS
+    runtime: docker-compose
+    deployment_mode: shadow
+    detection_depth_mode: strict
+    autonomous_web_pentest_enabled: true
+    autonomous_read_only_auto_run: true
+    local_model_live_status: unproven
+  commands:
+    - ".venv/bin/python -m pytest -q"
+    - "docker compose config --quiet"
+    - "docker compose ps"
+    - "curl -fsS http://127.0.0.1:8000/health/live"
+    - "curl -fsS http://127.0.0.1:8000/health/ready"
+  latest_recorded_live_evidence:
+    live_matrix:
+      profiles: 5
+      configured: 4
+      reachable: 4
+      surface_ready: 4
+      owasp_benchmark_ready: false
+      release_gate: not_ready
+    full_live_run:
+      structured_tool_runs: 51
+      hard_execution_errors: 0
+      partial_runs: 4
+      candidate_findings: 4
+      validated_findings: 0
+      candidate_statuses:
+        - inconclusive
+      candidate_family:
+        - time-based blind SQLi
+      caveat: >-
+        This run proves broad execution and the current analysis limitation; it
+        is not a post-architecture AI-native benchmark.
+  regression:
+    status: passed
+    command: ".venv/bin/python -m pytest -q"
+    result: "262 passed in 1m55s"
+    previous_targeted_result:
+      passed: 82
+      deselected: 1
+      warnings: 1
+
+dimensions:
+  safety_execution:
+    score: 7.0
+    status: evidenced
+    evidence:
+      - bounded scope and read-only controls
+      - healthy API/worker/frontend
+      - structured execution boundary
+    not_proven:
+      - unrestricted production-grade autonomy
+  recon_breadth:
+    score: 6.0
+    status: partially_evidenced
+    evidence:
+      - 51 structured tool runs in latest recorded full run
+      - multi-lane recon orchestrator
+    not_proven:
+      - complete target truth recall
+      - all gated capabilities applicable to local labs
+  recon_actionability:
+    score: 4.0
+    status: unproven
+    evidence:
+      - knowledge graph and surface inventory exist
+    not_proven:
+      - consistent endpoint/method/parameter/auth/body provenance into actions
+      - recon-to-hypothesis closure
+  vulnerability_analysis:
+    score: 3.0
+    status: evidenced_limitation
+    evidence:
+      - 4 candidates in latest recorded run
+      - all 4 inconclusive
+      - deterministic planner active in full autonomous path
+    not_proven:
+      - model-driven creative hypothesis generation
+      - validated recall on hidden ground truth
+  exploitation_impact:
+    score: null
+    status: not_rated
+    reason: no sufficient live end-to-end impact proof
+  final_report:
+    score: null
+    status: not_rated
+    reason: report plumbing exists but senior-review quality is not live-benchmarked
+  overall_autonomous_web_pentest:
+    score: 4.0
+    status: provisional
+    reason: foundation exists; AI-native reasoning control loop is not proven
+
+metrics:
+  required_for_vulnerability_claims:
+    - validated_recall
+    - validated_precision
+    - false_positive_rate
+    - endpoint_parameter_coverage
+    - evidence_completeness
+    - adaptive_recovery_rate
+  required_for_exploitation_claims:
+    - reproducible_impact_proof
+    - control_comparison
+    - cleanup_success_rate
+    - authorization_scope_integrity
+  required_for_report_claims:
+    - claim_evidence_linkage
+    - unsupported_claim_rate
+    - redaction_leak_rate
+    - report_reproduction_rate
+
+rating_policy:
+  implemented_does_not_mean_proven: true
+  tool_success_does_not_mean_finding_success: true
+  candidate_does_not_mean_validated: true
+  model_offline_means_unproven: true
+  no_score_increase_without_exit_criteria: true
+  score_may_decrease_if_new_evidence_contradicts_baseline: true
+  comparison_rule: >-
+    Compare only runs with equivalent scope, target class, configuration, model
+    availability, and evaluator version. Otherwise mark the comparison
+    non-comparable instead of forcing a score change.
+
+phase_records:
+  - id: ARCH-AI-NATIVE-CONTROL-LOOP-2026-08-31
+    date: "2026-08-31"
+    status: tested
+    objective: >-
+      Make the model the dynamic reasoning, hypothesis, tool-selection, and
+      adaptation layer while retaining deterministic safety, approval, evidence,
+      and validation boundaries.
+    environment:
+      operating_system: macOS
+      runtime: docker-compose
+      model_live: false
+      target_live: false
+    verification:
+      focused_command: >-
+        .venv/bin/python -m pytest -q tests/test_reasoning_gateway.py
+        tests/test_autonomous_web_pentest.py tests/test_model_registry.py
+      focused_result: "24 passed in 21.26s"
+      recon_interactive_command: >-
+        .venv/bin/python -m pytest -q tests/test_recon_orchestrator.py
+        tests/test_interactive_flow_autopilot.py
+      recon_interactive_result: "44 passed in 16.03s"
+      full_command: ".venv/bin/python -m pytest -q"
+      full_result: "277 passed in 1m52.55s"
+      compileall: passed
+      yaml_parse: passed
+      compose_config: passed
+      diff_check: passed
+      runtime_recreate: passed
+      backend_worker_health: healthy
+      health_live_ready: "200 / 200"
+    evidence:
+      - core/reasoning_gateway.py
+      - core/autonomous_web_pentest.py
+      - core/interactive_flow.py
+      - core/recon_orchestrator.py
+      - migrations/023_reasoning_model_calls.sql
+      - tests/test_reasoning_gateway.py
+      - tests/test_autonomous_web_pentest.py
+    metrics:
+      model_participation: unproven
+      deterministic_planner_primary_path: false
+      ai_primary_dispatch: tested_with_fake_provider
+      reasoning_action_bridge: tested_all_action_types
+      standalone_hypothesis_lineage: tested
+      shadow_strict_dispatch_semantics: tested
+      ai_recon_selection_boundary: tested_by_contract
+      bounded_branch_and_gap_telemetry: tested
+      validated_recall: unproven
+      validated_precision: unproven
+      adaptive_recovery_rate: unproven
+    limitations:
+      - No successful local/remote model call was connected during this automated verification.
+      - No authorized live lab was run after the architecture change.
+      - Migration 023 was created but not applied to the live Supabase project.
+      - Fake-provider tests prove wiring and boundaries, not vulnerability recall.
+    score_decision: unchanged
+
+  - id: PHASE1-EXECUTION-FOUNDATION-2026-09-01
+    date: "2026-09-01"
+    status: implemented_and_regression_tested
+    objective: >-
+      Allow explicitly scoped private targets outside the local lab shortcut and
+      remove the implicit eight-action autonomous loop ceiling.
+    changes:
+      - Session allow rules with allow_private=true authorize private targets regardless of lab identity.
+      - Caller flags cannot bypass session scope; metadata and link-local targets remain blocked.
+      - Scope loading is session-specific; provider and raw-socket paths retain address/budget checks.
+      - Autonomous loop defaults to timeout/resource-budget control instead of a total-action cap.
+    verification:
+      phase1_targeted_regression: "37 passed in 17.93s"
+      full_source_regression: "281 passed in 115.48s"
+      frontend_lint_build: passed
+      docker_live_health: passed
+      rating_change: none
+    limitations:
+      - DNS connection pinning and browser peer-IP enforcement remain future hardening work.
+      - Live vulnerability recall and validated finding quality remain unproven.
+    score_decision: unchanged
+
+  - id: PHASE1-FIVE-GAP-CLOSURE-IMPLEMENTATION-2026-09-01
+    date: "2026-09-01"
+    status: implementation_regression_passed_live_rerun_pending
+    mode: autonomous
+    objective: >-
+      Close the five concrete blockers found by the authorized Juice Shop
+      Phase 1 run before repeating live acceptance.
+    changes:
+      - Browser navigation tolerates SPA lifecycle timeouts when usable DOM exists, and Compose maps host.docker.internal for container workers.
+      - Worker-owned terminal status, summary, logs, error code/message, and report reference are persisted durably through an application terminal event.
+      - The worker heartbeat file is refreshed from the active lease heartbeat thread during long synchronous jobs.
+      - Compact cycle/action traces are persisted in phase metrics and exposed through the execution trace endpoint.
+      - Legacy structured warning buckets and explicit count blocks become suspected typed candidates with validation_required=true; they never become validated from heuristic text alone.
+      - The reasoning gateway action response limit is config-driven (20 in deployment config, 32 parser maximum) instead of silently defaulting to eight.
+    verification:
+      focused_five_gap_regression: "63 passed in 25.58s"
+      full_source_regression: "292 passed in 127.35s"
+      python_compile: passed
+      git_diff_check: passed
+      yaml_parse: passed
+      compose_config: passed
+      api_worker_health: "healthy; /health/live and /health/ready HTTP 200"
+      worker_host_alias_http: "HTTP 200 from host.docker.internal:3001"
+      container_browser_navigation_smoke: "HTTP 200; title OWASP Juice Shop"
+      live_rerun: pending
+    metrics:
+      live_candidates: unmeasured_until_rerun
+      live_validated_findings: unmeasured_until_rerun
+      rating_change: none
+    limitations:
+      - Browser and candidate changes still require a fresh authorized Juice Shop run for end-to-end proof.
+      - No score increase is justified by implementation or offline tests.
+    score_decision: unchanged
+
+  - id: PHASE1-BROWSER-RECON-RESILIENCE-2026-09-01
+    date: "2026-09-01"
+    status: scoped_live_acceptance_passed
+    mode: autonomous
+    objective: >-
+      Close the browser screenshot and human recon execution blockers with
+      bounded, typed, durable behavior and prove them against an authorized
+      local SPA target.
+    implementation:
+      browser_commit_first_navigation: true
+      dom_observation_fallback: true
+      typed_browser_artifact_v1: true
+      private_local_artifact_fallback: true
+      bounded_sync_llm_call: true
+      network_only_page_preservation: true
+      typed_cancellation_and_error_codes: true
+    verification:
+      focused_regression: "17 passed"
+      full_source_regression: "302 passed in 386.55s"
+      live_session: 59b22f3a-3530-4be0-bb02-8645f360971a
+      live_browser_screenshot: succeeded
+      live_human_recon: succeeded
+      artifact_content: "HTTP 200; PNG and SHA-256 verified"
+    exit_criteria:
+      browser_capture_survives_spa_lifecycle_timeout: passed
+      screenshot_is_durably_retrievable: passed
+      recon_does_not_drop_valid_busy_spa_dom: passed
+      sync_model_failure_is_bounded_and_explicit: passed
+      cancellation_and_tool_errors_are_typed: passed
+    not_proven:
+      - full recon-suite completion
+      - browser extraction endpoint/parameter recall
+      - vulnerability recall or precision
+      - durable validation/FK integrity
+      - report quality
+    score_decision: unchanged
+
+  - id: PHASE1-SIX-GAP-CLOSURE-2026-09-01
+    date: "2026-09-01"
+    status: implementation_regression_passed_live_ai_acceptance_pending
+    mode: autonomous
+    objective: >-
+      Close the six remaining Phase 1 acceptance blockers: durable AI
+      telemetry, candidate/validation integrity, skip applicability accounting,
+      auth/business/retest/impact readiness, and durable report export.
+    changes:
+      - Reasoning persistence is strict and typed; model-call writes no longer disappear silently, and synchronous model calls have a config-driven watchdog.
+      - Candidate rows are persisted before validation rows; validated promotion requires a durable successful validation run and check, with migration 024 as a database guard.
+      - Cross-session candidate ID reuse is rejected before persistence.
+      - Recon skips expose skip_class, coverage_required, denominator metrics, timeout/cancel terminal rows, and persistence failures as partial.
+      - Readiness for identities, auth contexts, business workflows, retests, and impact proof is included in the model context and final snapshot.
+      - Report generation excludes historical status-only validated candidates; durable worker report references and typed export errors are supported for md/pdf/docx.
+    verification:
+      focused_regression: "76 passed"
+      full_source_regression: "326 passed in 141.17s"
+      python_compile: passed
+      git_diff_check: passed
+      yaml_parse: passed
+      compose_config: passed
+      docker_rebuild: passed
+      docker_recreate: passed
+      api_worker_health: "healthy; /health/live and /health/ready HTTP 200"
+    live_acceptance:
+      required: true
+      status: pending_model_on_and_fresh_authorized_lab_run
+      model_participation: unproven_for_this_checkpoint
+      validated_recall: unproven
+      auth_business_retest_impact: unproven_end_to_end
+    score_decision: unchanged
+    known_limitations:
+      - Migration 024 must be applied and verified in the live Supabase project; source presence is not database proof.
+      - A fresh authorized live run with the AI provider online is still required to prove durable reasoning rows, model traces, and end-to-end chain coverage.
+      - Existing historical rows are not retroactively relabeled by this source change.
+
+run_records:
+  - id: LIVE-CRAPI-SHADOW-2026-09-01
+    date: "2026-09-01"
+    status: failed_integrity_gate
+    mode: shadow
+    environment:
+      operating_system: macOS
+      runtime: docker-compose
+      target: http://host.docker.internal:8888
+      target_origin: local_127.0.0.1_8888
+      crapi_checkout: 73d309c
+      model_id: dolphin3-cyber
+      model_preflight: "HTTP 200 /models and /chat/completions"
+    job_id: 60b03471-137b-4112-8b28-fe25b1d42f8c
+    duration_seconds: 554.53
+    metrics:
+      structured_tool_runs: 50
+      succeeded_tool_runs: 14
+      failed_tool_runs: 6
+      skipped_tool_runs: 30
+      candidates: 0
+      validated_findings: 0
+      open_evidence_gaps: 7
+      model_decision_persistence: proven
+      model_dispatch: shadowed_by_design
+      validated_recall: uncomputed
+      validated_precision: uncomputed
+    integrity_blockers:
+      - amass_enum
+      - browser_extract_surface
+      - browser_find_open_redirect
+      - browser_screenshot
+      - detect_subdomain_takeover
+      - human_recon_crawl
+    interpretation: >-
+      The run is a valid shadow baseline but not a clean pentest result. Tool
+      failures caused the integrity gate to fail; zero findings is not a clean
+      target result.
+    score_decision: unchanged
+
+  - id: LIVE-CRAPI-STRICT-2026-09-01
+    date: "2026-09-01"
+    status: failed_integrity_gate
+    mode: strict
+    environment:
+      operating_system: macOS
+      runtime: docker-compose
+      target: http://host.docker.internal:8888
+      target_origin: local_127.0.0.1_8888
+      crapi_checkout: 73d309c
+      model_id: dolphin3-cyber
+      model_preflight: "HTTP 200 /models and /chat/completions"
+    job_id: 84a0c608-ed9d-446b-adc7-a208a5103ceb
+    duration_seconds: 493.45
+    metrics:
+      structured_tool_runs: 12
+      succeeded_tool_runs: 9
+      failed_tool_runs: 3
+      skipped_tool_runs: 0
+      candidates: 0
+      validated_findings: 0
+      reasoning_cycles: 4
+      model_participation: proven
+      model_dispatch: proven_for_bounded_actions
+      open_evidence_gaps: 1
+      validated_recall: uncomputed
+      validated_precision: uncomputed
+    integrity_blockers:
+      - browser_find_open_redirect
+      - browser_intercept_requests
+      - param_discovery_get
+    observed_transport_failures:
+      - private_ip_rejected
+      - none_response_object_in_http_tools
+    interpretation: >-
+      The live model participated and selected bounded actions, but local-target
+      transport/policy failures prevented a valid full-pentest completion.
+    score_decision: unchanged
+
+  - id: LIVE-JUICE-SHOP-PHASE1-2026-09-01
+    date: "2026-09-01"
+    status: failed_integrity_gate
+    mode: autonomous
+    environment:
+      operating_system: macOS
+      runtime: docker-compose
+      target: http://host.docker.internal:3001
+      target_origin: local_127.0.0.1_3001
+      model_id: dolphin3-cyber
+      model_preflight: "HTTP 200 /health"
+      private_scope: "session allow_private=true"
+      authorization: explicit_session_confirmation
+    job_id: a1e92d6c-8cfe-4b80-b735-e7618da0151b
+    duration_seconds: 723.31
+    metrics:
+      structured_tool_runs: 16
+      authoritative_tool_runs: 14
+      succeeded_tool_runs: 10
+      partial_tool_runs: 3
+      failed_tool_runs: 1
+      candidates: 0
+      validated_findings: 0
+      private_ip_rejected: 0
+      structured_runs_over_previous_eight: proven
+      autonomous_action_count: uncomputed
+      worker_health_during_job: transiently_unhealthy
+      worker_health_after_job: healthy
+    integrity_blockers:
+      - browser_screenshot
+      - durable_terminal_error_detail_missing
+      - process_local_job_view_not_available_in_worker
+    observed_transport_failures:
+      - browser_tools_timeout_on_host_docker_internal
+    interpretation: >-
+      The session-scoped private transport worked and the worker executed real
+      Juice Shop probes. The run did not qualify as a successful pentest because
+      one authoritative browser run failed; three browser runs were partial.
+      The durable job ended in failed/error, but its terminal error detail and
+      summary were empty because application-level job updates are process-local
+      while the worker owns execution. The worker health file also became stale
+      during the long synchronous handler and recovered after the job returned.
+    score_decision: unchanged
+
+  - id: LIVE-PHASE1-DYNAMIC-BUDGET-JUICE-SHOP-2026-09-01
+    date: "2026-09-01"
+    status: failed_phase1_acceptance_not_proven
+    mode: autonomous
+    environment:
+      operating_system: macOS
+      runtime: docker-compose
+      target: http://host.docker.internal:3001
+      target_origin: local_127.0.0.1_3001
+      model_id: dolphin3-cyber
+      model_preflight: "HTTP 200 health, models, and completion"
+      private_scope: "session allow_private=true"
+      authorization: explicit_session_confirmation
+    job_id: 1891bbff-f935-4b9f-ac91-af255b4af1f3
+    session_id: f8dce27d-51d4-4f14-929d-53f6bc119cd1
+    duration_seconds: 1135.97
+    metrics:
+      structured_tool_runs: 73
+      compatibility_log_entries: 91
+      succeeded_tool_runs: 12
+      partial_tool_runs: 13
+      skipped_tool_runs: 50
+      autonomous_cycles: 7
+      autonomous_actions: 18
+      blocked_actions: 5
+      hypotheses: 159
+      proposals: 24
+      planner_decisions: 6
+      candidates: 16
+      validated_findings: 5
+      inconclusive_candidates: 11
+      private_ip_rejected: 0
+      durable_reasoning_cycles: 0
+      durable_model_calls: 0
+      durable_model_action_traces: 0
+      candidate_validation_rows_for_validated_sample: 0
+      evidence_gaps_endpoint_count: 0
+      report_export_http: 400
+    validated_finding_types:
+      - missing_x_xss_protection
+      - missing_content_security_policy
+      - missing_strict_transport_security
+      - missing_x_frame_options
+      - missing_x_content_type_options
+    integrity_blockers:
+      - validation_trace_persistence_error_foreign_key
+      - durable_reasoning_telemetry_missing
+      - browser_screenshot_partial_timeout
+      - human_recon_partial_timeout
+      - report_export_not_available_after_done
+    skipped_reasons:
+      - recon_circuit_breaker_open
+      - provider_queries_disabled
+      - local_lab_not_applicable
+      - raw_network_disabled
+      - r2_active_disabled
+    interpretation: >-
+      This is a genuine live autonomous run. The dynamic budget change is
+      evidenced by 7 cycles and 18 actions, exceeding the former eight-action
+      ceiling. The run is not a clean pentest acceptance: durable AI
+      participation is unproven, validated candidates lack validation rows,
+      13 tools are partial, and 50 tools are skipped by applicability or
+      disabled capability policy. Job completion is not vulnerability recall.
+    score_decision: unchanged
+
+  - id: LIVE-PHASE1-BROWSER-RECON-RESILIENCE-2026-09-01
+    date: "2026-09-01"
+    status: scoped_acceptance_passed
+    mode: autonomous
+    environment:
+      operating_system: macOS
+      runtime: docker-compose
+      target: http://host.docker.internal:3001
+      target_origin: local_127.0.0.1_3001
+      model_id: dolphin3-cyber
+      private_scope: "session allow_private=true"
+      authorization: explicit_session_confirmation
+    session_id: 59b22f3a-3530-4be0-bb02-8645f360971a
+    tool_runs:
+      browser_screenshot: run_b675641f9c344b32852f9d3de020a4fb
+      human_recon_crawl: run_4a7f4ba7cd3a44d0a0d7718499108fd7
+    scope:
+      objective: >-
+        Prove that SPA browser capture and human recon no longer fail solely
+        because of lifecycle waits, synchronous planner blocking, missing
+        artifact persistence, or coarse cancellation/error handling.
+      not_a_full_pentest: true
+    metrics:
+      browser_screenshot_status: succeeded
+      browser_navigation_status: succeeded
+      screenshot_available: true
+      browser_artifact_id: art_539d7fc979074b009cebcf945844ab98
+      browser_artifact_bytes: 249315
+      browser_artifact_sha256: 1ea246a99986acbe5442130d3c001fadcc7a705e179e865759ed913c17697ba2
+      browser_artifact_content_http: 200
+      human_recon_status: succeeded
+      human_recon_pages: 1
+      human_recon_capture_status: dom_observed
+      human_recon_clicks: 6
+      human_recon_xhr_observations: 43
+      navigation_timeouts: 0
+      llm_timeouts: 0
+      explicit_llm_fallbacks: 1
+      supabase_storage_upload_probe_http: 403
+      fallback_storage_backend: local_fallback
+    verification:
+      focused_regression: "17 passed"
+      full_source_regression: "302 passed in 386.55s"
+      python_compileall: passed
+      git_diff_check: passed
+      api_worker_ready: "HTTP 200; healthy"
+    limitations:
+      - Broad recon was intentionally stopped after targeted acceptance evidence.
+      - Outer human_recon_crawl compatibility payload still reports legacy_source=true.
+      - Supabase anon Storage upload remains blocked by RLS; private local fallback is verified.
+      - Browser extraction quality, validation persistence integrity, and vulnerability recall are unproven.
+    score_decision: unchanged
+
+next_phase:
+  id: ARCH-AI-NATIVE-CONTROL-LOOP
+  status: implemented
+  objective: >-
+    Make the model the dynamic reasoning, hypothesis, tool-selection, and
+    adaptation layer while retaining deterministic safety, approval, evidence,
+    and validation boundaries.
+  score_change_before_live_test: none
+  implementation_record: ARCH-AI-NATIVE-CONTROL-LOOP-2026-08-31
+  follow_up_gate:
+    id: LIVE-AI-PARTICIPATION-AND-LAB-COVERAGE
+    status: partially_tested_blocked_by_tooling
+    requires:
+      - online explicit local-or-remote-model-provider
+      - persisted successful model_calls telemetry
+      - authorized live-lab run
+      - validated recall/precision and evidence metrics
+    score_change_before_gate: none
+
+architecture_records:
+  - id: RUNTIME-AUTONOMOUS-MODE-2026-09-01
+    date: "2026-09-01"
+    status: tested
+    objective: >-
+      Remove the operational shadow/strict split so Nexus has one autonomous
+      worker-owned execution path with model-selected actions and authoritative
+      structured validation.
+    runtime_mode: autonomous
+    changes:
+      - Pentest and browser jobs always use durable queue execution.
+      - Model proposals are no longer shadowed by configuration.
+      - Structured validation and reporting are always authoritative.
+      - Public operational responses expose autonomous mode.
+      - Dashboard actions and labels no longer submit/display shadow or strict
+        as current runtime modes.
+      - Historical shadow/strict labels remain readable for old evidence only.
+    verification:
+      focused_regression: "58 passed in 28.64s"
+      yaml_reload: passed
+      python_compile: passed
+      rating_change: none
+    limitations:
+      - Live vulnerability recall is not proven by this refactor.
+      - Local private-IP transport and tool failure contracts still require a live rerun.
+      - Destructive/mutation lab profile remains a separate authorization change.
+    score_decision: unchanged
+
+  - id: PHASE1-DYNAMIC-AI-BUDGET-IMPLEMENTATION-2026-09-01
+    date: "2026-09-01"
+    status: implementation_regression_passed_live_provider_unproven
+    objective: >-
+      Remove arbitrary default proposal/action count ceilings while keeping
+      explicit runtime safety, scope, approval, cancellation, timeout,
+      resource, and emergency-stop controls authoritative.
+    ecc_review:
+      subagent: Planck
+      result: >-
+        Found separate gateway/planner/loop ceilings and hidden raw-action
+        truncation; recommended one explicit auto/None convention.
+    changes:
+      - Reasoning and autonomous per-cycle defaults use auto.
+      - Adaptive planner proposal default uses auto.
+      - Valid model actions are preserved unless an explicit operator count is configured.
+      - Adaptive raw-action validation no longer truncates at 20.
+      - Autonomous dispatch is governed by timeout, cancellation, resource budget, emergency stop, planner stop, and explicit operator limits.
+      - Response-size, schema, scope, tool-admission, approval, and rate controls remain active.
+    verification:
+      dynamic_targeted_regression: "103 passed in 41.41s"
+      full_source_regression: "294 passed in 100.80s"
+      python_compile: passed
+      yaml_parse: passed
+      compose_config: passed
+      git_diff_check: passed
+      api_worker_recreate: passed
+      api_health_live: HTTP_200
+      api_health_ready: HTTP_200
+      model_provider_preflight: "ngrok ERR_NGROK_3200 / HTTP 404 at configured models endpoint"
+    metrics:
+      live_model_participation: unproven
+      live_candidates: unmeasured
+      live_validated_findings: unmeasured
+      rating_change: none
+    limitations:
+      - >-
+        No live lab run is credited until the configured model provider
+        endpoint is restored and authenticated model telemetry is persisted.
+      - >-
+        This change removes arbitrary count ceilings; it does not by itself
+        prove vulnerability recall, precision, business-logic coverage, or
+        report quality.
+    score_decision: unchanged
+
+  - id: PHASE1-ACCEPTANCE-READINESS-GATE-2026-09-01
+    date: "2026-09-01"
+    status: implementation_regression_and_postgres_trigger_verified_live_schema_marker_pending
+    objective: >-
+      Make Phase 1 acceptance-critical persistence and migration state
+      observable, fail-closed, and durable before crediting an AI-backed live
+      acceptance run.
+    changes:
+      - Added migration 025, which writes 023/024 markers only after PostgreSQL verifies required tables and integrity triggers.
+      - "/health/ready now requires the Phase 1 acceptance marker set."
+      - Reasoning cycle, model-call, and model-action-trace writes require durable read-back confirmation.
+    verification:
+      focused_phase1_regression: "30 passed"
+      full_source_regression: "328 passed in 160.39s"
+      postgres_14_migration_and_trigger_check: passed
+      invalid_validated_candidate_rejected: passed
+      git_diff_check: passed
+    active_supabase_probe:
+      required_acceptance_tables: reachable
+      migration_023_table: reachable
+      migration_024_trigger_marker: missing
+      rating_change: none
+    remaining_live_acceptance:
+      - Apply migrations 023, 024, and 025 in the active Supabase project.
+      - "Confirm /health/ready returns phase1_acceptance_schema: ok."
+      - Run a fresh authorized lab job with the AI provider online.
+      - Verify durable model participation, candidate/validation pairing, coverage denominator, identity/business/retest/impact evidence, and report export.
+    score_decision: unchanged
+
+  - id: PHASE1-ACCEPTANCE-HARDENING-2026-09-01
+    date: "2026-09-01"
+    status: source_and_postgresql_acceptance_verified_live_supabase_marker_pending
+    objective: >-
+      Remove false-positive durable read-back behavior and make the Phase 1
+      schema/trigger acceptance gate prove its state in PostgreSQL and in the
+      running API.
+    changes:
+      - Reasoning read-back selects and compares all requested verification fields.
+      - Append-only model-call conflicts are detected after ignore_duplicates writes.
+      - Migration 025 validates required columns, enabled triggers, function definitions, and dynamic checksums through a status RPC.
+      - API and worker images were rebuilt and recreated from the final source.
+    verification:
+      focused_phase1_regression: "16 passed"
+      full_source_regression: "334 passed in 158.32s"
+      python_compileall: passed
+      yaml_parse: passed
+      compose_config: passed
+      git_diff_check: passed
+      postgres_14_migrations_023_to_025: passed
+      postgres_status_rpc: "ready=true"
+      valid_candidate_promotion: accepted
+      failed_check_candidate_promotion: rejected_and_inconclusive
+      docker_rebuild_recreate: passed
+      api_worker_health: healthy
+      health_live: HTTP_200
+      health_ready: "HTTP_503 phase1_acceptance_schema=error (active Supabase marker absent)"
+    live_acceptance:
+      ai_provider_required: true
+      active_supabase_migrations_required: true
+      rating_change: none
+    score_decision: unchanged
+
+  - id: PHASE1-CANONICAL-VALIDATION-HARDENING-2026-09-01
+    date: "2026-09-01"
+    status: source_regression_and_container_verified_live_schema_pending
+    objective: >-
+      Ensure canonical validated status cannot miss an older successful run
+      or accept non-boolean false-like values as proof.
+    changes:
+      - Removed the arbitrary 20-run lookup ceiling from successful validation checks.
+      - Required each persisted validation check to equal boolean true.
+      - Added regression coverage for string false-like check values.
+    verification:
+      focused_phase1_regression: "27 passed"
+      full_source_regression: "335 passed in 365.13s"
+      docker_rebuild_recreate: passed
+      api_worker_health: healthy
+      health_live: HTTP_200
+      health_ready: "HTTP_503 phase1_acceptance_schema=error (active Supabase migration 025 absent)"
+      rating_change: none
+    live_acceptance:
+      ai_provider_required: true
+      active_supabase_migrations_required: true
+    score_decision: unchanged
+
+live_acceptance_records:
+  - id: LIVE-AI-OWASP-BENCHMARK-2026-09-01
+    date: "2026-09-01"
+    status: partial_acceptance
+    comparable_to_baseline: false
+    reason: >-
+      Fresh AI-backed authorized run after active Supabase migrations 023,
+      024, and 025 were applied. The run proves durable AI participation,
+      validation integrity, and restart-safe reporting, but not the complete
+      Phase 1 capability gate.
+    environment:
+      operating_system: macOS
+      runtime: docker-compose
+      target: http://host.docker.internal:8446/benchmark/
+      lab_matrix:
+        profiles: 5
+        configured: 5
+        reachable: 5
+        surface_ready: 5
+      model_id: dolphin3-cyber
+      model_provider: local_ngrok_provider
+      api_ready: true
+      mode: autonomous
+      authorization: explicit_session_confirmation
+    identifiers:
+      session_id: 51223a6d-8e29-4eba-94a1-9a44a0e0839b
+      job_id: 509da2db-b43b-441b-9545-912409a8c780
+    execution:
+      terminal_status: done
+      duration_seconds: 1513.8
+      hard_errors: 0
+      durable_tool_runs_audited: 68
+      succeeded_tool_runs: 51
+      skipped_tool_runs: 17
+      partial_tool_runs: 0
+      failed_tool_runs: 0
+      required_recon_skips: 3
+      skip_classes:
+        not_applicable: 10
+        policy_blocked: 7
+      required_skip_reason: r2_active_disabled
+    ai_telemetry:
+      reasoning_cycles_succeeded: 5
+      reasoning_model_calls: 5
+      model_calls_succeeded: 3
+      model_calls_failed: 2
+      model_call_failures:
+        - _GatewayProtocolError
+        - JSONDecodeError
+      model_action_traces: 10
+      valid_action_traces: 2
+      invalid_action_traces: 8
+      hypotheses: 5
+      branches: 10
+      adaptations: 0
+      open_evidence_gaps: 5
+    detection_validation:
+      observations: 75
+      candidate_findings: 12
+      validated_candidates: 5
+      inconclusive_candidates: 7
+      validated_candidates_with_passed_checks_and_evidence: 5
+      validated_recall: unmeasured
+      false_positive_rate: unmeasured
+    auth_business_retest_impact:
+      identities: 2
+      auth_contexts: 0
+      authorization_graphs: 0
+      authorization_replays: 0
+      business_entities: 0
+      business_invariants: 0
+      business_state_transitions: 0
+      retests: 0
+      impact_proof_attempts: 0
+      cleanup_proof: 0
+    report:
+      report_quality_status: ready
+      grounded_claims: 10
+      latest_narrative_claims: 10
+      persisted_report_claim_rows_after_repeated_reads: 40
+      report_claim_deduplication: fail
+      validated_candidates_with_evidence: 5
+      redaction_leaks: 0
+      export_md_before_restart: 200
+      export_pdf_before_restart: 200
+      export_docx_before_restart: 200
+      export_md_after_restart: 200
+      export_pdf_after_restart: 200
+      export_docx_after_restart: 200
+    gate:
+      durable_schema: pass
+      durable_ai_telemetry: partial_pass
+      candidate_validation_integrity: pass
+      coverage_accounting: partial_pass
+      auth_access_control: not_proven
+      business_logic: not_proven
+      retest: not_proven
+      impact_proof: not_proven
+      report_export_durability: pass
+      report_claim_idempotency: fail
+      phase1_acceptance: fail
+    limitations:
+      - Two model calls failed and eight of ten proposed action traces were rejected.
+      - Three required recon tools remain policy-blocked.
+      - No authenticated identity matrix or business workflow prerequisites were supplied.
+      - No fresh retest or impact/cleanup proof was produced.
+      - The live lab matrix proves reachability/surface only, not vulnerability recall.
+    score_decision: unchanged
+
+context_memory:
+  file: NEXUS_CONTEXT_MEMORY.md
+  status: canonical
+  purpose: >-
+    Preserve the official Phase 0–6 roadmap, Phase 1 sub-phase structure,
+    locked evaluation decisions, and resume protocol across work sessions.
+  verification: git diff --check passed; no secrets included
+  rating_effect: unchanged
+
+event_log:
+  file: NEXUS_EVENT_LOG.md
+  status: append_only
+  required_for:
+    - run_or_test
+    - upgrade
+    - bug
+    - gap
+    - fix
+    - decision
+    - verification
+  rating_effect: unchanged
+
+live_acceptance_records:
+  - id: LIVE-PHASE1-EXECUTION-FOUNDATION-2026-09-02
+    date: "2026-09-02"
+    phase: "Phase 1"
+    sub_phase: "Execution Foundation"
+    status: failed
+    environment:
+      operating_system: macOS
+      runtime: docker-compose
+      target: authorized_local_owasp_benchmark_bridge
+      model: dolphin3-cyber
+      preset: full
+      autopilot: true
+      private_scope_opt_in: true
+    preflight:
+      health_ready_http: 200
+      api_mode: autonomous
+      worker_healthy: true
+      target_http: 200
+      schema_checks: pass
+    run:
+      session_id: ccaa00a9-f119-4143-ac8c-5f2222f9baa6
+      job_id: 616a8efb-ab44-4da1-af67-437e9bd5fe3e
+      terminal_status: error
+      execution_integrity: fail
+      integrity_failure: browser_find_open_redirect
+      failed_tool_error: tool_timeout
+      private_ip_rejections: 0
+      durable_tool_runs: 16
+      succeeded_tool_runs: 15
+      failed_tool_runs: 1
+      partial_tool_runs: 0
+    ai_telemetry:
+      reasoning_cycles: 5
+      reasoning_cycles_succeeded: 1
+      reasoning_cycles_failed: 4
+      model_calls: 5
+      model_calls_succeeded: 1
+      model_calls_failed: 4
+      model_call_failures:
+        - JSONDecodeError
+        - _GatewayProtocolError
+      reasoning_actions: 3
+      model_action_traces: 3
+      valid_action_traces: 2
+      invalid_action_traces: 1
+      blocked_actions: 3
+      ai_expected_without_dispatch_outcome: 1
+    detection_validation:
+      candidates: 14
+      validated_candidates: 1
+      inconclusive_candidates: 13
+      validated_recall: unmeasured
+      validated_precision: unmeasured
+    report:
+      report_status: not_ready_due_execution_integrity
+      exports: not_run_after_failure
+    gate:
+      transport_scope: pass_with_explicit_allow_private
+      dynamic_execution: unproven_in_this_run
+      tool_failure_semantics: pass_for_durable_error_recording
+      ai_observability: partial
+      validation_evidence_integrity: partial
+      live_acceptance_1f: fail
+    limitations:
+      - One retryable browser timeout failed the authoritative job gate.
+      - Four of five provider calls failed despite provider models endpoint being reachable.
+      - One AI-expected action lacked a durable dispatch outcome.
+      - No report/export result was available after the fail-closed terminal state.
+      - This run does not measure hidden-label vulnerability recall or precision.
+    score_decision: unchanged
+
+  - id: LIVE-PHASE1-EXECUTION-FOUNDATION-HARDENING-2026-09-02
+    date: "2026-09-02"
+    phase: "Phase 1"
+    sub_phase: "Execution Foundation"
+    status: failed
+    environment:
+      operating_system: macOS
+      runtime: docker-compose
+      target: authorized_local_owasp_benchmark_bridge
+      model: dolphin3-cyber_configured_but_unreachable
+      preset: full
+      autopilot: true
+      private_scope_opt_in: true
+    implementation:
+      files:
+        - tools/playwright_tools.py
+        - api.py
+        - core/autonomous_web_pentest.py
+      regression_tests: 113
+      regression_status: pass
+    preflight:
+      health_ready_http: 200
+      api_mode: autonomous
+      worker_healthy: true
+      target_http: 200
+      schema_checks: pass
+      provider_health_http: 404
+      provider_models_http: 404
+      provider_completion_http: 404
+    run:
+      session_id: 757b4e8b-3914-4b36-b079-60d83c731ebd
+      job_id: 10394abf-8111-41da-9f2c-3a66f2c28f93
+      terminal_status: done
+      duration_seconds: 925.358964
+      non_narrative_tool_runs: 64
+      succeeded_tool_runs: 47
+      partial_tool_runs: 1
+      failed_tool_runs: 0
+      skipped_tool_runs: 16
+      private_ip_rejections: 0
+      partial_tool: browser_find_open_redirect
+    ai_telemetry:
+      reasoning_cycles: 2
+      reasoning_cycles_succeeded: 0
+      reasoning_cycles_failed: 2
+      model_calls: 2
+      model_calls_succeeded: 0
+      model_calls_failed: 2
+      model_call_failure: NotFoundError
+      reasoning_actions: 0
+      model_action_traces: 0
+      ai_expected_without_dispatch_outcome: 0
+      deterministic_fallback_used: true
+    detection_validation:
+      candidates: 6
+      validated_candidates: 5
+      inconclusive_candidates: 1
+      validated_evidence_linked: 5
+      validated_recall: unmeasured
+      validated_precision: unmeasured
+    report:
+      report_status: ready
+      export_md_http: 200
+      export_pdf_http: 200
+      export_docx_http: 200
+    gate:
+      private_transport_scope: pass
+      browser_partial_semantics: pass
+      retry_recovery_semantics: not_exercised_in_this_run
+      durable_ai_dispatch_outcomes: not_exercised_no_ai_actions
+      ai_provider_participation: fail
+      validation_evidence_integrity: pass
+      report_export_durability: pass
+      phase1_acceptance_1f: fail
+    limitations:
+      - Configured ngrok endpoint returned HTML 404 for all provider routes.
+      - Successful scan path was deterministic fallback, not AI-selected actions.
+      - Hidden-label vulnerability recall and precision remain unmeasured.
+      - Authenticated identity, business-logic, retest, and impact proof were not supplied.
+    score_decision: unchanged
+
+  - id: LIVE-PHASE1-EXECUTION-FOUNDATION-FRESH-AI-2026-09-02
+    date: "2026-09-02"
+    phase: "Phase 1"
+    sub_phase: "Execution Foundation"
+    status: failed
+    environment:
+      operating_system: macOS
+      runtime: docker-compose
+      target: authorized_local_owasp_benchmark_bridge
+      model: dolphin3-cyber
+      provider_preflight: passed
+      preset: full
+      autopilot: true
+      private_scope_opt_in: true
+    verification:
+      api_ready_http: 200
+      worker_healthy: true
+      target_http: 200
+      provider_health_http: 200
+      provider_models_http: 200
+      provider_completion_http: 200
+      report_workflow_http: 200
+      job_report_markdown_http: 409
+      job_report_export_http: 409
+    run:
+      session_id: f05255e6-d7a3-45de-8e6f-6faddb28d2f2
+      job_id: c1a01b11-09b4-4581-8eeb-d2ba3a1c8b6f
+      terminal_status: error
+      duration_seconds: 1356.025039
+      durable_tool_runs: 69
+      succeeded_tool_runs: 46
+      partial_tool_runs: 4
+      failed_tool_runs: 1
+      skipped_tool_runs: 18
+      execution_trace_actions: 13
+      blocked_actions: 4
+      private_ip_rejections: 0
+      failed_tool: browser_find_open_redirect
+      failed_tool_error: tool_timeout
+    ai_telemetry:
+      reasoning_cycles: 5
+      reasoning_cycles_succeeded: 0
+      reasoning_cycles_failed: 5
+      model_calls: 5
+      model_calls_succeeded: 0
+      model_calls_failed: 5
+      model_call_failure: _GatewayProtocolError
+      reasoning_actions: 0
+      model_action_traces: 0
+      ai_expected_without_dispatch_outcome: 0
+      deterministic_fallback_used: true
+    detection_validation:
+      candidates: 12
+      validated_candidates: 5
+      inconclusive_candidates: 7
+      validation_decisions_validated: 5
+      validation_decisions_inconclusive: 47
+      validated_recall: unmeasured
+      validated_precision: unmeasured
+    report:
+      workflow_report_status: ready
+      workflow_report_finding_ids: 5
+      workflow_report_claims: 10
+      grounding_complete: true
+      redaction_leaks: 0
+      job_export_status: not_ready_due_execution_integrity
+    gate:
+      private_transport_scope: pass
+      dynamic_execution: partial_no_ai_control
+      tool_failure_semantics: pass_for_durable_recording
+      browser_timeout_recovery: fail
+      ai_provider_reachability: pass
+      ai_reasoning_protocol: fail
+      durable_ai_action_traces: fail_no_successful_ai_cycle
+      validation_evidence_integrity: partial_to_pass_for_observed_records
+      report_export_durability: blocked_by_terminal_error
+      phase1_acceptance_1f: fail
+    limitations:
+      - Direct provider smoke endpoints passed, but all full reasoning outputs failed the Nexus JSON protocol.
+      - A retryable browser timeout remained authoritative and failed the job.
+      - The five validated records are mainly header/server-disclosure observations; hidden-label recall and precision remain unmeasured.
+      - This run did not test authenticated identity, business logic, retest, or impact proof.
+    score_decision: unchanged
+
+  - id: LIVE-PHASE1-EXECUTION-FOUNDATION-1F-CORRECTED-AI-2026-09-02
+    date: "2026-09-02"
+    phase: "Phase 1"
+    sub_phase: "Execution Foundation"
+    status: partial_acceptance_not_passed
+    comparable_to_baseline: false
+    environment:
+      operating_system: macOS
+      runtime: docker-compose
+      target: authorized_local_owasp_benchmark_bridge
+      model: dolphin3-cyber
+      provider_preflight: passed
+      preset: full
+      autopilot: true
+      private_scope_opt_in: true
+    identifiers:
+      session_id: 247d5603-95b2-46bf-b4cf-c560372cc55c
+      job_id: 13d7e512-7282-4820-936a-2c4b232c7b0a
+    verification:
+      api_ready_http: 200
+      worker_healthy: true
+      target_http: 200
+      provider_health_http: 200
+      provider_models_http: 200
+      provider_completion_http: 200
+      post_run_provider_completion_http: 200
+      schema_checks: pass
+      regression_tests: "363 passed, 9 warnings"
+    run:
+      terminal_status: done
+      duration_seconds: 1625.300105
+      durable_endpoint_rows: 70
+      structured_tool_runs: 68
+      phase_marker_rows: 2
+      succeeded_tool_runs: 47
+      partial_tool_runs: 5
+      failed_tool_runs: 0
+      skipped_tool_runs: 18
+      private_ip_rejections: 0
+      dispatch_outcome_missing: 0
+      validation_trace_persistence_errors: 0
+      recovered_retryable_failures: 0
+      retry_recovery_status: not_exercised
+      partial_tool: browser_find_open_redirect
+      empty_error_skip_tool: mixed_content_scanner
+    ai_telemetry:
+      reasoning_cycles: 6
+      reasoning_cycles_succeeded: 6
+      model_calls: 6
+      model_calls_succeeded: 6
+      model_action_traces: 3
+      execution_trace_actions: 13
+      blocked_actions: 4
+      deterministic_reasoning_fallback: false
+      legacy_assessor_gateway_errors: 2
+    detection_validation:
+      candidates: 12
+      validated_candidates: 5
+      inconclusive_candidates: 7
+      validated_candidates_with_evidence: 5
+      validation_decisions_validated: 5
+      validation_decisions_inconclusive: 47
+      validated_recall: unmeasured
+      validated_precision: unmeasured
+    report:
+      workflow_report_http: 200
+      report_quality_status: ready
+      report_quality_score: 1.0
+      workflow_report_finding_ids: 5
+      workflow_report_claims: 10
+      grounding_complete: true
+      redaction_leaks: 0
+      job_report_markdown_http: 200
+      job_export_markdown_http: 200
+      repeated_report_reads: 3
+      persisted_claim_rows_after_repetition: 10
+      report_claim_idempotency: pass
+    gate:
+      private_transport_scope: pass
+      dynamic_execution: pass
+      tool_failure_semantics: partial_pass
+      durable_ai_telemetry: pass
+      candidate_validation_integrity: pass
+      report_export_durability: pass
+      retry_recovery_semantics: not_exercised
+      legacy_assessor_provider_reliability: partial
+      phase1_acceptance_1f: fail
+    limitations:
+      - Five browser open-redirect runs were typed partial results with no later
+        same-target success, so recovery success is unproven.
+      - One skipped mixed-content row had no typed error reason.
+      - Two legacy/CrewAI assessor gateway errors were caught before the
+        structured report completed.
+      - Hidden-label recall/precision and Phase 2–5 capability metrics remain
+        unmeasured; validated observations are not Benchmark recall.
+    score_decision: unchanged
+
+  - id: PHASE1-EXECUTION-FOUNDATION-1C-1F-IMPLEMENTATION-HARDENING-2026-09-02
+    date: "2026-09-02"
+    phase: "Phase 1"
+    sub_phase: "Execution Foundation"
+    status: implementation_verified_live_pending
+    comparable_to_baseline: false
+    environment:
+      operating_system: macOS
+      runtime: docker-compose
+      ai_provider: dolphin3-cyber_offline_for_implementation_verification
+      target: not_run
+    changes:
+      - typed_failed_partial_and_skip_semantics
+      - adaptive_browser_open_redirect_probe
+      - durable_read_only_retry_recovery_link
+      - canonical_reasoning_gateway_for_assessment
+      - fail_closed_phase1_acceptance_evaluator
+      - auto_model_hypothesis_and_action_preservation
+    verification:
+      docker_build_api: passed
+      docker_build_worker: passed
+      focused_tests: 60
+      full_regression_tests: 377
+      full_regression_warnings: 10
+      api_health_live_http: 200
+      api_health_ready_http: 200
+      api_mode: autonomous
+      supabase: ok
+      durable_schema: ok
+      phase1_acceptance_schema: ok
+    live_acceptance:
+      status: pending_operator_provider
+      provider_preflight: not_run
+      target_workflow: not_run
+      phase1_gate_1f: not_proven
+    score_decision: unchanged
+    limitations:
+      - No live AI-backed run was executed in this checkpoint.
+      - Recovery and full-provider protocol behavior still require the next live gate.
+      - Hidden-label recall/precision and Phase 2–5 capability metrics remain unmeasured.
+
+  - id: PHASE1-EXECUTION-FOUNDATION-1F-LIVE-2026-09-02
+    date: "2026-09-02"
+    phase: "Phase 1"
+    sub_phase: "Execution Foundation"
+    gate: "1F"
+    status: failed
+    comparable_to_baseline: false
+    environment:
+      operating_system: macOS
+      runtime: docker-compose
+      ai_provider: dolphin3-cyber_via_google_colab_ngrok
+      target: http://host.docker.internal:8446/benchmark/
+      session_id: 234e2969-265b-4f02-a238-7bd1084e39b8
+      job_id: c356fb34-722b-4bae-b6df-5dcb88fd7644
+    preflight:
+      api_ready: true
+      worker_ready: true
+      target_ready: true
+      provider_models_http: 200
+      provider_contract_completion_http: 200
+    execution:
+      duration_seconds: 1973.606959
+      authoritative_tool_runs: 66
+      succeeded: 47
+      partial: 1
+      failed: 2
+      skipped_total: 18
+      typed_optional_skips: 15
+      required_coverage_skips: 3
+      private_ip_rejections: 0
+      trace_cycles: 3
+      trace_actions: 11
+      blocked_actions: 0
+      model_calls: 3
+      model_action_traces: 2
+      recovery_links: 0
+      validation_trace_persistence_errors: 0
+    findings:
+      candidates: 9
+      validated_candidates: 5
+      inconclusive_candidates: 4
+      validated_candidates_with_evidence: 5
+      hidden_label_recall: unmeasured
+      hidden_label_precision: unmeasured
+    report:
+      workflow_report_http: 200
+      report_quality_status: ready
+      report_quality_score: 1.0
+      grounded_claims: 9
+      redaction_leaks: 0
+      persistence: supabase
+      export_markdown_http: 409
+      export_error: report_not_ready_because_job_error
+    gate:
+      private_transport_scope: pass
+      dynamic_execution: pass
+      tool_failure_semantics: fail
+      durable_ai_telemetry: fail
+      candidate_validation_integrity: pass
+      report_quality: pass
+      report_export_durability: fail
+      retry_recovery_semantics: not_exercised
+      phase1_acceptance_1f: fail
+    blockers:
+      - param_discovery_get legacy_tool_failed baseline GET proxy failure
+      - param_discovery_headers legacy_tool_failed baseline Header proxy failure
+      - browser_find_open_redirect returned retryable partial timeout
+      - param_discovery_post, wp_scanner, and dir_bruteforce_scanner were skipped with coverage_required true
+      - one durable reasoning cycle and model call failed; only two model action traces persisted
+      - no durable recovered_from_run_id was produced by a recovery fixture
+    score_decision: unchanged
+
+  - id: PHASE1-EXECUTION-FOUNDATION-CODE-REVIEW-2026-09-03
+    date: "2026-09-03"
+    phase: "Phase 1"
+    sub_phase: "Execution Foundation"
+    status: implementation_verified_live_unproven
+    comparable_to_baseline: false
+    review:
+      code_files: 247
+      python_files: 240
+      typescript_javascript_files: 7
+      test_files: 58
+      ecc_audits:
+        - Carson
+        - Kant
+        - Volta
+      canonical_path: "full/recon-only -> ReasoningGateway -> StructuredToolRunner -> durable evidence/report"
+    changes:
+      - canonical_path_does_not_construct_legacy_crewai_graph
+      - guarded_transport_disables_ambient_proxy_inheritance
+      - typed_param_recon_browser_failure_and_skip_semantics
+      - shared_durable_read_only_recovery
+      - workload_derived_browser_redirect_budget
+      - configurable_transient_provider_retry
+      - recursive_config_merge_and_per_job_snapshot
+      - fail_closed_lineage_aware_acceptance
+      - circuit_breaker_skips_not_fake_required_coverage
+    verification:
+      syntax_compile: passed
+      focused_tests: 75
+      full_regression_tests: 387
+      full_regression_warnings: 9
+      git_diff_check: passed
+      yaml_parse: passed
+      raw_tool_transport_static_check: passed
+    live_acceptance:
+      status: not_run_after_patch
+      provider_preflight: not_proven
+      target_workflow: not_run_after_patch
+      phase1_gate_1f: not_proven
+    gate:
+      implementation: pass
+      regression: pass
+      live_1f: not_proven
+    score_decision: unchanged
+    limitations:
+      - A fresh provider-backed authorized live run is still required.
+      - This does not measure hidden-label recall/precision or prove a target is clean.
+      - Worker/API compatibility process-local state and Phase 2–5 capability gaps remain.
+
+  - id: PHASE1-EXECUTION-FOUNDATION-CODE-VERIFICATION-2026-09-03-R2
+    date: "2026-09-03"
+    phase: "Phase 1"
+    sub_phase: "Execution Foundation"
+    status: implementation_verified_live_pending
+    comparable_to_baseline: false
+    provider_and_target:
+      provider: offline_by_operator_request
+      target_workflow: not_run
+    changes:
+      - bounded_worker_recovery_and_telemetry_retries
+      - typed_legacy_cancellation_and_failure_semantics
+      - partial_actions_fail_closed_mission_success
+      - canonical_v2_session_scoped_validation_persistence
+      - durable_same_session_evidence_verification_gate
+      - synchronous_non_blocking_readiness_route
+      - exact_origin_browser_local_lab_authorization_and_accounting
+      - authorized_local_lab_discovery_defaults
+    verification:
+      docker_build: passed
+      focused_tests: 83
+      full_regression_tests: 398
+      full_regression_warnings: 9
+      syntax_compile: passed
+      yaml_parse: passed
+      git_diff_check: passed
+      api_import_seconds: 64.31
+      eager_crewai_loaded: false
+      eager_langchain_loaded: false
+      eager_model_registry_loaded: false
+      runtime_health_live: 200
+      runtime_health_ready: 200
+      runtime_api: healthy
+      runtime_worker: healthy
+      readiness_checks: all_ok
+    gate:
+      implementation: pass
+      regression: pass
+      live_1f: not_proven
+    score_decision: unchanged
+    limitations:
+      - Provider-backed authorized live testing is still required.
+      - This record does not measure hidden-label recall/precision or target cleanliness.
+      - Phase 2–5 capability measurements remain outside this checkpoint.

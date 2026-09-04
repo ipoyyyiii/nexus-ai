@@ -9,7 +9,7 @@ def extract_domain(url: str) -> str:
     return parsed.netloc.split(":")[0].lower()
 
 
-def validate_target(url: str, supabase: Client) -> Tuple[bool, str]:
+def validate_target(url: str, supabase: Client, session_id: str = "") -> Tuple[bool, str]:
     """
     Return (allowed: bool, reason: str)
 
@@ -22,20 +22,27 @@ def validate_target(url: str, supabase: Client) -> Tuple[bool, str]:
     if not domain:
         return False, f"Failed extract domain from URL: {url}"
 
-    # Single source: merge global scope_rules + session session_context.scope_rules if session_id in context
-    # For backward compat, if supabase has session_id hint, check session first
+    # Merge global program rules with only the requested session's rules.
+    # Never scan every session_context row: that would let one user's private
+    # opt-in or allow rule authorize a different session.
     session_rules = []
-    try:
-        # Optional session scope check via session_store if available
-        from core.session_store import SessionStore
-        import threading
-        # Try to fetch from Supabase session_context for this domain (best effort)
-        ctx_res = supabase.table("session_context").select("scope_rules").limit(100).execute()
-        for row in ctx_res.data or []:
-            for r in row.get("scope_rules") or []:
-                session_rules.append(r)
-    except Exception:
-        pass
+    if session_id:
+        try:
+            ctx_res = (
+                supabase.table("session_context")
+                .select("scope_rules")
+                .eq("session_id", session_id)
+                .limit(1)
+                .execute()
+            )
+            rows = ctx_res.data or []
+            if not rows:
+                return False, "Session scope context not found."
+            for rule in rows[0].get("scope_rules") or []:
+                if isinstance(rule, dict):
+                    session_rules.append(rule)
+        except Exception as exc:
+            return False, f"Failed to load session scope: {exc}"
     try:
         res = supabase.table("scope_rules").select("*").execute()
         rules = (res.data or []) + session_rules

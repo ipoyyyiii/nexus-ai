@@ -5,6 +5,8 @@ from typing import Any, Dict
 from core.evidence_service import EvidenceService
 from core.session_store import SessionStore
 from core.workflow_models import RecordStatus
+from core.proof_pipeline import proof_pipeline
+from core.structured_contract import ToolResultV1
 
 
 class RetestService:
@@ -59,3 +61,17 @@ class RetestService:
         state.workflow.record_event("retest_result", finding_id=finding_id, status=status, evidence_id=stored.evidence_id)
         self.sessions.save_state(session_id, state)
         return {"finding": finding.__dict__, "evidence": stored.__dict__, "status": status}
+
+    def compare_structured_results(
+        self,
+        session_id: str,
+        original_result: Dict[str, Any],
+        retest_result: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Compare a fresh structured retest without trusting caller status."""
+        self.sessions.require(session_id)
+        comparison = proof_pipeline.compare_retest(
+            ToolResultV1(**original_result),
+            ToolResultV1(**retest_result),
+        )
+        return comparison.model_dump(mode="json")

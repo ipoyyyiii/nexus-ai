@@ -236,6 +236,20 @@ def _local_registry() -> List[dict]:
     return out
 
 
+def _default_local_model() -> Optional[dict]:
+    """Return the explicitly configured local model for default routing.
+
+    When an operator enables a Kaggle/Colab provider, it must not be silently
+    bypassed just because an old OpenRouter key is still present.  The local
+    provider is therefore the default for new sessions; OpenRouter remains an
+    explicit fallback only when local routing is disabled or unavailable.
+    """
+    if not _is_local_enabled() or not _local_base_url():
+        return None
+    models = _local_registry()
+    return models[0] if models else None
+
+
 def _all_models() -> List[dict]:
     return MODEL_REGISTRY + _local_registry()
 
@@ -331,6 +345,21 @@ def build_llm(preferred_model_id: Optional[str] = None):
             default_headers={"ngrok-skip-browser-warning": "true"},
         )
 
+    # If local inference is enabled and no model was explicitly selected,
+    # route the entire agent chain to that provider.  This prevents a stale
+    # OpenRouter fallback list from stealing a run while the operator's local
+    # model is live.
+    default_local = _default_local_model()
+    if not preferred_model_id and default_local:
+        return LLM(
+            model=default_local["slug"],
+            api_key=_local_api_key(),
+            base_url=_local_base_url(),
+            temperature=0.2,
+            max_tokens=4096,
+            default_headers={"ngrok-skip-browser-warning": "true"},
+        )
+
     ordered: List[dict] = []
 
     # 1. Model pilihan user
@@ -405,8 +434,21 @@ def build_llm(preferred_model_id: Optional[str] = None):
     )
 
 
-def build_chat_llm(preferred_model_id: Optional[str] = None):
-    """Return a chat model instance (OpenRouter, TokenHub, or Local)."""
+def build_chat_llm(
+    preferred_model_id: Optional[str] = None,
+    *,
+    timeout_seconds: Optional[float] = None,
+):
+    """Return a chat model instance (OpenRouter, TokenHub, or Local).
+
+    ``timeout_seconds`` is optional for backwards compatibility.  Browser
+    workflows use it so a slow remote/local provider cannot hold the browser
+    event loop until the whole crawl expires.
+    """
+    timeout_kwargs = {}
+    if timeout_seconds is not None:
+        timeout_kwargs["timeout"] = max(1.0, float(timeout_seconds))
+
     # Local prefix takes priority - direct routing
     local_preference = _local_preference_id(preferred_model_id)
     if local_preference:
@@ -421,6 +463,18 @@ def build_chat_llm(preferred_model_id: Optional[str] = None):
             base_url=base_url,
             temperature=0.3,
             default_headers={"ngrok-skip-browser-warning": "true"},
+            **timeout_kwargs,
+        )
+
+    default_local = _default_local_model()
+    if not preferred_model_id and default_local:
+        return ChatOpenAI(
+            model=default_local["slug"],
+            api_key=_local_api_key(),
+            base_url=_local_base_url(),
+            temperature=0.3,
+            default_headers={"ngrok-skip-browser-warning": "true"},
+            **timeout_kwargs,
         )
 
     selected = _find(preferred_model_id) if preferred_model_id else None
@@ -436,6 +490,7 @@ def build_chat_llm(preferred_model_id: Optional[str] = None):
             base_url=base_url,
             temperature=0.3,
             default_headers={"ngrok-skip-browser-warning": "true"},
+            **timeout_kwargs,
         )
 
     if model["id"].startswith("tokenhub-"):
@@ -444,6 +499,7 @@ def build_chat_llm(preferred_model_id: Optional[str] = None):
             api_key=os.environ.get("TOKENHUB_API_KEY"),
             base_url=os.environ.get("TOKENHUB_API_BASE"),
             temperature=0.3,
+            **timeout_kwargs,
         )
 
     if not os.environ.get("OPENROUTER_API_KEY"):
@@ -458,6 +514,7 @@ def build_chat_llm(preferred_model_id: Optional[str] = None):
                     base_url=_local_base_url(),
                     temperature=0.3,
                     default_headers={"ngrok-skip-browser-warning": "true"},
+                    **timeout_kwargs,
                 )
         raise RuntimeError("OPENROUTER_API_KEY not set in the backend environment.")
 
@@ -467,6 +524,7 @@ def build_chat_llm(preferred_model_id: Optional[str] = None):
         base_url=OPENROUTER_BASE,
         temperature=0.3,
         default_headers=OPENROUTER_HEADERS,
+        **timeout_kwargs,
     )
 
 

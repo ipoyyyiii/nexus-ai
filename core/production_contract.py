@@ -122,8 +122,8 @@ class ProductionReadinessV1(ExecutionModel):
     config_digest: str = ""
     image_digest: str = ""
     fixture_digest: str = ""
-    platform_mode: str = "shadow"
-    tool_boundary_mode: str = "shadow"
+    platform_mode: str = "autonomous"
+    tool_boundary_mode: str = "autonomous"
     schema_digest: str = ""
     worker_topology: Dict[str, Any] = Field(default_factory=dict)
     soak_run_id: str = ""
@@ -239,8 +239,8 @@ class CutoverDecisionV1(ExecutionModel):
     schema_version: str = "1.0"
     decision_id: str = Field(default_factory=lambda: f"cutover_{uuid.uuid4().hex}")
     readiness_run_id: str
-    from_mode: str = "shadow"
-    to_mode: str = "strict"
+    from_mode: str = "autonomous"
+    to_mode: str = "autonomous"
     decision: Literal["approved", "rejected", "rollback"] = "rejected"
     reviewer_id: str
     reason: str

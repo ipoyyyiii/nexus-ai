@@ -12,6 +12,7 @@ services:
       - AUTO_PILOT=${AUTO_PILOT:-0}
       - OOB_DOMAIN=${OOB_DOMAIN:-}
       - OOB_SERVER_IP=${OOB_SERVER_IP:-}
+      - OOB_SERVER_URL=${OOB_SERVER_URL:-}
       - OOB_LOGS_ENDPOINT=${OOB_LOGS_ENDPOINT:-}
       - OOB_AUTH_TOKEN=${OOB_AUTH_TOKEN:-}
       - PYTHONUNBUFFERED=1
@@ -21,6 +22,8 @@ services:
     # grant only that group membership so report persistence is writable.
     group_add:
       - "1000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     init: true
     tmpfs:
       - /tmp:size=256m,mode=1777
@@ -36,7 +39,9 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 30s
+      # api imports the complete pinned toolchain before Uvicorn binds. Keep
+      # cold-start grace longer than the measured ~134s import path.
+      start_period: 180s
     restart: always
     volumes:
       - ./stored_reports:/app/reports
@@ -52,6 +57,10 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
     user: "10001:10001"
+    group_add:
+      - "1000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     read_only: true
     tmpfs:
       - /tmp:size=256m,mode=1777
@@ -70,8 +79,10 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 30s
+      start_period: 180s
     restart: always
+    volumes:
+      - ./stored_reports:/app/reports
 
   # Stage 19 short multi-worker smoke only. Disabled in the normal deployment.
   nexus-worker-smoke:
@@ -84,6 +95,10 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
     user: "10001:10001"
+    group_add:
+      - "1000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     read_only: true
     tmpfs:
       - /tmp:size=256m,mode=1777
@@ -98,6 +113,8 @@ services:
     pids_limit: 256
     stop_grace_period: 30s
     restart: "no"
+    volumes:
+      - ./stored_reports:/app/reports
 
   # Explicit opt-in only; keep raw-network capability disabled by default.
   nexus-raw-network-worker:
@@ -110,6 +127,10 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
     user: "10001:10001"
+    group_add:
+      - "1000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     read_only: true
     tmpfs:
       - /tmp:size=256m,mode=1777
@@ -125,6 +146,8 @@ services:
     cpus: 1.0
     pids_limit: 512
     restart: always
+    volumes:
+      - ./stored_reports:/app/reports
 
   # Local deterministic fixture app. Optional; never part of production services.
   stage6-fixture:

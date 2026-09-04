@@ -1,6 +1,7 @@
-"""Load editable YAML config with safe fallback."""
+"""Load editable YAML config with fail-closed security defaults."""
 
 from pathlib import Path
+import copy
 import os
 
 try:
@@ -10,32 +11,58 @@ except Exception:
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "pentest_config.yaml"
 DEFAULTS = {
-    "structured_evidence_mode": "strict",
-    "authorization_graph_mode": "shadow",
+    "assessment_mode": "autonomous",
     "auth_secret_ttl_minutes": 240,
-    "browser_workflow_mode": "shadow",
-    "execution_platform_mode": "shadow",
-    "tool_boundary_mode": "shadow",
-    "detection_depth_mode": "shadow",
-    "identity_browser_business_mode": "shadow",
-    "exploit_chain_mode": "shadow",
-    "reasoning_mode": "shadow",
-    "reasoning_adaptation_mode": "shadow",
-    "report_intelligence_mode": "shadow",
-    "production_readiness_mode": "shadow",
-    "mission_graph_mode": "shadow",
-    "target_knowledge_mode": "shadow",
-    "identity_workflow_mode": "shadow",
-    "exploration_mode": "assisted",
+    "exploration_mode": "autonomous",
+    "authorized_local_lab_mode": {
+        # Opted in for the intentionally vulnerable local suite only. The
+        # session authorization checkbox is still required at runtime.
+        "enabled": True,
+        "allowed_origins": [
+            "http://host.docker.internal:3001",
+            "http://host.docker.internal:8888",
+            "https://host.docker.internal:8443",
+            "http://host.docker.internal:8080",
+            "http://host.docker.internal:8081",
+            "http://host.docker.internal:8446",
+            "https://host.docker.internal:8444",
+        ],
+        "allowed_risks": ["low", "medium"],
+        "auto_approved_tools": [
+            "SQL Injection Scanner",
+            "XSS & CSRF Detector",
+            "LFI/RFI Scanner",
+            "Header Injection Tester",
+            "cors_tester",
+            "graphql_tester",
+            "ssti_tester",
+            "browser_find_open_redirect",
+            "param_discovery_post",
+            "wp_scanner",
+            "dir_bruteforce_scanner",
+            "session_management_scanner",
+            "test_jwt_weakness",
+            "websocket_security_scanner",
+            "run_nuclei_scan",
+        ],
+    },
     "exploration": {
         "read_only_auto_run": True,
         "max_payload_variants": 10,
         "max_action_seconds": 120,
         "mutation_requires_approval": True,
     },
+    "autonomous_web_pentest": {
+        "enabled": True,
+        "max_cycles": None,
+        "max_actions_per_cycle": "auto",
+        "mission_timeout_seconds": 900,
+        "read_only_auto_run": True,
+        "mutation_requires_approval": True,
+    },
     "evaluation": {
         "enabled": True,
-        "mode": "shadow",
+        "mode": "autonomous",
         "core_suite_path": "benchmarks/stage6/core_suite.yaml",
         "stage8_suite_path": "benchmarks/stage8/foundation_suite.yaml",
         "stage9_suite_path": "benchmarks/stage9/detection_suite.yaml",
@@ -61,7 +88,9 @@ DEFAULTS = {
         "stage25_benchmark_matrix_size": 72,
         "stage26_suite_path": "benchmarks/stage26/identity_workflow_suite.yaml",
         "stage27_suite_path": "benchmarks/stage27/recon_closure_suite.yaml",
+        "stage28_suite_path": "benchmarks/stage28/autonomous_web_control_suite.yaml",
         "stage26_benchmark_matrix_size": 72,
+        "stage28_benchmark_matrix_size": 5,
         "stage15_suite_path": "benchmarks/stage15/target_knowledge_coverage_suite.yaml",
         "stage15_benchmark_matrix_size": 72,
         "stage16_suite_path": "benchmarks/stage16/autonomous_reasoning_search_suite.yaml",
@@ -80,11 +109,14 @@ DEFAULTS = {
         "max_attempts_read_only": 3,
         "max_attempts_mutation": 1,
         "job_timeout_minutes": 120,
-        "strict_rpc_required": True,
+        "durable_rpc_required": True,
         "worker_health_interval_seconds": 15,
+        "worker_rpc_retry_attempts": 2,
+        "worker_rpc_retry_backoff_seconds": 0.5,
         "stale_worker_after_seconds": 90,
         "checkpoint_interval_seconds": 30,
         "readiness_soak_minutes": 120,
+        "startup_preflight": True,
         "memory_limit_mb": 2048,
         "cpu_limit": 1.0,
     },
@@ -110,6 +142,16 @@ DEFAULTS = {
     "browser_workflow": {
         "max_steps": 30,
         "step_timeout_ms": 15000,
+        # Browser capture uses independent budgets for navigation, DOM
+        # settling, and evidence capture.  Avoid network-idle waits because
+        # SPAs with polling/websocket traffic may never become idle.
+        "navigation_timeout_ms": 10000,
+        "dom_settle_ms": 1000,
+        "screenshot_timeout_ms": 15000,
+        "artifact_persistence_timeout_seconds": 15,
+        "redirect_probe_timeout_seconds": "auto",
+        "redirect_probe_navigation_timeout_ms": 3000,
+        "redirect_probe_max_parameters": "auto",
         "max_retries": 1,
         "max_mutations_per_run": 3,
         "approval_ttl_minutes": 30,
@@ -120,8 +162,19 @@ DEFAULTS = {
         "require_identity_graph": True,
         "require_entity_fingerprint": True,
     },
+    "human_recon": {
+        "max_pages": 60,
+        "max_depth": 3,
+        "max_clicks_per_page": 12,
+        "invocation_timeout_seconds": 240,
+        "navigation_timeout_ms": 10000,
+        "dom_settle_ms": 1000,
+        "llm_timeout_seconds": 30,
+    },
     "artifact_storage": {
         "bucket": "nexus-evidence",
+        "local_fallback_enabled": True,
+        "local_root": "/app/reports/browser-artifacts",
         "retention_days": 30,
         "signed_url_ttl_seconds": 300,
         "sweep_enabled": True,
@@ -129,7 +182,7 @@ DEFAULTS = {
         "orphan_grace_days": 2,
     },
     "adaptive_planner": {
-        "max_proposals": 3,
+        "max_proposals": "auto",
         "max_hypotheses": 80,
         "max_attempts_per_hypothesis": 3,
         "scoring": {
@@ -144,9 +197,20 @@ DEFAULTS = {
         },
     },
     "reasoning": {
-        "max_cycles": 10,
-        "max_actions_per_cycle": 3,
-        "max_model_actions": 20,
+        "control_mode": "ai_first",
+        "primary_model_id": "",
+        "fallback_model_ids": [],
+        "deterministic_fallback": True,
+        "context_max_records": 24,
+        "context_max_chars": 24000,
+        "model_output_max_chars": 24000,
+        "max_model_hypotheses": "auto",
+        "invoke_timeout_seconds": 180,
+        "provider_retry_attempts": 1,
+        "provider_retry_backoff_seconds": 0.5,
+        "max_cycles": None,
+        "max_actions_per_cycle": "auto",
+        "max_model_actions": "auto",
         "min_information_gain": 0.10,
         "search_strategy": "best_first",
         "max_branch_factor": 4,
@@ -176,26 +240,22 @@ DEFAULTS = {
         "max_coverage_items": 10000,
     },
     "recon": {
-        "asset_intelligence_mode": "shadow",
         "perimeter_graph_enabled": True,
         "dns_record_types": ["A", "AAAA", "CNAME", "MX", "NS", "TXT", "SRV"],
         "wildcard_detection_enabled": True,
         "dns_drift_detection_enabled": True,
         "historical_requires_revalidation": True,
         "max_assets": 500,
-        "surface_inventory_mode": "shadow",
         "max_surface_endpoints": 500,
         "max_surface_parameters": 2000,
         "parse_api_schema_hints": True,
         "surface_dedupe_by_method": True,
         "historical_surface_requires_revalidation": True,
-        "technology_fingerprinting_mode": "shadow",
         "technology_signal_correlation": True,
         "technology_require_independent_version_signal": True,
         "technology_max_signals": 2000,
         "technology_max_fingerprints": 500,
         "technology_conflict_is_inconclusive": True,
-        "application_contract_mode": "shadow",
         "application_contract_max_operations": 1000,
         "application_contract_max_inputs": 3000,
         "application_contract_require_provenance": True,
@@ -207,10 +267,20 @@ DEFAULTS = {
         "raw_network_enabled": False,
         "max_tools": 64,
         "max_runs": 128,
+        "mission_timeout_seconds": 1800,
         "max_endpoints": 100,
         "max_depth": 2,
         "max_followups_per_endpoint": 8,
-        "incremental_graph_updates": True,
+        "local_lab_bounds": {
+            "max_endpoints": 8,
+            "max_depth": 1,
+            "max_followups_per_endpoint": 2,
+            "mission_timeout_seconds": 600,
+            "human_recon_max_pages": 4,
+            "human_recon_max_depth": 1,
+            "human_recon_max_clicks_per_page": 6,
+        },
+        "incremental_graph_updates": False,
         "followup_tools": [
             "browser_extract_surface",
             "browser_intercept_requests",
@@ -242,21 +312,41 @@ DEFAULTS = {
     }
 }
 
+
+def _deep_merge(base: dict, override: dict) -> dict:
+    """Merge nested policy sections without dropping default siblings."""
+    merged = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
 def load_config() -> dict:
-    if yaml and CONFIG_PATH.exists():
+    if CONFIG_PATH.exists():
+        if yaml is None:
+            raise RuntimeError(
+                f"PyYAML is required to load security configuration: {CONFIG_PATH}"
+            )
         try:
-            with open(CONFIG_PATH) as f:
-                data = yaml.safe_load(f) or {}
-            # shallow merge with defaults
-            merged = dict(DEFAULTS)
-            for k, v in data.items():
-                if isinstance(v, dict) and isinstance(merged.get(k), dict):
-                    merged[k] = {**merged[k], **v}
-                else:
-                    merged[k] = v
-            return merged
-        except Exception:
-            pass
+            with open(CONFIG_PATH, encoding="utf-8") as handle:
+                data = yaml.safe_load(handle) or {}
+            if not isinstance(data, dict):
+                raise TypeError("top-level configuration must be a mapping")
+            # A shallow merge silently discarded nested defaults such as
+            # local-lab bounds and reasoning scoring whenever an operator
+            # customized one sibling. Security/capability policy must be a
+            # complete, deterministic snapshot, so merge recursively.
+            return _deep_merge(DEFAULTS, data)
+        except Exception as exc:
+            # A malformed or unreadable security config must stop startup.
+            # Silently falling back to defaults makes a deployment appear
+            # healthy while running with different safety/capability policy.
+            raise RuntimeError(
+                f"Unable to load security configuration: {CONFIG_PATH}"
+            ) from exc
     return DEFAULTS
 
 _config = None
@@ -266,6 +356,16 @@ def get_config() -> dict:
     if _config is None:
         _config = load_config()
     return _config
+
+
+def merged_config_snapshot(override: dict | None = None) -> dict:
+    """Return a deep, per-job merge of defaults and request overrides."""
+    base = copy.deepcopy(get_config())
+    if not override:
+        return base
+    if not isinstance(override, dict):
+        raise TypeError("configuration override must be a mapping")
+    return _deep_merge(base, copy.deepcopy(override))
 
 def reload_config() -> dict:
     global _config

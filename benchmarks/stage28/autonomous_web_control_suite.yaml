@@ -1,0 +1,16 @@
+suite_id: stage28-autonomous-web-control
+version: "1.0"
+name: Nexus Autonomous Web Pentest Control Loop
+description: >-
+  Offline deterministic fixture suite for planner routing, read-only admission,
+  evidence hand-off, and replay stability. No case contacts a target.
+cases:
+  - {name: query_surface, category: sql_injection, tool: scan_sql_injection, expected: blocked}
+  - {name: navigation_surface, category: open_redirect, tool: browser_find_open_redirect, expected: executed}
+  - {name: graphql_surface, category: graphql, tool: graphql_tester, expected: blocked}
+  - {name: external_fetch_surface, category: ssrf, tool: scan_ssrf, expected: blocked}
+  - {name: upload_surface, category: file_upload, tool: file_upload_scanner, expected: blocked}
+  - {name: session_surface, category: session_security, tool: session_management_scanner, expected: executed}
+  - {name: authorization_readiness_gate, category: authorization, tool: authorization_differential_replay, expected: blocked_until_contracts_ready}
+  - {name: observed_authorization_binding, category: authorization, tool: authorization_differential_replay, expected: exact_persisted_inputs}
+  - {name: business_mutation_gate, category: business_logic_mutation, tool: stateful_browser_workflow, expected: approval_and_cleanup_required}

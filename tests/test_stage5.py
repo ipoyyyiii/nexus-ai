@@ -40,7 +40,7 @@ def test_race_engine_uses_server_side_effects_not_response_shape():
         barrier.wait(timeout=2)
         with state["lock"]:
             state["test_count"] += 1
-            return {"status_code": 200, "response_fingerprint": "same", "effect_key": f"effect-{state["test_count"]}"}
+            return {"status_code": 200, "response_fingerprint": "same", "effect_key": f"effect-{state['test_count']}"}
     result = engine.run(experiment, approved_digest=engine.approval_digest(experiment), baseline_fn=lambda _: {"status_code": 200, "response_fingerprint": "same", "effect_key": "one"}, control_fn=lambda _: {"status_code": 200, "response_fingerprint": "same", "effect_key": "one"}, mutation_fn=mutation, reproduction_fn=lambda _: {"effect_key": "reproduced"}, cleanup_fn=lambda: True)
     assert result.decision == "violated"
     assert result.candidate and result.candidate["vuln_type"] == "race_condition"

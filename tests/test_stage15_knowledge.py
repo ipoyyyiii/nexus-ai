@@ -124,6 +124,7 @@ def test_graph_is_session_and_target_scoped():
     assert first["graph"]["graph_id"] != other["graph"]["graph_id"]
     assert first["graph"]["target_fingerprint"] != other["graph"]["target_fingerprint"]
     assert first["coverage"][0]["session_id"] != other["coverage"][0]["session_id"]
+    assert first["nodes"][0]["node_id"] != other["nodes"][0]["node_id"]
 
 
 def test_graph_redacts_secret_metadata_before_persistence_boundary():
@@ -146,6 +147,78 @@ def test_repository_strips_contract_schema_version_from_sql_row():
 
     assert "schema_version" not in row
     assert row["graph_id"] == "kgraph_test"
+
+
+def test_repository_persists_graph_records_in_bounded_bulk_batches():
+    class Response:
+        def __init__(self, data=None):
+            self.data = data or []
+
+    class Query:
+        def __init__(self, db, table):
+            self.db = db
+            self.table_name = table
+            self.operation = "select"
+            self.column = ""
+            self.filters = []
+            self.payload = None
+
+        def select(self, column):
+            self.column = column
+            return self
+
+        def eq(self, column, value):
+            self.filters.append((column, value))
+            return self
+
+        def in_(self, column, values):
+            self.filters.append((column, set(values)))
+            return self
+
+        def limit(self, _value):
+            return self
+
+        def order(self, *_args, **_kwargs):
+            return self
+
+        def insert(self, payload):
+            self.operation = "insert"
+            self.payload = payload
+            return self
+
+        def execute(self):
+            self.db.calls.append((self.table_name, self.operation))
+            if self.operation == "insert":
+                rows = self.payload if isinstance(self.payload, list) else [self.payload]
+                self.db.rows.setdefault(self.table_name, []).extend(rows)
+                return Response(rows)
+            rows = list(self.db.rows.get(self.table_name, []))
+            for column, value in self.filters:
+                if isinstance(value, set):
+                    rows = [row for row in rows if row.get(column) in value]
+                else:
+                    rows = [row for row in rows if row.get(column) == value]
+            if self.column:
+                rows = [{self.column: row.get(self.column)} for row in rows]
+            return Response(rows)
+
+    class FakeSupabase:
+        def __init__(self):
+            self.rows = {}
+            self.calls = []
+
+        def table(self, name):
+            return Query(self, name)
+
+    compiled = TargetKnowledgeGraphEngine().compile(SESSION_ID, TARGET, _sources())
+    fake = FakeSupabase()
+    saved = KnowledgeGraphRepository(fake).save_compiled(compiled)
+
+    assert saved["source_links_saved"] == len(compiled["source_links"])
+    assert fake.calls.count(("target_knowledge_nodes", "insert")) == 1
+    assert fake.calls.count(("target_knowledge_edges", "insert")) == 1
+    assert fake.calls.count(("target_coverage_items", "insert")) == 1
+    assert fake.calls.count(("target_knowledge_source_links", "insert")) == 1
 
 
 def test_stage15_required_benchmark_gate_is_ready():

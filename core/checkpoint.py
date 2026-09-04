@@ -110,6 +110,41 @@ def require_approval(action: str, context: str, risk: str = "high", exec_logger=
     """
     job_id = current_job_id.get()
 
+    # A local-lab suite may carry one explicit authorization from session
+    # setup. It is narrower than auto_pilot: only bounded detector actions can
+    # use it. State-changing/high-risk actions still reach the checkpoint.
+    try:
+        from core.identity_context import get_execution_context
+        from core.authorized_lab_mode import allows_action, preapproval_from_context
+
+        active = get_execution_context()
+        if active and active.authorized_lab_mode:
+            preapproval = preapproval_from_context(active)
+            if allows_action(
+                target=active.target_origin,
+                action=action,
+                context_text=context,
+                risk=risk,
+                preapproval=preapproval,
+            ):
+                active.approval_granted = True
+                if exec_logger:
+                    exec_logger.add_log(
+                        "HITL",
+                        "SUITE-AUTO-APPROVED",
+                        f"Preapproved local-lab action: {action}",
+                        {
+                            "risk": risk,
+                            "source": preapproval.source,
+                            "preapproval_id": preapproval.preapproval_id,
+                        },
+                    )
+                return True
+    except Exception:
+        # Approval must fail closed if the optional preapproval context cannot
+        # be evaluated. The normal checkpoint below remains available.
+        pass
+
     # Auto-pilot is never an approval bypass for high-risk actions.
     if is_auto_pilot() and risk == "read_only":
         if exec_logger:

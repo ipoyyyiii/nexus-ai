@@ -6,6 +6,8 @@ from core.cleanup_registry import cleanup_registry
 from core.execution_contract import CleanupTaskV1
 from core.production_contract import WorkerHealthV1
 from core.durable_execution import DurableExecutionRepository
+from core.durable_execution import InMemoryExecutionRepository
+from core.execution_contract import ExecutionJobV1
 
 
 class _FakeTable:
@@ -18,6 +20,19 @@ class _FakeTable:
 
     def upsert(self, row, **kwargs):
         self.calls.append(("upsert", row))
+        return self
+
+    def update(self, row):
+        self.calls.append(("update", row))
+        return self
+
+    def eq(self, *args):
+        return self
+
+    def order(self, *args, **kwargs):
+        return self
+
+    def limit(self, *args):
         return self
 
     def execute(self):
@@ -83,6 +98,50 @@ class Stage13ProductionTests(unittest.TestCase):
         persisted = [row for operation, row in client.calls if operation == "insert"]
         self.assertTrue(persisted)
         self.assertTrue(all("schema_version" not in row for row in persisted))
+
+    def test_worker_owned_application_terminal_state_is_visible_to_api_view(self):
+        repository = InMemoryExecutionRepository()
+        job = ExecutionJobV1(session_id="session-1", job_id="job-1", target="http://fixture.local")
+        repository.enqueue(job)
+
+        repository.record_application_state(
+            "job-1",
+            session_id="session-1",
+            status="error",
+            message="Execution integrity failure: browser tool failed.",
+            error_code="execution_integrity_failure",
+            summary={"structured_tool_runs": 3},
+            logs=[{"status": "failed", "tool": "browser_screenshot"}],
+        )
+
+        view = repository.get_job("job-1")
+        self.assertEqual(view["application_status"], "error")
+        self.assertEqual(view["message"], "Execution integrity failure: browser tool failed.")
+        self.assertEqual(view["error_code"], "execution_integrity_failure")
+        self.assertEqual(view["summary"]["structured_tool_runs"], 3)
+        self.assertEqual(view["logs"][0]["tool"], "browser_screenshot")
+
+    def test_production_repository_persists_worker_application_terminal_state(self):
+        client = _FakeSupabase()
+        repository = DurableExecutionRepository(client)
+
+        self.assertTrue(repository.record_application_state(
+            "job-1",
+            session_id="session-1",
+            status="error",
+            message="browser tool failed",
+            error_code="execution_integrity_failure",
+            error_message="browser_screenshot failed",
+            summary={"structured_tool_runs": 3},
+            logs=[{"tool": "browser_screenshot", "status": "failed"}],
+        ))
+
+        updates = [row for operation, row in client.calls if operation == "update"]
+        events = [row for operation, row in client.calls if operation == "insert"]
+        self.assertTrue(updates)
+        self.assertEqual(updates[-1]["error_code"], "execution_integrity_failure")
+        self.assertEqual(updates[-1]["error_message"], "browser_screenshot failed")
+        self.assertTrue(any(row.get("event_type") == "job_application_terminal" for row in events))
 
 
 if __name__ == "__main__":

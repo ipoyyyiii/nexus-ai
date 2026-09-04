@@ -24,7 +24,6 @@ from urllib.parse import urlparse
 from datetime import datetime, timedelta
 
 from core.identity_context import get_execution_context
-from core.config_loader import get_setting
 
 
 def _domain_of(url: str) -> str:
@@ -121,8 +120,13 @@ class AuthStore:
 
     def __init__(self):
         self._lock = threading.Lock()
-        self._sessions: Dict[tuple[str, str, str], AuthSession] = {}
+        # Include auth_context_id in the key.  A single identity can have
+        # multiple concurrent contexts (for example, a browser context and
+        # an API-token context); domain + identity alone would overwrite one
+        # with the other and make differential testing unreliable.
+        self._sessions: Dict[tuple[str, str, str, str], AuthSession] = {}
         self._legacy_sessions: Dict[str, AuthSession] = {}
+        self._job_domains: Dict[str, Set[tuple[str, str, str, str]]] = {}
 
     @staticmethod
     def _context_values(session_id: str = "", identity_id: str = "") -> tuple[str, str]:
@@ -132,62 +136,133 @@ class AuthStore:
             identity_id or (context.identity_id if context else ""),
         )
 
+    @staticmethod
+    def _context_auth_context_id(auth_context_id: str = "") -> str:
+        """Resolve the exact auth context required by the active tool run."""
+        context = get_execution_context()
+        return auth_context_id or (context.auth_context_id if context else "")
+
     def save_session(self, domain: str, session: AuthSession, session_id: str = "", identity_id: str = ""):
         """Save an identity-scoped session; legacy domain storage is opt-in only."""
         context = get_execution_context()
         session_id, identity_id = self._context_values(session_id, identity_id)
         session.session_id = session_id or session.session_id
         session.identity_id = identity_id or session.identity_id or "anonymous"
+        session.auth_context_id = session.auth_context_id or (
+            context.auth_context_id if context else ""
+        )
         with self._lock:
             if session_id:
-                self._sessions[(session_id, session.identity_id, domain)] = session
+                key = (
+                    session_id,
+                    session.identity_id,
+                    session.auth_context_id,
+                    domain,
+                )
+                self._sessions[key] = session
                 if context and context.job_id:
-                    self._job_domains.setdefault(context.job_id, set()).add((session_id, session.identity_id, domain))
+                    self._job_domains.setdefault(context.job_id, set()).add(key)
             else:
                 self._legacy_sessions[domain] = session
 
-    def get_session(self, domain: str, session_id: str = "", identity_id: str = "") -> Optional[AuthSession]:
-        """Get the session selected by the current execution context."""
+    def get_session(
+        self,
+        domain: str,
+        session_id: str = "",
+        identity_id: str = "",
+        auth_context_id: str = "",
+    ) -> Optional[AuthSession]:
+        """Get the exact session selected by the current execution context.
+
+        Identity isolation is not sufficient when one identity has multiple
+        active sessions (for example, a refreshed browser context beside an
+        API token). If an auth context is present, a session without the same
+        context ID is rejected rather than silently reused.
+        """
         session_id, identity_id = self._context_values(session_id, identity_id)
+        auth_context_id = self._context_auth_context_id(auth_context_id)
         with self._lock:
-            session = self._sessions.get((session_id, identity_id or "anonymous", domain)) if session_id else None
-            # Legacy fallback is deliberately disabled in strict mode.  This
-            # prevents an unrelated job from inheriting another domain's auth.
-            if session is None and not session_id and str(get_setting("structured_evidence_mode", "strict")).lower() != "strict":
-                session = self._legacy_sessions.get(domain)
+            session = None
+            if session_id:
+                identity_key = identity_id or "anonymous"
+                if auth_context_id:
+                    session = self._sessions.get(
+                        (session_id, identity_key, auth_context_id, domain)
+                    )
+                else:
+                    # Without an explicit context, select only when there is
+                    # exactly one candidate.  Arbitrarily choosing among
+                    # multiple contexts would leak credentials across runs.
+                    candidates = [
+                        value
+                        for (stored_session_id, stored_identity_id, _stored_context_id, stored_domain), value
+                        in self._sessions.items()
+                        if stored_session_id == session_id
+                        and stored_identity_id == identity_key
+                        and stored_domain == domain
+                    ]
+                    if len(candidates) == 1:
+                        session = candidates[0]
+            # Never fall back to a process-global domain session. This keeps
+            # credentials isolated to the explicit session and identity.
             if session and session.is_expired():
                 self._remove_session_locked(domain, session)
+                return None
+            if session and auth_context_id and session.auth_context_id != auth_context_id:
                 return None
             return session
 
     def _remove_session_locked(self, domain: str, session: AuthSession) -> None:
         self._legacy_sessions.pop(domain, None)
         for key, value in list(self._sessions.items()):
-            if key[2] == domain and value is session:
+            if key[3] == domain and value is session:
                 self._sessions.pop(key, None)
 
-    def has_session(self, domain: str) -> bool:
+    def has_session(self, domain: str, session_id: str = "", identity_id: str = "", auth_context_id: str = "") -> bool:
         """Cek apakah ada session aktif for domain."""
-        return self.get_session(domain) is not None
+        return self.get_session(domain, session_id=session_id, identity_id=identity_id, auth_context_id=auth_context_id) is not None
 
-    def clear_session(self, domain: str, session_id: str = "", identity_id: str = ""):
+    def clear_session(
+        self,
+        domain: str,
+        session_id: str = "",
+        identity_id: str = "",
+        auth_context_id: str = "",
+    ):
         """Delete one identity session, or all identities for a domain."""
         session_id, identity_id = self._context_values(session_id, identity_id)
+        auth_context_id = self._context_auth_context_id(auth_context_id)
         with self._lock:
             if session_id:
-                self._sessions.pop((session_id, identity_id or "anonymous", domain), None)
+                identity_key = identity_id or "anonymous"
+                for key in list(self._sessions):
+                    if (
+                        key[0] == session_id
+                        and key[1] == identity_key
+                        and key[3] == domain
+                        and (not auth_context_id or key[2] == auth_context_id)
+                    ):
+                        self._sessions.pop(key, None)
             else:
                 self._legacy_sessions.pop(domain, None)
                 for key in list(self._sessions):
-                    if key[2] == domain:
+                    if key[3] == domain:
                         self._sessions.pop(key, None)
 
-    _job_domains: Dict[str, Set[tuple[str, str, str]]] = {}
-
-    def track_job_domain(self, job_id: str, domain: str, session_id: str = "", identity_id: str = ""):
+    def track_job_domain(
+        self,
+        job_id: str,
+        domain: str,
+        session_id: str = "",
+        identity_id: str = "",
+        auth_context_id: str = "",
+    ):
         session_id, identity_id = self._context_values(session_id, identity_id)
+        auth_context_id = self._context_auth_context_id(auth_context_id)
         with self._lock:
-            self._job_domains.setdefault(job_id, set()).add((session_id, identity_id or "anonymous", domain))
+            self._job_domains.setdefault(job_id, set()).add(
+                (session_id, identity_id or "anonymous", auth_context_id, domain)
+            )
 
     def clear_for_job(self, job_id: str):
         """Scoped cleanup: remove only domains touched by this job."""
@@ -218,17 +293,29 @@ class AuthStore:
         """List all session aktif."""
         with self._lock:
             return {
-                f"{session.session_id}:{session.identity_id}:{domain}": session.to_dict()
-                for (session_id, identity_id, domain), session in self._sessions.items()
+                f"{session.session_id}:{session.identity_id}:{session.auth_context_id}:{domain}": session.to_dict()
+                for (_session_id, _identity_id, _auth_context_id, domain), session in self._sessions.items()
                 if not session.is_expired()
             }
 
-    def inject_into_kwargs(self, domain: str, kwargs: Dict, session_id: str = "", identity_id: str = "") -> Dict:
+    def inject_into_kwargs(
+        self,
+        domain: str,
+        kwargs: Dict,
+        session_id: str = "",
+        identity_id: str = "",
+        auth_context_id: str = "",
+    ) -> Dict:
         """
         Auto-inject session cookies/headers ke requests kwargs.
         Dipanggil from tools senot yet make request.
         """
-        session = self.get_session(domain, session_id=session_id, identity_id=identity_id)
+        session = self.get_session(
+            domain,
+            session_id=session_id,
+            identity_id=identity_id,
+            auth_context_id=auth_context_id,
+        )
         if not session:
             return kwargs
 
@@ -253,7 +340,13 @@ class AuthStore:
         return kwargs
 
 
-def inject_into_session(requests_session, domain: str, session_id: str = "", identity_id: str = ""):
+def inject_into_session(
+    requests_session,
+    domain: str,
+    session_id: str = "",
+    identity_id: str = "",
+    auth_context_id: str = "",
+):
     """
     Inject session cookies/headers ke requests.Session object.
     Used by tools that use shared SESSION object.
@@ -262,7 +355,12 @@ def inject_into_session(requests_session, domain: str, session_id: str = "", ide
         from auth_store import inject_into_session
         inject_into_session(SESSION, "target.com")
     """
-    auth_session = auth_store.get_session(domain, session_id=session_id, identity_id=identity_id)
+    auth_session = auth_store.get_session(
+        domain,
+        session_id=session_id,
+        identity_id=identity_id,
+        auth_context_id=auth_context_id,
+    )
     if not auth_session:
         return
 
@@ -312,7 +410,15 @@ def authenticated_request(
 
     domain = _domain_of(url)
     context = get_execution_context()
-    session = auth_store.get_session(domain)
+    context_session_id = context.session_id if context else ""
+    context_identity_id = context.identity_id if context else ""
+    context_auth_context_id = context.auth_context_id if context else ""
+    session = auth_store.get_session(
+        domain,
+        session_id=context_session_id,
+        identity_id=context_identity_id,
+        auth_context_id=context_auth_context_id,
+    )
 
     # Build request kwargs
     request_kwargs = {
@@ -382,13 +488,22 @@ def authenticated_request(
                 try:
                     from tools.playwright_tools import login_automator
                     login_url = auth_data.get("login_url", url)
-                    login_automator.invoke({
+                    from core.tool_decorator import invoke_tool_compat
+                    invoke_tool_compat(login_automator, {
                         "url": login_url,
                         "username": auth_data.get("username", ""),
                         "password": auth_data.get("password", ""),
+                        "session_id": context_session_id,
+                        "identity_id": context_identity_id,
+                        "auth_context_id": context_auth_context_id,
                     })
                     # Retry request with new session
-                    session = auth_store.get_session(domain)
+                    session = auth_store.get_session(
+                        domain,
+                        session_id=context_session_id,
+                        identity_id=context_identity_id,
+                        auth_context_id=context_auth_context_id,
+                    )
                     if session:
                         retry_kwargs = session.get_request_kwargs()
                         retry_kwargs["timeout"] = timeout
@@ -409,13 +524,22 @@ def authenticated_request(
 
                 if cookies_str:
                     from tools.playwright_tools import inject_session
-                    inject_session.invoke({
+                    from core.tool_decorator import invoke_tool_compat
+                    invoke_tool_compat(inject_session, {
                         "url": url,
                         "cookies": cookies_str,
                         "headers": json.dumps(headers_dict) if headers_dict else "",
+                        "session_id": context_session_id,
+                        "identity_id": context_identity_id,
+                        "auth_context_id": context_auth_context_id,
                     })
                     # Retry request with new session
-                    session = auth_store.get_session(domain)
+                    session = auth_store.get_session(
+                        domain,
+                        session_id=context_session_id,
+                        identity_id=context_identity_id,
+                        auth_context_id=context_auth_context_id,
+                    )
                     if session:
                         retry_kwargs = session.get_request_kwargs()
                         retry_kwargs["timeout"] = timeout
@@ -429,7 +553,12 @@ def authenticated_request(
     return response, login_wall
 
 
-def get_auth_kwargs(domain: str, session_id: str = "", identity_id: str = "") -> Dict:
+def get_auth_kwargs(
+    domain: str,
+    session_id: str = "",
+    identity_id: str = "",
+    auth_context_id: str = "",
+) -> Dict:
     """
     Return kwargs dict (cookies + headers) for di-inject ke requests.get/post.
     Used by tools that do not have shared SESSION object.
@@ -438,7 +567,12 @@ def get_auth_kwargs(domain: str, session_id: str = "", identity_id: str = "") ->
         from auth_store import get_auth_kwargs
         r = requests.get(url, **get_auth_kwargs(domain), headers=HEADERS, timeout=5)
     """
-    session = auth_store.get_session(domain, session_id=session_id, identity_id=identity_id)
+    session = auth_store.get_session(
+        domain,
+        session_id=session_id,
+        identity_id=identity_id,
+        auth_context_id=auth_context_id,
+    )
     if not session:
         return {}
     kwargs = {}

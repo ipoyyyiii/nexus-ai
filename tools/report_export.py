@@ -14,8 +14,76 @@ Usage:
 
 import json
 import os
-from typing import Dict, List, Any, Optional
+from dataclasses import dataclass
 from datetime import datetime
+from typing import Dict, List, Any, Optional
+
+
+REPORT_FORMATS = {
+    "md": "md",
+    "markdown": "md",
+    "pdf": "pdf",
+    "docx": "docx",
+}
+
+
+class ReportExportError(RuntimeError):
+    """Typed error raised when a report cannot be exported safely."""
+
+    code = "report_export_error"
+    status_code = 503
+
+    def __init__(self, message: str, *, details: Optional[Dict[str, Any]] = None):
+        super().__init__(message)
+        self.details = details or {}
+
+    def as_detail(self) -> Dict[str, Any]:
+        return {
+            "code": self.code,
+            "message": str(self),
+            **self.details,
+        }
+
+
+class ReportNotReadyError(ReportExportError):
+    code = "report_not_ready"
+    status_code = 409
+
+
+class ReportUnavailableError(ReportExportError):
+    code = "report_unavailable"
+    status_code = 503
+
+
+class UnsupportedReportFormatError(ReportExportError):
+    code = "unsupported_report_format"
+    status_code = 400
+
+
+class ReportDependencyError(ReportExportError):
+    code = "report_export_dependency_unavailable"
+    status_code = 503
+
+
+@dataclass(frozen=True)
+class ExportedReport:
+    content: Any
+    format: str
+    media_type: str
+    extension: str
+
+
+def normalize_report_format(value: str) -> str:
+    """Normalize the public format aliases while rejecting unknown formats."""
+    normalized = str(value or "md").strip().lower().lstrip(".")
+    try:
+        return REPORT_FORMATS[normalized]
+    except KeyError as exc:
+        supported = ", ".join(sorted(set(REPORT_FORMATS.values())))
+        raise UnsupportedReportFormatError(
+            f"Unsupported report format: {normalized or '<empty>'}.",
+            details={"requested_format": normalized, "supported_formats": supported.split(", ")},
+        ) from exc
 
 
 class ReportExporter:
@@ -28,11 +96,42 @@ class ReportExporter:
         self.author = author
         self.generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
 
+    @staticmethod
+    def _raw_report(report_data: Dict) -> str:
+        """Return a persisted report body without silently truncating it."""
+        for key in ("report", "raw_report", "report_markdown"):
+            value = report_data.get(key)
+            if isinstance(value, str) and value.strip():
+                return value
+        return ""
+
+    def export(self, report_data: Dict, format: str = "md") -> ExportedReport:
+        """Render one of the supported formats with a stable response contract."""
+        normalized = normalize_report_format(format)
+        if normalized == "pdf":
+            return ExportedReport(self.to_pdf(report_data), "pdf", "application/pdf", "pdf")
+        if normalized == "docx":
+            return ExportedReport(
+                self.to_docx(report_data),
+                "docx",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "docx",
+            )
+        return ExportedReport(self.to_markdown(report_data), "md", "text/markdown", "md")
+
     def to_markdown(self, report_data: Dict, filter_severity: str = "", filter_cwe: str = "") -> str:
         """Generate Markdown report with optional filtering."""
         target = report_data.get("target", "Unknown")
         findings = report_data.get("findings", [])
         phases = report_data.get("phases", {})
+        raw_report = self._raw_report(report_data)
+
+        # A worker-generated report is already the authoritative markdown
+        # artifact. Preserve it byte-for-byte when no compatibility filters or
+        # extra synthesized sections were requested; the old implementation
+        # truncated this body to a 2,000-character phase preview in the API.
+        if raw_report and not filter_severity and not filter_cwe and not findings and not phases:
+            return raw_report
 
         # ── Apply filters ─────────────────────────────────────────────────────
         if filter_severity:
@@ -97,6 +196,12 @@ class ReportExporter:
                 lines.append("---")
                 lines.append("")
 
+        if raw_report:
+            lines.append("## Persisted Report Content")
+            lines.append("")
+            lines.append(raw_report)
+            lines.append("")
+
         # Findings
         lines.append("## Detailed Findings")
         lines.append("")
@@ -151,8 +256,8 @@ class ReportExporter:
         """
         try:
             from fpdf import FPDF
-        except ImportError:
-            raise RuntimeError("fpdf2 not installed. Run: pip install fpdf2")
+        except ImportError as exc:
+            raise ReportDependencyError("fpdf2 is not installed.") from exc
 
         pdf = FPDF()
         pdf.set_auto_page_break(auto=True, margin=15)
@@ -183,6 +288,24 @@ class ReportExporter:
                 pdf.cell(0, 6, f"{sev}: {count}", ln=True)
         pdf.ln(5)
 
+        raw_report = self._raw_report(report_data)
+        if raw_report:
+            pdf.set_font("Helvetica", "B", 14)
+            pdf.cell(0, 10, "Persisted Report Content", ln=True)
+            pdf.set_font("Helvetica", "", 9)
+            for line in raw_report.splitlines() or [raw_report]:
+                # fpdf2's default Helvetica output is latin-1. Replacing only
+                # unsupported glyphs keeps export deterministic for existing
+                # reports instead of failing the whole format conversion.
+                safe_line = str(line).encode("latin-1", "replace").decode("latin-1")
+                # fpdf2 advances the cursor to the right margin after a
+                # multi_cell call. Reset it before every persisted-report
+                # line; otherwise the second line receives zero available
+                # width and raises "Not enough horizontal space".
+                pdf.set_x(pdf.l_margin)
+                pdf.multi_cell(0, 5, safe_line or " ")
+            pdf.ln(4)
+
         # Findings
         pdf.set_font("Helvetica", "B", 14)
         pdf.cell(0, 10, "Detailed Findings", ln=True)
@@ -209,7 +332,10 @@ class ReportExporter:
         pdf.set_font("Helvetica", "I", 8)
         pdf.cell(0, 6, f"Report generated on {self.generated_at}", ln=True)
 
-        return pdf.output(dest="S").encode("latin-1")
+        output = pdf.output(dest="S")
+        if isinstance(output, (bytes, bytearray)):
+            return bytes(output)
+        return str(output).encode("latin-1", "replace")
 
     def to_docx(self, report_data: Dict) -> bytes:
         """
@@ -221,8 +347,8 @@ class ReportExporter:
             from docx.shared import Inches, Pt, RGBColor
             from docx.enum.text import WD_ALIGN_PARAGRAPH
             from docx.enum.table import WD_TABLE_ALIGNMENT
-        except ImportError:
-            raise RuntimeError("python-docx not installed. Run: pip install python-docx")
+        except ImportError as exc:
+            raise ReportDependencyError("python-docx is not installed.") from exc
 
         doc = Document()
 
@@ -235,6 +361,12 @@ class ReportExporter:
         doc.add_paragraph(f"Date: {self.generated_at}")
         doc.add_paragraph(f"Assessor: {self.author}")
         doc.add_paragraph("")
+
+        raw_report = self._raw_report(report_data)
+        if raw_report:
+            doc.add_heading("Persisted Report Content", level=1)
+            doc.add_paragraph(raw_report)
+            doc.add_paragraph("")
 
         # Executive Summary
         doc.add_heading("Executive Summary", level=1)

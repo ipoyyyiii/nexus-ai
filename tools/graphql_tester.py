@@ -24,6 +24,23 @@ def _domain_of(url: str) -> str:
         return url
 
 
+def _local_lab_non_destructive_mode() -> bool:
+    """Return whether this invocation has the bounded local-lab envelope.
+
+    The GraphQL tool contains both safe read-only probes and probes whose
+    payloads can create load or trigger server-side effects.  The local-lab
+    auto-approval policy is intentionally narrower than a human-approved
+    invocation, so auto-pilot must run only the safe subset.
+    """
+    try:
+        from core.identity_context import get_execution_context
+
+        context = get_execution_context()
+        return bool(context and context.authorized_lab_mode)
+    except Exception:
+        return False
+
+
 GRAPHQL_PATHS = [
     "/graphql",
     "/api/graphql",
@@ -589,9 +606,18 @@ def graphql_tester(target_url: str) -> str:
     """
     if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN: job di-cancel oleh user."
 
+    local_lab_safe_mode = _local_lab_non_destructive_mode()
+    approval_context = (
+        "Read-only GraphQL probes: endpoint detection, introspection, field "
+        "suggestion, bounded ID enumeration, subscription handshake, and "
+        "schema metadata"
+        if local_lab_safe_mode
+        else "Test: introspection, batch query, nested DoS, field suggestion, IDOR"
+    )
+
     approved = require_approval(
         action=f"GraphQL security testing on {target_url}",
-        context="Test: introspection, batch query, nested DoS, field suggestion, IDOR",
+        context=approval_context,
         risk="medium",
         exec_logger=exec_logger,
     )
@@ -621,19 +647,28 @@ def graphql_tester(target_url: str) -> str:
     exec_logger.add_log("GraphQL Tester", "PROCESSING", "Testing introspection")
     introspection = _test_introspection(endpoint)
 
-    # Step 3: Batch query
-    if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN."
-    exec_logger.add_log("GraphQL Tester", "PROCESSING", "Testing batch query")
-    batch = _test_batch_query(endpoint)
-    if batch.get("vulnerable"):
-        all_findings.append(batch)
+    # The following probes are intentionally omitted from unattended local
+    # lab runs.  They are still available after an explicit human approval.
+    if local_lab_safe_mode:
+        exec_logger.add_log(
+            "GraphQL Tester",
+            "SKIPPED",
+            "Skipped batch/depth/DoS probes under local-lab non-destructive policy",
+        )
+    else:
+        # Step 3: Batch query
+        if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN."
+        exec_logger.add_log("GraphQL Tester", "PROCESSING", "Testing batch query")
+        batch = _test_batch_query(endpoint)
+        if batch.get("vulnerable"):
+            all_findings.append(batch)
 
-    # Step 4: Deep nested
-    if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN."
-    exec_logger.add_log("GraphQL Tester", "PROCESSING", "Testing query depth")
-    nested = _test_deep_nested(endpoint)
-    if nested.get("vulnerable"):
-        all_findings.append(nested)
+        # Step 4: Deep nested
+        if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN."
+        exec_logger.add_log("GraphQL Tester", "PROCESSING", "Testing query depth")
+        nested = _test_deep_nested(endpoint)
+        if nested.get("vulnerable"):
+            all_findings.append(nested)
 
     # Step 5: Field suggestion
     if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN."
@@ -655,25 +690,27 @@ def graphql_tester(target_url: str) -> str:
     if subscription.get("vulnerable"):
         all_findings.append(subscription)
 
-    # Step 8: Batch Query DoS
-    if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN."
-    exec_logger.add_log("GraphQL Tester", "PROCESSING", "Testing batch query DoS")
-    batch_dos = _test_batch_query_dos(endpoint)
-    if batch_dos.get("vulnerable"):
-        all_findings.append(batch_dos)
-
-    # Step 9: Schema Stitching
+    # Step 8: Schema Stitching
     if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN."
     exec_logger.add_log("GraphQL Tester", "PROCESSING", "Testing schema stitching")
     stitching = _test_schema_stitching(endpoint)
     if stitching.get("vulnerable"):
         all_findings.append(stitching)
 
-    # Step 10: Injection Testing
-    if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN."
-    exec_logger.add_log("GraphQL Tester", "PROCESSING", "Testing injection vectors (SQLi, NoSQLi, XSS, SSRF)")
-    injection_findings = _test_injection(endpoint)
-    all_findings.extend(injection_findings)
+    # Injection payloads include state-changing SQL, SSRF, and reflected-XSS
+    # probes, so they remain explicit-approval-only.
+    if local_lab_safe_mode:
+        exec_logger.add_log(
+            "GraphQL Tester",
+            "SKIPPED",
+            "Skipped SQLi/NoSQLi/XSS/SSRF probes under local-lab non-destructive policy",
+        )
+    else:
+        # Step 9: Injection Testing
+        if check_cancelled(exec_logger): return "EKSEKUSI DIBATALKAN."
+        exec_logger.add_log("GraphQL Tester", "PROCESSING", "Testing injection vectors (SQLi, NoSQLi, XSS, SSRF)")
+        injection_findings = _test_injection(endpoint)
+        all_findings.extend(injection_findings)
 
     # Build report
     exec_logger.add_log("GraphQL Tester", "SUCCESS", f"GraphQL testing selesai. Findings: {len(all_findings)}")
@@ -710,7 +747,9 @@ def graphql_tester(target_url: str) -> str:
     output += "\n⚠️  Manual verification tetap required for confirmation all findings.\n"
 
     # ── GRAPHQL-COP CONFIRMATION STEP ─────────────────────────────────────────
-    if not check_cancelled(exec_logger):
+    # graphql-cop is a third-party active probe set; keep it behind explicit
+    # approval for the same reason as the injection/depth probes above.
+    if not local_lab_safe_mode and not check_cancelled(exec_logger):
         exec_logger.add_log("GraphQL Tester", "PROCESSING", "Running graphql-cop for additional testing")
         try:
             from core.tool_transport import guarded_subprocess as subprocess
@@ -784,5 +823,11 @@ def graphql_tester(target_url: str) -> str:
             exec_logger.add_log("GraphQL Tester", "WARNING", "graphql-cop not found")
         except Exception as e:
             exec_logger.add_log("GraphQL Tester", "WARNING", f"graphql-cop error: {str(e)[:100]}")
+
+    if local_lab_safe_mode:
+        output += (
+            "\nRead-only local-lab mode: batch/depth/DoS and injection probes "
+            "were deferred because they require explicit approval.\n"
+        )
 
     return output

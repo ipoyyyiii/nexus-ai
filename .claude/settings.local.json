@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl *)",
+      "Bash(python *)",
+      "Bash(rtk ls *)",
+      "Bash(rtk read *)",
+      "Bash(python3 agent.py)",
+      "Bash(rtk pip *)",
+      "Bash(docker exec *)"
+    ]
+  }
+}

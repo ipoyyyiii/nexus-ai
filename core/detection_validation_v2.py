@@ -20,7 +20,6 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from core.config_loader import get_setting
 from core.redact import redact
 from core.structured_contract import (
     CandidateFindingV1,
@@ -95,7 +94,9 @@ class ValidationContextV2(DetectionContract):
     evidence_ids: List[str] = Field(default_factory=list)
     identity_ids: List[str] = Field(default_factory=list)
     iteration_count: int = 0
-    mode: Literal["shadow", "strict"] = "shadow"
+    # Legacy values are accepted when loading old validation traces. New
+    # validation is always authoritative and uses ``autonomous``.
+    mode: Literal["autonomous", "shadow", "strict"] = "autonomous"
     created_at: str = Field(default_factory=_now)
 
 
@@ -135,7 +136,7 @@ class ValidationDecisionV2(DetectionContract):
     observation_ids: List[str] = Field(default_factory=list)
     input_digest: str = ""
     failure_classification: Optional[FailureClass] = None
-    mode: Literal["shadow", "strict"] = "shadow"
+    mode: Literal["autonomous", "shadow", "strict"] = "autonomous"
     promoted: bool = False
     created_at: str = Field(default_factory=_now)
 
@@ -205,6 +206,7 @@ class ValidationPolicyRegistryV2:
             _policy("idor.tenant_isolation.v2", "authorization", subtypes=("idor", "bola", "tenant_isolation"), roles=("baseline", "test", "negative_control", "reproduction"), kinds=("resource_state", "identity_comparison"), description="Two explicit identities and semantic same-resource comparison."),
             _policy("auth.session_oauth.v2", "authentication", roles=("baseline", "test", "negative_control", "reproduction"), kinds=("state_transition",), description="Pre/action/post state with negative control for session and OAuth invariants."),
             _policy("cors.v2", "cors", roles=("baseline", "test", "negative_control"), kinds=("credentialed_response",), description="Credentialed sensitive response must be readable by attacker origin and denied to control."),
+            _policy("misconfiguration.exposure.v2", "misconfiguration", roles=("test",), kinds=("http_exchange", "legacy_finding"), description="Directly observed configuration exposure with typed scanner evidence; no exploit claim is inferred from severity alone."),
             _policy("open_redirect.v2", "open_redirect", roles=("baseline", "test", "negative_control", "reproduction"), kinds=("navigation",), description="Actual external navigation with internal control and reproduction."),
             _policy("api_schema_mass_assignment.v2", "api_schema", roles=("baseline", "test", "negative_control", "reproduction"), kinds=("entity_state",), description="Server-side entity state diff, field classification, control, and reproduction."),
             _policy("business_logic.v2", "business_logic", roles=("baseline", "test", "negative_control", "reproduction"), cleanup=True, kinds=("state_transition", "invariant_check"), description="Typed invariant violation with state evidence and cleanup."),
@@ -293,6 +295,18 @@ class ValidationPolicyRegistryV2:
             return self.get("upload.pipeline.v2")
         if protocol in {"schema", "type_confusion"}:
             return self.get("schema.type_confusion.v2")
+        if subtype in {
+            "missing_security_header", "weak_security_header", "server_version_disclosure",
+            "sensitive_file_exposure", "backup_file_exposure", "admin_panel_exposure",
+            "debug_disclosure", "clickjacking", "insecure_cookie",
+        }:
+            return self.get("misconfiguration.exposure.v2")
+        if any(item in vuln for item in (
+            "missing security header", "weak security header", "server version disclosure",
+            "sensitive file", "backup file", "exposed admin", "admin panel",
+            "debug mode", "verbose error", "clickjacking", "insecure cookie",
+        )):
+            return self.get("misconfiguration.exposure.v2")
         if any(item in vuln for item in ("command_injection", "command injection", "ssti", "server_side_template")):
             return self.get("command_injection.ssti.v2")
         if any(item in vuln for item in ("idor", "bola", "tenant", "authorization", "access_control")):
@@ -329,14 +343,15 @@ class ValidationEngineV2:
     _ERROR_SIGNATURES = re.compile(r"sql syntax|sqlstate|mysql|postgresql|sqlite|ora-\d+|odbc|root:x:0:0|/etc/passwd", re.I)
 
     def __init__(self, mode: Optional[str] = None, registry: Optional[ValidationPolicyRegistryV2] = None) -> None:
-        configured = str(get_setting("detection_depth_mode", "shadow")).lower()
-        self.mode = mode if mode in {"shadow", "strict"} else (configured if configured in {"shadow", "strict"} else "shadow")
+        # Validation is not a selectable shadow/strict lane. Candidates are
+        # always evaluated by the authoritative evidence policy.
+        self.mode = "autonomous"
         self.registry = registry or ValidationPolicyRegistryV2()
         self.last_traces: List[ValidationTraceV2] = []
 
     def validate(self, result: ToolResultV1, *, mode: Optional[str] = None, apply_status: Optional[bool] = None) -> List[ValidationDecisionV2]:
-        effective_mode = mode if mode in {"shadow", "strict"} else self.mode
-        promote = (effective_mode == "strict") if apply_status is None else bool(apply_status)
+        effective_mode = "autonomous"
+        promote = True if apply_status is None else bool(apply_status)
         observations = {item.observation_id: item for item in result.observations}
         decisions: List[ValidationDecisionV2] = []
         self.last_traces = []
@@ -393,7 +408,7 @@ class ValidationEngineV2:
             failure = signal_failure or next((item.failure_classification for item in checks if not item.passed and item.failure_classification), "missing_evidence")
         context = ValidationContextV2(candidate_id=candidate.candidate_id, policy_id=policy.policy_id, policy_version=policy.version, input_digest=input_digest, observation_ids=evidence, evidence_ids=evidence, identity_ids=sorted({str(item.metadata.get("identity_id")) for item in linked if item.metadata.get("identity_id")}), iteration_count=iterations, mode=mode)
         decision = ValidationDecisionV2(candidate_id=candidate.candidate_id, policy_id=policy.policy_id, policy_version=policy.version, decision=final, score=score, reason=reason, checks=checks, evidence_ids=evidence, observation_ids=evidence, input_digest=input_digest, failure_classification=failure, mode=mode, promoted=promote and final in {"validated", "disproven", "inconclusive"})
-        trace = ValidationTraceV2(candidate_id=candidate.candidate_id, policy_id=policy.policy_id, policy_version=policy.version, context=context, checks=checks, decision=final, evidence_ids=evidence, shadow_decision=final if mode == "shadow" else None)
+        trace = ValidationTraceV2(candidate_id=candidate.candidate_id, policy_id=policy.policy_id, policy_version=policy.version, context=context, checks=checks, decision=final, evidence_ids=evidence)
         return decision, trace
 
     @staticmethod
@@ -416,6 +431,54 @@ class ValidationEngineV2:
             return any(re.search(pattern, text(item), re.I) for item in items)
         def add(cid: str, passed: bool, reason: str, items: Sequence[ObservationV1], failure: FailureClass = "missing_evidence") -> ValidationCheckV2:
             return self._check(cid, passed, reason, items, digest, failure)
+
+        if policy.policy_id == "misconfiguration.exposure.v2":
+            # This policy validates the narrower claim "the configured
+            # exposure was observed".  It must never be interpreted as proof
+            # of exploitability or business impact.
+            subtype = str(meta.get("subtype") or "").lower()
+            detail = " ".join(
+                f"{item.summary} {item.response_excerpt}" for item in linked
+            ).lower()
+            header_present = meta.get("header_present")
+            header_signal = subtype in {"missing_security_header", "weak_security_header"} and (
+                header_present is False or bool(meta.get("header_weak"))
+            )
+            version_signal = subtype == "server_version_disclosure" and bool(
+                re.search(r"\b\d+\.\d+(?:\.\d+)?\b", detail)
+            )
+            admin_signal = subtype == "admin_panel_exposure" and (
+                bool(meta.get("accessible"))
+                or "accessible without pre-auth" in detail
+                or (meta.get("status_code") == 200 and any(
+                    marker in detail for marker in ("login", "username", "password", "admin")
+                ))
+            )
+            debug_signal = subtype == "debug_disclosure" and any(
+                marker in detail for marker in ("traceback", "stack trace", "werkzeug", "debug=true", "exception")
+            )
+            browser_signal = subtype == "clickjacking" and bool(
+                meta.get("vulnerable")
+                or meta.get("marker_executed")
+                or meta.get("x_frame_options") in {"", "MISSING"}
+            )
+            cookie_signal = subtype == "insecure_cookie" and bool(
+                meta.get("insecure") or meta.get("cookie_insecure") or "missing secure" in detail
+            )
+            file_signal = subtype in {"sensitive_file_exposure", "backup_file_exposure"} and bool(
+                meta.get("content_verified")
+                and str(meta.get("status_code") or meta.get("found_status") or "") == "200"
+            )
+            signal = any((header_signal, version_signal, admin_signal, debug_signal, browser_signal, cookie_signal, file_signal))
+            checks = [
+                add("typed_exposure_record", bool(meta.get("finding_type")) and bool(linked), "A typed scanner record and linked observation are required.", linked),
+                add("exposure_signal", signal, "The claimed exposure must be explicitly represented by typed evidence; severity text alone is insufficient.", linked),
+            ]
+            return signal, checks, (
+                "Directly observed configuration exposure reproduced."
+                if signal else
+                "Configuration exposure lacks typed evidence sufficient for validation."
+            ), None
 
         if policy.policy_id == "sqli.lfi.v2":
             baseline, test, control, repro = roles.get("baseline", []), roles.get("test", []), roles.get("negative_control", []), roles.get("reproduction", [])
@@ -511,7 +574,11 @@ class ValidationEngineV2:
 
         if policy.policy_id == "xss.reflected_stored.v2":
             context = str(meta.get("reflection_context") or "") in {"html", "attribute", "script", "url", "dom"}
-            escaped_control = bool(meta.get("escaped_control")) or any("escaped" in text(item).lower() for item in roles.get("negative_control", []))
+            escaped_control = bool(meta.get("escaped_control")) or any(
+                bool(item.metadata.get("escaped_control"))
+                or "escaped" in text(item).lower()
+                for item in roles.get("negative_control", [])
+            )
             executed = any(bool(item.metadata.get("marker_executed") or item.metadata.get("script_executed")) for item in roles.get("browser", []))
             stored_clean = bool(meta.get("stored_retrieval_clean_session")) if meta.get("stored_retrieval_clean_session") is not None else True
             checks = [add("executable_context", context, "Reflection must be in an executable context.", roles.get("test", [])), add("escaped_negative_control", escaped_control, "Escaped/encoded control must not execute.", roles.get("negative_control", []), "missing_control"), add("unique_marker_executed", executed, "A unique marker must execute in a browser context.", roles.get("browser", [])), add("clean_session_retrieval", stored_clean, "Stored XSS must execute when retrieved from a clean session.", roles.get("reproduction", [])), add("cleanup_verified", bool(meta.get("cleanup_verified")) or not bool(meta.get("stored", False)), "Stored payload cleanup must be verified.", linked, "cleanup_error")]

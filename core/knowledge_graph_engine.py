@@ -136,6 +136,19 @@ class TargetKnowledgeGraphEngine:
         return stable_digest(normalize_locator(scope or {}), 40)
 
     @staticmethod
+    def _node_id(graph_id: str, fingerprint: str) -> str:
+        """Return an immutable node key scoped to one graph version.
+
+        Node rows are append-only and ``node_id`` is the relational primary
+        key.  Fingerprint-only IDs collide when the same fact appears in a
+        later graph version or another session, leaving the new graph's
+        ``node_ids`` pointing at rows owned by the old graph.  Including the
+        graph ID keeps replay deterministic while preserving version
+        isolation.
+        """
+        return f"knode_{stable_digest({'graph': graph_id, 'fingerprint': fingerprint}, 32)}"
+
+    @staticmethod
     def _safe_node_type(value: Any) -> str:
         value = str(value or "observation").strip().lower()
         return value if value in NODE_TYPES else "observation"
@@ -392,7 +405,7 @@ class TargetKnowledgeGraphEngine:
                 if existing_fact and existing_fact[0] != fact_value:
                     node.status = "contradictory"
                     node.fingerprint = stable_digest({"base": node.fingerprint, "fact": fact_value}, 64)
-                    node.node_id = f"knode_{node.fingerprint[:32]}"
+                    node.node_id = self._node_id(graph.graph_id, node.fingerprint)
                     contradiction_material = {"graph": graph.graph_id, "subject": fact_index[0], "predicate": fact_key}
                     contradiction_id = f"contradiction_{stable_digest(contradiction_material, 32)}"
                     contradiction = contradictions.setdefault(contradiction_id, ContradictionSetV1(
@@ -415,7 +428,7 @@ class TargetKnowledgeGraphEngine:
         for ordinal, node in enumerate(nodes):
             node.graph_id = graph.graph_id
             node.graph_version = graph.version
-            node.node_id = f"knode_{node.fingerprint[:32]}"
+            node.node_id = self._node_id(graph.graph_id, node.fingerprint)
         reference_aliases = {
             reference_id: next(
                 (node.node_id for node in nodes if node.fingerprint == fingerprint),

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ipaddress
 import fnmatch
+import os
 import socket
 import threading
 import time
@@ -19,6 +20,24 @@ import requests
 
 from core.execution_contract import ResourceBudgetV1, SafetyDecisionV1
 from core.redact import redact
+
+
+_METADATA_HOSTS = {
+    "metadata.google.internal",
+    "metadata",
+    "instance-data.ec2.internal",
+    "metadata.azure.internal",
+}
+_METADATA_IPS = {
+    ipaddress.ip_address(item)
+    for item in (
+        "169.254.169.254",  # AWS/GCP/Azure metadata
+        "169.254.170.2",    # ECS task metadata
+        "100.100.100.200",  # Alibaba metadata
+        "168.63.129.16",    # Azure platform endpoint
+        "fd00:ec2::254",    # AWS IMDS IPv6
+    )
+}
 
 
 class SafetyViolation(PermissionError):
@@ -62,6 +81,9 @@ class SafetyKernel:
         decision = "allowed"
         reason = "allowed"
         try:
+            parsed_target = urlsplit(str(target))
+            if self._is_metadata_target(parsed_target.hostname or "", set()):
+                raise SafetyViolation("metadata_target_rejected", "Cloud metadata and link-local targets are never allowed.")
             effective_provider = provider_id or self.provider_for(target)
             if effective_provider:
                 self._validate_provider(effective_provider, target)
@@ -209,10 +231,50 @@ class SafetyKernel:
             return ""
         origin = self.origin(target)
         for provider_id, configured in providers.items():
-            allowed_origins = configured if isinstance(configured, list) else configured.get("origins", [])
-            if origin in {str(item).rstrip("/").lower() for item in allowed_origins}:
+            if str(provider_id) == "oob" and self._oob_target_allowed(target):
+                return "oob"
+            allowed_origins = self._provider_origins(provider_id, configured)
+            if origin in allowed_origins:
                 return str(provider_id)
         return ""
+
+    @staticmethod
+    def _oob_target_allowed(target: str) -> bool:
+        """Allow only the configured OOB host and its generated subdomains."""
+        configured_url = os.environ.get("OOB_SERVER_URL", "").strip()
+        configured_domain = os.environ.get("OOB_DOMAIN", "").strip().lower().rstrip(".")
+        if configured_url:
+            configured = urlsplit(configured_url)
+            scheme = configured.scheme.lower()
+            hostname = (configured.hostname or "").lower().rstrip(".")
+        else:
+            scheme = "http"
+            hostname = configured_domain
+        parsed = urlsplit(str(target or ""))
+        candidate = (parsed.hostname or "").lower().rstrip(".")
+        if not hostname or parsed.scheme.lower() != scheme:
+            return False
+        return candidate == hostname or candidate.endswith("." + hostname)
+
+    @staticmethod
+    def _provider_origins(provider_id: str, configured: Any) -> set[str]:
+        """Resolve provider origins, including the operator-owned OOB URL.
+
+        OOB registration/polling is control-plane traffic, not target egress.
+        The origin is still exact and comes from the deployment environment;
+        an empty static ``oob.origins`` list therefore cannot accidentally
+        authorize arbitrary internet destinations.
+        """
+        allowed_origins = configured if isinstance(configured, list) else (configured or {}).get("origins", [])
+        origins = {str(item).rstrip("/").lower() for item in allowed_origins if item}
+        if str(provider_id) == "oob":
+            configured_url = os.environ.get("OOB_SERVER_URL", "").strip()
+            configured_domain = os.environ.get("OOB_DOMAIN", "").strip()
+            if configured_url:
+                origins.add(SafetyKernel.origin(configured_url))
+            elif configured_domain:
+                origins.add(SafetyKernel.origin(f"http://{configured_domain}"))
+        return origins
 
     def _validate_provider(self, provider_id: str, target: str) -> None:
         providers = {}
@@ -224,9 +286,33 @@ class SafetyKernel:
         configured = providers.get(provider_id)
         if configured is None:
             raise SafetyViolation("provider_not_allowlisted", f"Provider '{provider_id}' is not allowlisted.")
-        allowed_origins = configured if isinstance(configured, list) else configured.get("origins", [])
-        if self.origin(target) not in {str(item).rstrip("/").lower() for item in allowed_origins}:
+        if str(provider_id) == "oob" and self._oob_target_allowed(target):
+            self._validate_provider_addresses(target)
+            return
+        if self.origin(target) not in self._provider_origins(provider_id, configured):
             raise SafetyViolation("provider_origin_rejected", "Provider origin is not allowlisted.")
+        self._validate_provider_addresses(target)
+
+    def _validate_provider_addresses(self, target: str) -> None:
+        """Prevent allowlisted provider names from resolving into private space."""
+        parsed = urlsplit(str(target))
+        if not parsed.hostname:
+            raise SafetyViolation("invalid_target", "Provider target has no hostname.")
+        try:
+            addresses = {
+                item[4][0]
+                for item in socket.getaddrinfo(
+                    parsed.hostname,
+                    parsed.port or (443 if parsed.scheme == "https" else 80),
+                    type=socket.SOCK_STREAM,
+                )
+            }
+        except OSError as exc:
+            raise SafetyViolation("dns_failed", f"Provider DNS resolution failed: {redact(str(exc))[:300]}") from exc
+        if self._is_metadata_target(parsed.hostname, addresses):
+            raise SafetyViolation("metadata_target_rejected", "Provider target resolved to metadata or link-local space.")
+        if any(self._is_private_or_reserved(item) for item in addresses):
+            raise SafetyViolation("private_ip_rejected", "Provider target resolved to a private or reserved IP.")
 
     def _validate_url(self, session_id: str, target: str, allow_private: bool = False) -> None:
         parsed = urlsplit(target)
@@ -247,17 +333,22 @@ class SafetyKernel:
             }
         except OSError as exc:
             raise SafetyViolation("dns_failed", f"DNS resolution failed: {redact(str(exc))[:300]}") from exc
-        if not allow_private:
-            allow_private = self._scope_explicitly_allows_private(session_id, parsed.hostname)
-        if not allow_private and any(self._is_private_or_reserved(item) for item in addresses):
+        if self._is_metadata_target(parsed.hostname, addresses):
+            raise SafetyViolation("metadata_target_rejected", "Cloud metadata and link-local targets are never allowed.")
+        # The caller-provided flag is intentionally ignored. Private access
+        # must come from the active session scope, otherwise a tool or a
+        # redirect could turn it into an SSRF bypass.
+        scope_allows_private = self._scope_explicitly_allows_private(session_id, parsed.hostname)
+        if not scope_allows_private and any(self._is_private_or_reserved(item) for item in addresses):
             raise SafetyViolation("private_ip_rejected", "Resolved target includes a private or reserved IP.")
 
     def _scope_explicitly_allows_private(self, session_id: str, hostname: str) -> bool:
-        """Allow private fixture addresses only with an explicit session rule.
+        """Allow private addresses only with an explicit session rule.
 
-        The global safety default remains deny. A local lab must opt in on the
-        exact allow rule, e.g. ``allow_private: true`` for ``localhost`` or a
-        Docker fixture hostname; this flag is never inferred from the target.
+        The global safety default remains deny. Any private target—including a
+        non-lab internal service—must be covered by an exact session allow rule
+        carrying ``allow_private: true``. The flag is never inferred from the
+        target or from a public DNS result.
         """
         if not self.session_store or not session_id:
             return False
@@ -269,8 +360,46 @@ class SafetyKernel:
             if (
                 rule.get("rule_type") == "allow"
                 and bool(rule.get("allow_private", False))
-                and fnmatch.fnmatch(hostname.lower(), str(rule.get("pattern", "")).lower())
+                and self._scope_rule_matches_host(hostname, rule)
             ):
+                return True
+        return False
+
+    @staticmethod
+    def _scope_rule_matches_host(hostname: str, rule: Dict[str, Any]) -> bool:
+        """Match an explicit hostname, IP, or CIDR scope rule."""
+        host = str(hostname or "").lower().rstrip(".")
+        pattern = str(rule.get("pattern") or "").strip().lower().rstrip(".")
+        if pattern and fnmatch.fnmatch(host, pattern):
+            return True
+        try:
+            host_ip = ipaddress.ip_address(host)
+        except ValueError:
+            host_ip = None
+        patterns = list(rule.get("private_cidrs") or [])
+        if pattern and "/" in pattern:
+            patterns.append(pattern)
+        if host_ip is None:
+            return False
+        for cidr in patterns:
+            try:
+                if host_ip in ipaddress.ip_network(str(cidr).strip(), strict=False):
+                    return True
+            except ValueError:
+                continue
+        return False
+
+    @staticmethod
+    def _is_metadata_target(hostname: str, addresses: set[str]) -> bool:
+        candidate = str(hostname or "").lower().rstrip(".")
+        if candidate in _METADATA_HOSTS or candidate.endswith(".metadata.google.internal"):
+            return True
+        for address in addresses:
+            try:
+                ip = ipaddress.ip_address(address)
+            except ValueError:
+                continue
+            if ip in _METADATA_IPS or ip.is_link_local:
                 return True
         return False
 
@@ -319,6 +448,32 @@ class GuardedHttpClient:
         self.attempt_id = attempt_id
         self.tool_run_id = tool_run_id
         self.budget = budget or ResourceBudgetV1()
+        # Requests honours HTTP(S)_PROXY from the worker environment unless a
+        # session opts out.  That made a direct local-lab request appear as a
+        # proxy failure even though the target was reachable.  The egress
+        # decision must be made by Nexus, never inherited from the host.
+        self._session = requests.Session()
+        self._session.trust_env = False
+
+    @staticmethod
+    def _validated_proxy(value: Any) -> Optional[Dict[str, str]]:
+        """Allow only the exact operator-configured proxy reference."""
+        if value in (None, {}, ""):
+            return None
+        if not isinstance(value, dict):
+            raise SafetyViolation(
+                "proxy_not_configured",
+                "Proxy configuration must be an operator-configured mapping.",
+            )
+        configured = os.environ.get("NEXUS_OPERATOR_PROXY_URL", "").strip()
+        expected = {"http": configured, "https": configured} if configured else None
+        normalized = {str(key): str(item) for key, item in value.items()}
+        if expected is None or normalized != expected:
+            raise SafetyViolation(
+                "proxy_not_configured",
+                "Arbitrary proxy use is disabled; use the operator-configured egress reference.",
+            )
+        return expected
 
     def request(self, method: str, url: str, **kwargs: Any) -> requests.Response:
         headers = kwargs.pop("headers", {}) or {}
@@ -328,10 +483,13 @@ class GuardedHttpClient:
         provider_id = str(kwargs.pop("provider_id", "") or "")
         credential_attempt = bool(kwargs.pop("credential_attempt", False))
         requested_redirects = bool(kwargs.pop("allow_redirects", False))
+        configured_proxy = self._validated_proxy(kwargs.pop("proxies", None))
         kwargs["verify"] = True
         kwargs["headers"] = headers
         kwargs.setdefault("timeout", 10)
         kwargs["allow_redirects"] = False
+        if configured_proxy:
+            kwargs["proxies"] = configured_proxy
 
         current_url = url
         for _hop in range(6):
@@ -348,7 +506,7 @@ class GuardedHttpClient:
                 allow_private=allow_private,
                 provider_id=provider_id,
             )
-            response = requests.request(method, current_url, **kwargs)
+            response = self._session.request(method, current_url, **kwargs)
             captured = min(len(response.content), self.budget.max_response_bytes)
             self.kernel.account(
                 self.session_id,

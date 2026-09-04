@@ -29,7 +29,25 @@ class CancellationStore:
     def is_cancelled(self, job_id: str) -> bool:
         with self._lock:
             token = self._tokens.get(job_id)
-        return bool(token and token.is_set())
+        if token and token.is_set():
+            return True
+        # API and worker run in separate processes. The API-side cancel
+        # request therefore cannot set this process-local Event. Consult the
+        # durable repository carried by the active execution context so a
+        # cross-process cancellation becomes visible at every existing
+        # cancellation checkpoint without weakening the local fast path.
+        try:
+            from core.identity_context import get_execution_context
+
+            context = get_execution_context()
+            repository = getattr(getattr(context, "safety_kernel", None), "repository", None)
+            if repository is not None and hasattr(repository, "is_cancel_requested"):
+                return bool(repository.is_cancel_requested(job_id))
+        except Exception:
+            # Cancellation checks must never crash a running job. The local
+            # token remains authoritative when durable status is unavailable.
+            pass
+        return False
 
     def cleanup(self, job_id: str):
         """Delete token sealready job selesai/error/cancelled."""

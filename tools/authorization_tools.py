@@ -21,6 +21,8 @@ def authorization_differential_replay(
     test_identity_ids: str,
     expectations_json: str = "[]",
     bindings_json: str = "{}",
+    auth_contexts_json: str = "{}",
+    negative_control_identity_id: str = "",
     approved: bool = False,
 ) -> ToolResultV1:
     """Replay one discovered action/resource across isolated identities.
@@ -41,9 +43,14 @@ def authorization_differential_replay(
         identity_ids = json.loads(test_identity_ids) if test_identity_ids.strip().startswith("[") else [item.strip() for item in test_identity_ids.split(",") if item.strip()]
         expectations = [AuthorizationExpectationV1(**item) for item in json.loads(expectations_json or "[]")]
         bindings = json.loads(bindings_json or "{}")
+        auth_contexts = json.loads(auth_contexts_json or "{}")
+        if not isinstance(auth_contexts, dict):
+            raise ValueError("auth_contexts_json must be an object keyed by identity_id")
         return AuthorizationReplayEngine(target=template.origin).run_differential(
             context.session_id, template, resource, owner_identity_id,
             identity_ids, expectations, bindings, approved,
+            auth_contexts=auth_contexts,
+            negative_control_identity_id=negative_control_identity_id,
         )
     except Exception as exc:
         return ToolResultV1(
@@ -51,4 +58,3 @@ def authorization_differential_replay(
             summary="Authorization replay input or execution failed.",
             errors=[ToolErrorV1(code="replay_error", message=str(exc))],
         )
-

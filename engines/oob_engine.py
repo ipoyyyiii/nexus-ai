@@ -15,15 +15,23 @@ Usage:
     result = oob_engine.test_and_poll("ssrf", poll_func=lambda: requests.get(target_url))
 """
 
+import base64
 import json
 import os
 import random
 import string
 import time
 import threading
+import uuid
+from datetime import datetime, timezone
 from core.tool_transport import guarded_requests as requests
 from typing import Optional, Dict, Any, Callable, List
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
+
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from core.oob_correlation import correlate_interactions
 
 
 # ============================================================
@@ -32,6 +40,9 @@ from urllib.parse import quote
 OOB_DOMAIN = os.environ.get("OOB_DOMAIN", "")
 OOB_SERVER_IP = os.environ.get("OOB_SERVER_IP", "")
 OOB_AUTH_TOKEN = os.environ.get("OOB_AUTH_TOKEN", "")
+# Native Interactsh endpoint. The old OOB_LOGS_ENDPOINT was an Azure-only
+# adapter and is intentionally not used for self-hosted Interactsh.
+OOB_SERVER_URL = os.environ.get("OOB_SERVER_URL", "")
 OOB_LOGS_ENDPOINT = os.environ.get("OOB_LOGS_ENDPOINT", "")
 OOB_POLL_TIMEOUT = 10  # seconds
 OOB_POLL_INTERVAL = 2  # seconds between polls
@@ -58,6 +69,124 @@ def _logger():
         return None
 
 
+class _InteractshClient:
+    """Small native Interactsh client used by the OOB engine.
+
+    Interactsh does not expose a generic ``/logs`` endpoint. Clients register
+    an RSA key/session at ``/register`` and retrieve encrypted interactions
+    from ``/poll``. Keeping this protocol here lets the existing payload
+    builders and correlation matching remain unchanged.
+    """
+
+    def __init__(self, server_url: str, token: str):
+        self.server_url = server_url.rstrip("/")
+        self.token = token
+        self.private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        self.correlation_id = base64.b32encode(os.urandom(12)).decode("ascii").lower().rstrip("=")[:20]
+        self.secret_key = str(uuid.uuid4())
+        self._register()
+
+    @staticmethod
+    def _encoded_public_key(public_key) -> str:
+        der = public_key.public_bytes(
+            serialization.Encoding.DER,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        pem_body = base64.encodebytes(der)
+        pem = b"-----BEGIN RSA PUBLIC KEY-----\n" + pem_body + b"-----END RSA PUBLIC KEY-----\n"
+        return base64.b64encode(pem).decode("ascii")
+
+    def _headers(self) -> Dict[str, str]:
+        headers = {"Accept": "application/json", "Content-Type": "application/json"}
+        if self.token:
+            headers["Authorization"] = self.token
+        return headers
+
+    def _register(self) -> None:
+        payload = {
+            "public-key": self._encoded_public_key(self.private_key.public_key()),
+            "secret-key": self.secret_key,
+            "correlation-id": self.correlation_id,
+        }
+        response = requests.post(
+            f"{self.server_url}/register",
+            json=payload,
+            headers=self._headers(),
+            timeout=10,
+            verify=False,
+            # Registration is an operator-owned OOB control-plane action. It
+            # remains constrained by the exact `oob` provider allowlist.
+            approved=True,
+            provider_id="oob",
+        )
+        if response.status_code == 401:
+            raise RuntimeError("Interactsh authentication failed — check OOB_AUTH_TOKEN")
+        if response.status_code != 200:
+            raise RuntimeError(
+                f"Interactsh registration failed ({response.status_code}): {response.text[:200]}"
+            )
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise RuntimeError("Interactsh registration returned invalid JSON") from exc
+        if data.get("message") != "registration successful":
+            raise RuntimeError("Interactsh registration was not accepted")
+
+    def _decrypt(self, aes_key: str, encrypted: str) -> bytes:
+        wrapped_key = base64.b64decode(aes_key)
+        key = self.private_key.decrypt(
+            wrapped_key,
+            padding.OAEP(
+                mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                algorithm=hashes.SHA256(),
+                label=None,
+            ),
+        )
+        ciphertext = base64.b64decode(encrypted)
+        if len(ciphertext) < 16:
+            raise ValueError("Interactsh ciphertext is shorter than its IV")
+        decryptor = Cipher(
+            algorithms.AES(key),
+            modes.CTR(ciphertext[:16]),
+        ).decryptor()
+        return decryptor.update(ciphertext[16:]) + decryptor.finalize()
+
+    def poll(self) -> List[Dict[str, Any]]:
+        query = urlencode({"id": self.correlation_id, "secret": self.secret_key})
+        response = requests.get(
+            f"{self.server_url}/poll?{query}",
+            headers=self._headers(),
+            timeout=10,
+            verify=False,
+            provider_id="oob",
+        )
+        if response.status_code == 401:
+            raise RuntimeError("Interactsh authentication failed — check OOB_AUTH_TOKEN")
+        if response.status_code != 200:
+            raise RuntimeError(
+                f"Interactsh poll failed ({response.status_code}): {response.text[:200]}"
+            )
+
+        payload = response.json()
+        interactions: List[Dict[str, Any]] = []
+        for encrypted in (payload.get("data") or []):
+            try:
+                decoded = json.loads(self._decrypt(payload.get("aes_key", ""), encrypted))
+            except (ValueError, TypeError, json.JSONDecodeError):
+                continue
+            if isinstance(decoded, dict):
+                interactions.append(decoded)
+
+        for plaintext in (payload.get("extra") or []) + (payload.get("tlddata") or []):
+            try:
+                decoded = json.loads(plaintext)
+            except (TypeError, json.JSONDecodeError):
+                continue
+            if isinstance(decoded, dict):
+                interactions.append(decoded)
+        return interactions
+
+
 # ============================================================
 # OOB ENGINE CLASS
 # ============================================================
@@ -68,12 +197,15 @@ class OOBEngine:
     """
 
     def __init__(self):
-        if not OOB_DOMAIN or not OOB_LOGS_ENDPOINT:
-            raise RuntimeError("OOB_DOMAIN and OOB_LOGS_ENDPOINT must be configured")
+        if not OOB_DOMAIN:
+            raise RuntimeError("OOB_DOMAIN must be configured")
         self.domain = OOB_DOMAIN
         self.server_ip = OOB_SERVER_IP
         self.auth_token = OOB_AUTH_TOKEN
-        self.logs_endpoint = OOB_LOGS_ENDPOINT
+        self.server_url = (OOB_SERVER_URL or f"http://{self.domain}").rstrip("/")
+        self.logs_endpoint = OOB_LOGS_ENDPOINT  # retained for config compatibility
+        self._interactsh_client: Optional[_InteractshClient] = None
+        self._interaction_cache: List[Dict[str, Any]] = []
         self._lock = threading.Lock()
 
     # ── Payload Generation ────────────────────────────────────────────────────
@@ -85,6 +217,12 @@ class OOBEngine:
         Contoh: ssrf-a3f8c2, xxe-b7d1e4, rce-k9m2n5
         """
         return f"{vuln_type}-{_random_id(6)}"
+
+    def _ensure_interactsh_session(self) -> None:
+        """Register the polling session before an OOB request is injected."""
+        with self._lock:
+            if self._interactsh_client is None:
+                self._interactsh_client = _InteractshClient(self.server_url, self.auth_token)
 
     def generate_subdomain(self, vuln_type: str) -> str:
         """
@@ -340,58 +478,45 @@ class OOBEngine:
             }
         """
         start_time = time.monotonic()
+        issued_at = datetime.now(timezone.utc)
         last_error = None
+        last_correlation = None
 
         while (time.monotonic() - start_time) < timeout:
             try:
-                headers = {
-                    "Authorization": self.auth_token,
-                    "Accept": "application/json",
-                }
-                resp = requests.get(
-                    self.logs_endpoint,
-                    headers=headers,
-                    timeout=5,
-                    verify=False,
-                )
+                with self._lock:
+                    if self._interactsh_client is None:
+                        self._interactsh_client = _InteractshClient(self.server_url, self.auth_token)
+                    self._interaction_cache.extend(self._interactsh_client.poll())
+                    self._interaction_cache = self._interaction_cache[-2000:]
+                    matches = self._find_matches(correlation_id, self._interaction_cache)
+                    correlation = correlate_interactions(
+                        correlation_id,
+                        matches,
+                        expected_domain=f"{correlation_id}.{self.domain}",
+                        issued_at=issued_at,
+                    )
+                    last_correlation = correlation
 
-                if resp.status_code == 200:
-                    try:
-                        data = resp.json()
-                    except json.JSONDecodeError:
-                        # Try parsing as plain text
-                        data = {"data": []}
-
-                    interactions = data.get("data", []) if isinstance(data, list) else data.get("data", [])
-
-                    # Search for correlation_id in interactions
-                    matches = self._find_matches(correlation_id, interactions)
-
-                    if matches:
-                        elapsed = time.monotonic() - start_time
-                        return {
-                            "status": "vulnerable",
-                            "found": True,
-                            "interactions": matches,
-                            "interaction_count": len(matches),
-                            "poll_duration": round(elapsed, 2),
-                            "poc_details": {
-                                "correlation_id": correlation_id,
-                                "callback_domain": f"{correlation_id}.{self.domain}",
-                                "server": f"{self.server_ip}",
-                                "first_interaction": matches[0] if matches else None,
-                                "protocols_seen": list(set(m.get("protocol", "unknown") for m in matches)),
-                            },
-                        }
-
-                elif resp.status_code == 401:
+                if correlation.status == "correlated":
+                    elapsed = time.monotonic() - start_time
                     return {
-                        "status": "error",
-                        "found": False,
-                        "interactions": [],
-                        "poll_duration": 0,
-                        "error": "Authentication failed — check OOB_AUTH_TOKEN",
-                        "poc_details": {},
+                        "status": "vulnerable",
+                        "found": True,
+                        "interactions": matches,
+                        "interaction_count": correlation.matched_count,
+                        "correlation_status": correlation.status,
+                        "target_attributed": correlation.target_attributed,
+                        "stale_callback": correlation.stale_callback,
+                        "poll_duration": round(elapsed, 2),
+                        "poc_details": {
+                            "correlation_id": correlation_id,
+                            "callback_domain": f"{correlation_id}.{self.domain}",
+                            "server": f"{self.server_ip}",
+                            "first_interaction": matches[0] if matches else None,
+                            "protocols_seen": list(set(m.get("protocol", "unknown") for m in matches)),
+                            "interaction_digests": correlation.interaction_digests,
+                        },
                     }
 
             except requests.exceptions.Timeout:
@@ -405,12 +530,16 @@ class OOBEngine:
 
         # Timeout reached — no interaction found
         elapsed = time.monotonic() - start_time
+        inconclusive = bool(last_correlation and last_correlation.status in {"stale", "ambiguous"})
         return {
-            "status": "secure",
+            "status": "inconclusive" if inconclusive else "secure",
             "found": False,
             "interactions": [],
             "poll_duration": round(elapsed, 2),
             "error": last_error,
+            "correlation_status": last_correlation.status if last_correlation else "missing",
+            "target_attributed": False,
+            "stale_callback": bool(last_correlation and last_correlation.stale_callback),
             "poc_details": {},
         }
 
@@ -496,6 +625,7 @@ class OOBEngine:
         from core.rate_limiter import rate_limiter
         domain = _domain_of(url)
 
+        self._ensure_interactsh_session()
         ssrf_payload = self.build_ssrf_payload()
         cid = ssrf_payload["correlation_id"]
         callback_url = ssrf_payload["callback_url"]
@@ -594,6 +724,7 @@ class OOBEngine:
         from core.rate_limiter import rate_limiter
         domain = _domain_of(url)
 
+        self._ensure_interactsh_session()
         xxe_payload = self.build_xxe_payload()
         cid = xxe_payload["correlation_id"]
         callback_url = f"http://{xxe_payload['subdomain']}"
@@ -679,6 +810,7 @@ class OOBEngine:
         from core.rate_limiter import rate_limiter
         domain = _domain_of(url)
 
+        self._ensure_interactsh_session()
         log4j_payload = self.build_log4j_payload()
         cid = log4j_payload["correlation_id"]
         subdomain = log4j_payload["subdomain"]
@@ -766,6 +898,7 @@ class OOBEngine:
         from core.rate_limiter import rate_limiter
         domain = _domain_of(url)
 
+        self._ensure_interactsh_session()
         rce_payload = self.build_rce_oob_payload()
         cid = rce_payload["correlation_id"]
         callback_url = rce_payload["callback_url"]

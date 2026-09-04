@@ -38,6 +38,11 @@ class ToolExecutionContext:
     approval_ref: str = ""
     approval_digest: str = ""
     approval_granted: bool = False
+    # Per-job, allowlisted local-lab preapproval. This is deliberately
+    # separate from auto_pilot so it cannot become a global approval bypass.
+    authorized_lab_mode: bool = False
+    authorized_lab_origin: str = ""
+    suite_preapproval_id: str = ""
 
 
 _active_context: ContextVar[Optional[ToolExecutionContext]] = ContextVar(

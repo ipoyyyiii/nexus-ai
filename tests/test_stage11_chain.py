@@ -69,7 +69,7 @@ class Stage11ChainTests(unittest.TestCase):
         )
         self.assertTrue(result["proposal"]["requires_approval"])
         self.assertFalse(result["execution_policy"]["dispatch_allowed"])
-        self.assertTrue(result["execution_policy"]["shadow"])
+        self.assertEqual(result["execution_policy"]["assessment_mode"], "autonomous")
 
     def test_chain_evaluation_is_structural_and_never_validates_impact(self):
         sessions = _Sessions()

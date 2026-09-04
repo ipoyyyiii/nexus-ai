@@ -696,11 +696,11 @@ def register_evaluation_routes(
                 readiness = ProductionReadinessV1(
                     run_id=run.run_id, suite_id=run.suite_id, suite_version=run.suite_version,
                     status=run.status, mode="deterministic", config_digest=run.config_digest,
-                    fixture_digest=run.fixture_digest, platform_mode=str(config_getter("execution_platform_mode", "shadow")),
-                    tool_boundary_mode=str(config_getter("tool_boundary_mode", "shadow")),
+                    fixture_digest=run.fixture_digest, platform_mode="autonomous",
+                    tool_boundary_mode="autonomous",
                     schema_digest=content_digest({"migration": "019", "tables": ["production_soak_runs", "production_cutover_decisions", "recovery_verifications"]}),
                     worker_topology={"general_workers": 1, "simulated_workers": 2, "raw_network_enabled": False},
-                    rollback_ref="config/pentest_config.yaml:execution_platform_mode",
+                    rollback_ref="config/pentest_config.yaml:assessment_mode",
                     cutover_candidate=gate.decision == "ready", metrics=run.metrics,
                     release_decision=gate.decision,
                     hard_gates=[ReadinessCheckV1(run_id=run.run_id, name=item.name, passed=item.passed, expected=item.expected, actual=item.actual, reason=item.reason, evidence_ids=item.evidence_ids) for item in gate.hard_gates],
@@ -713,11 +713,7 @@ def register_evaluation_routes(
                     extra.get("coverage", []), extra.get("actions", []),
                 )
         except Exception as exc:
-            # Shadow mode remains queryable in memory when migrations are not
-            # installed. Strict mode must never report a successful evaluation
-            # whose durable record was not written.
-            if str(config_getter("execution_platform_mode", "shadow")).lower() == "strict":
-                raise RuntimeError("evaluation persistence failed in strict mode") from exc
+            raise RuntimeError("evaluation persistence failed in autonomous mode") from exc
 
     def run_for_worker(payload: Dict[str, Any], session_id: str, job_id: str) -> Dict[str, Any]:
         run, results, snapshots, gate, extra = execute_suite(
@@ -798,8 +794,7 @@ def register_evaluation_routes(
                 repository.save_suite(suite)
                 repository.save_run(run)
             except Exception as exc:
-                if str(config_getter("execution_platform_mode", "shadow")).lower() == "strict":
-                    raise HTTPException(status_code=503, detail="Evaluation persistence unavailable.") from exc
+                raise HTTPException(status_code=503, detail="Evaluation persistence unavailable.") from exc
             job = ExecutionJobV1(
                 job_id=job_id, session_id=req.session_id, job_type="evaluation_suite",
                 queue_name="general", target=f"{req.suite_id}://local",

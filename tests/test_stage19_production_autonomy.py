@@ -79,7 +79,7 @@ def test_migration_is_additive_and_append_only():
 
 def test_worker_strict_path_has_preflight_and_fenced_transition():
     source = Path("worker.py").read_text()
-    assert "strict_startup_preflight" in source
+    assert "startup_preflight" in source
     assert 'claim_execution_job' in source
     assert "fenced lease rejected terminal transition" in source
     assert "self.repository.transition" in source

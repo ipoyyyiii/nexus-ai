@@ -294,6 +294,11 @@ class TargetState:
         
         # Parse tech stack
         self._parse_tech_stack(recon_output)
+
+        # Browser and HTTP recon commonly expose URLs without a separate
+        # vulnerability phase.  Keep those endpoints available to the
+        # adaptive planner immediately after recon completes.
+        self._parse_endpoints(recon_output)
         
         # Parse SSL info
         self._parse_ssl_info(recon_output)

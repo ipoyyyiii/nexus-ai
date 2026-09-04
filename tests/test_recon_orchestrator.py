@@ -3,6 +3,7 @@ from core.recon_orchestrator import (
     ReconOrchestrator,
     recon_tool_names,
 )
+from core.structured_contract import ToolErrorV1, ToolResultV1
 
 
 def test_recon_manifest_has_unique_lanes_and_core_capabilities():
@@ -35,8 +36,12 @@ def test_recon_plan_is_broad_but_safe_by_default():
     assert by_name["waf_behavior_profile"]["status"] == "eligible"
     assert by_name["Active Recon Target"]["status"] == "skipped"
     assert by_name["Active Recon Target"]["reason"] == "raw_network_disabled"
+    assert by_name["Active Recon Target"]["skip_class"] == "policy_blocked"
+    assert by_name["Active Recon Target"]["coverage_required"] is False
     assert by_name["wayback_scraper"]["status"] == "skipped"
     assert by_name["dir_bruteforce_scanner"]["status"] == "skipped"
+    assert by_name["dir_bruteforce_scanner"]["coverage_required"] is False
+    assert by_name["dir_bruteforce_scanner"]["skip_class"] == "capability_disabled"
     assert by_name["naabu_scan"]["status"] == "skipped"
 
 
@@ -50,6 +55,20 @@ def test_recon_plan_marks_missing_registry_entry_instead_of_silent_skip():
     item = next(row for row in plan if row["public_name"] == "httpx_probe")
     assert item["status"] == "unavailable"
     assert item["reason"] == "tool_not_registered"
+    assert item["skip_class"] == "unavailable"
+    assert item["coverage_required"] is True
+
+
+def test_circuit_breaker_skip_is_typed_but_not_required_coverage_debt():
+    plan = {
+        "reason": "recon_circuit_breaker_open",
+        "r2": False,
+        "provider": False,
+        "raw_network": False,
+    }
+
+    assert ReconOrchestrator._skip_class(plan["reason"]) == "policy_blocked"
+    assert ReconOrchestrator._coverage_required(plan, local_lab_scope=False) is False
 
 
 def test_explicit_local_lab_scope_skips_external_perimeter_probes():
@@ -83,9 +102,47 @@ def test_explicit_local_lab_scope_skips_external_perimeter_probes():
     ):
         assert by_name[name]["status"] == "skipped"
         assert by_name[name]["reason"] == "local_lab_not_applicable"
+        assert by_name[name]["skip_class"] == "not_applicable"
+        assert by_name[name]["coverage_required"] is False
 
     assert by_name["httpx_probe"]["status"] == "eligible"
     assert by_name["human_recon_crawl"]["status"] == "eligible"
+
+
+def test_explicit_local_lab_scope_applies_bounded_mission_fanout():
+    class SessionStore:
+        def get(self, _session_id):
+            return {
+                "scope_rules": [{
+                    "rule_type": "allow",
+                    "pattern": "host.docker.internal",
+                    "allow_private": True,
+                }]
+            }
+
+    orchestrator = ReconOrchestrator(session_store=SessionStore())
+    bounded, applied = orchestrator._bounded_mission_config(
+        "http://host.docker.internal:3001/",
+        "session-1",
+        {
+            "max_endpoints": 100,
+            "max_depth": 2,
+            "max_followups_per_endpoint": 8,
+            "mission_timeout_seconds": 1800,
+            "local_lab_bounds": {
+                "max_endpoints": 8,
+                "max_depth": 1,
+                "max_followups_per_endpoint": 2,
+                "mission_timeout_seconds": 600,
+            },
+        },
+    )
+
+    assert applied is True
+    assert bounded["max_endpoints"] == 8
+    assert bounded["max_depth"] == 1
+    assert bounded["max_followups_per_endpoint"] == 2
+    assert bounded["mission_timeout_seconds"] == 600
 
 
 def test_recon_planning_statuses_are_safe_knowledge_graph_statuses():
@@ -230,6 +287,102 @@ def test_recon_budget_and_circuit_breaker_are_explicit():
     ])
     assert result["execution"]["circuit_breaker_open"] is True
     assert result["execution"]["attempted"] == 3
+
+
+def test_recon_skip_persistence_failure_is_partial_and_visible():
+    from core.structured_contract import ToolResultV1
+
+    class BrokenRepository:
+        def persist(self, *_args, **_kwargs):
+            raise RuntimeError("database unavailable")
+
+    result = ToolResultV1(
+        tool_name="blocked-recon",
+        category="recon",
+        target="http://fixture.local",
+        status="skipped",
+    )
+    ReconOrchestrator(repository=BrokenRepository())._persist_skip("session-1", result)
+
+    assert result.status == "partial"
+    assert result.errors[-1].code == "recon_skip_persistence_error"
+    assert result.metrics["persistence_error"]["error_type"] == "RuntimeError"
+
+
+def test_recon_skip_result_always_has_typed_error_and_coverage_metadata():
+    result = ReconOrchestrator._skip_result(
+        {
+            "public_name": "mixed_content_scanner",
+            "status": "skipped",
+            "reason": "local_lab_not_applicable",
+            "skip_class": "not_applicable",
+            "coverage_required": False,
+        },
+        "http://fixture.local",
+    )
+
+    assert result.status == "skipped"
+    assert result.errors
+    assert all(isinstance(item, ToolErrorV1) for item in result.errors)
+    assert result.metrics["skip_reason"] == "local_lab_not_applicable"
+    assert result.metrics["skip_class"] == "not_applicable"
+    assert result.metrics["coverage_required"] is False
+
+
+def test_persist_skip_normalizes_untyped_result_before_repository_write():
+    class RecordingRepository:
+        def __init__(self):
+            self.results = []
+
+        def persist(self, _session_id, result, _validations=None, **_kwargs):
+            self.results.append(result)
+
+    repository = RecordingRepository()
+    result = ToolResultV1(
+        tool_name="mixed_content_scanner",
+        category="recon",
+        target="http://fixture.local",
+        status="skipped",
+    )
+
+    ReconOrchestrator(repository=repository)._persist_skip("session-1", result)
+
+    assert result.status == "partial"
+    assert result.errors[0].code == "skip_reason_missing"
+    assert repository.results[0].metrics["coverage_required"] is True
+
+
+def test_recon_mission_timeout_is_authoritative_and_visible():
+    import time
+    from core.structured_contract import ToolResultV1
+
+    class SlowRunner:
+        def execute(self, _tool, _kwargs, **extra):
+            time.sleep(0.02)
+            return ToolResultV1(
+                tool_name="slow-recon",
+                category="recon",
+                target=extra["target"],
+                status="succeeded",
+                summary="completed",
+            )
+
+    orchestrator = ReconOrchestrator(
+        config={"recon": {"mission_timeout_seconds": 0.01}},
+        registry_lookup=lambda _name: object(),
+        tool_resolver=lambda capability: capability,
+        runner=SlowRunner(),
+    )
+    result = orchestrator.execute(
+        "http://fixture.local",
+        "",
+        selected_tools=["httpx_probe", "browser_extract_surface"],
+    )
+
+    assert result["status"] == "partial"
+    assert result["execution"]["mission_timed_out"] is True
+    assert result["execution"]["attempted"] == 1
+    assert any(item.get("reason") == "mission_timeout" for item in result["plan"])
 
 
 def test_recon_recursive_fanout_is_bounded_and_parent_linked(monkeypatch):

@@ -52,6 +52,22 @@ TOOL_RUN_NAME_ALIASES = {
     "active_recon_target": "human_recon_crawl",
 }
 
+# Surface semantics remain preferred when available, but a mapped application
+# with no useful parameter names must still receive core detector coverage.
+# Mutation, credential-attempt, upload, and OOB/SSRF actions are intentionally
+# excluded from this unattended local-lab baseline.
+BASELINE_CATEGORIES: Tuple[str, ...] = (
+    "cors",
+    "sql_injection",
+    "xss",
+    "path_traversal",
+    "ssti",
+    "open_redirect",
+    "graphql",
+    "session_security",
+    "websocket",
+)
+
 
 def _clamp(value: float, minimum: float = 0.0, maximum: float = 1.0) -> float:
     return max(minimum, min(maximum, float(value)))
@@ -85,6 +101,27 @@ def _as_dict(value: Any) -> Dict[str, Any]:
     if hasattr(value, "__dict__"):
         return dict(value.__dict__)
     return {}
+
+
+def _safe_endpoint_url(value: Any) -> str:
+    """Accept only concrete HTTP(S) endpoints suitable for a detector.
+
+    Redirect payloads and browser artifacts can contain escaped separators or
+    control characters.  Feeding those strings back into a multi-request
+    detector creates slow false paths and can make a bounded mission appear
+    hung.  Invalid artifacts are skipped; the planner may fall back to the
+    session's original target.
+    """
+    raw = str(value or "").strip()
+    if not raw or "\\" in raw or any(ord(char) < 32 for char in raw):
+        return ""
+    try:
+        parsed = urlsplit(raw)
+        if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
+            return ""
+    except (TypeError, ValueError):
+        return ""
+    return raw
 
 
 def _stable_reasoning_value(value: Any) -> Any:
@@ -265,10 +302,21 @@ class PlanningSnapshot:
     observations: List[Dict[str, Any]] = field(default_factory=list)
     tool_runs: List[Dict[str, Any]] = field(default_factory=list)
     identities: List[Dict[str, Any]] = field(default_factory=list)
+    auth_contexts: List[Dict[str, Any]] = field(default_factory=list)
     identity_graphs: List[Dict[str, Any]] = field(default_factory=list)
+    identity_coverage_plans: List[Dict[str, Any]] = field(default_factory=list)
     workflow_matrices: List[Dict[str, Any]] = field(default_factory=list)
     business_entities: List[Dict[str, Any]] = field(default_factory=list)
     published_workflows: List[Dict[str, Any]] = field(default_factory=list)
+    request_templates: List[Dict[str, Any]] = field(default_factory=list)
+    resource_instances: List[Dict[str, Any]] = field(default_factory=list)
+    authorization_expectations: List[Dict[str, Any]] = field(default_factory=list)
+    authorization_replays: List[Dict[str, Any]] = field(default_factory=list)
+    business_invariants: List[Dict[str, Any]] = field(default_factory=list)
+    business_state_transitions: List[Dict[str, Any]] = field(default_factory=list)
+    browser_runs: List[Dict[str, Any]] = field(default_factory=list)
+    retests: List[Dict[str, Any]] = field(default_factory=list)
+    workflow_events: List[Dict[str, Any]] = field(default_factory=list)
 
     def digest(self) -> str:
         stable = {
@@ -280,10 +328,21 @@ class PlanningSnapshot:
             "errors": list(self.errors),
             "tool_runs": [(item.get("tool_run_id"), item.get("status")) for item in self.tool_runs],
             "identities": [(item.get("identity_id"), item.get("status")) for item in self.identities],
+            "auth_contexts": [(item.get("auth_context_id"), item.get("identity_id"), item.get("status")) for item in self.auth_contexts],
             "identity_graphs": [(item.get("graph_id"), item.get("digest")) for item in self.identity_graphs],
+            "identity_coverage_plans": [(item.get("plan_id"), item.get("status"), item.get("digest")) for item in self.identity_coverage_plans],
             "workflow_matrices": [(item.get("matrix_id"), item.get("status")) for item in self.workflow_matrices],
             "business_entities": [(item.get("fingerprint"), item.get("state_digest")) for item in self.business_entities],
             "published_workflows": [(item.get("workflow_id"), item.get("current_version")) for item in self.published_workflows],
+            "request_templates": [(item.get("template_id"), item.get("fingerprint"), item.get("side_effect_class")) for item in self.request_templates],
+            "resource_instances": [(item.get("resource_id"), item.get("fingerprint"), item.get("owner_identity_id")) for item in self.resource_instances],
+            "authorization_expectations": [(item.get("expectation_id"), item.get("subject_identity_id"), item.get("resource_fingerprint"), item.get("expected")) for item in self.authorization_expectations],
+            "authorization_replays": [(item.get("replay_run_id"), item.get("status")) for item in self.authorization_replays],
+            "business_invariants": [(item.get("invariant_id"), item.get("status"), item.get("revision")) for item in self.business_invariants],
+            "business_state_transitions": [(item.get("transition_id"), item.get("after_snapshot_id")) for item in self.business_state_transitions],
+            "browser_runs": [(item.get("run_id"), item.get("status"), item.get("role")) for item in self.browser_runs],
+            "retests": [(item.get("retest_id"), item.get("finding_id"), item.get("status"), item.get("retest_evidence_ids")) for item in self.retests],
+            "workflow_events": [(item.get("event_id"), item.get("type"), item.get("success"), item.get("evidence_id")) for item in self.workflow_events[-100:]],
         }
         return _digest(stable)
 
@@ -315,7 +374,11 @@ class AdaptiveHypothesisPlanner:
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         raw = config if config is not None else get_config().get("adaptive_planner", {})
         self.config = raw or {}
-        self.max_proposals = max(1, min(10, int(self.config.get("max_proposals", 3))))
+        configured_proposals = self.config.get("max_proposals")
+        if configured_proposals is None or str(configured_proposals).strip().lower() in {"", "auto", "unlimited", "none", "null"}:
+            self.max_proposals: Optional[int] = None
+        else:
+            self.max_proposals = max(1, int(configured_proposals))
         self.max_hypotheses = max(8, min(250, int(self.config.get("max_hypotheses", 80))))
         self.max_attempts = max(1, min(10, int(self.config.get("max_attempts_per_hypothesis", 3))))
         weights = self.config.get("scoring", {})
@@ -350,6 +413,7 @@ class AdaptiveHypothesisPlanner:
 
         generated = self._candidate_hypotheses(context, snapshot)
         generated.extend(self._surface_hypotheses(context, state, snapshot))
+        generated.extend(self._baseline_hypotheses(context, state, snapshot))
         if not generated:
             generated.append(self._surface_gap_hypothesis(context, state))
 
@@ -362,7 +426,14 @@ class AdaptiveHypothesisPlanner:
 
         current: List[HypothesisRecord] = []
         for hypothesis in list(unique.values())[: self.max_hypotheses]:
-            hypothesis.max_test_attempts = self.max_attempts
+            configured_attempts = hypothesis.metadata.get("max_test_attempts") if isinstance(hypothesis.metadata, dict) else None
+            try:
+                hypothesis.max_test_attempts = (
+                    max(1, min(10, int(configured_attempts)))
+                    if configured_attempts is not None else self.max_attempts
+                )
+            except (TypeError, ValueError):
+                hypothesis.max_test_attempts = self.max_attempts
             current.append(workflow.upsert_hypothesis(hypothesis))
         self._sync_validated_findings(workflow, snapshot)
 
@@ -372,6 +443,21 @@ class AdaptiveHypothesisPlanner:
             if item.fingerprint and item.status in ACTION_DEDUP_STATUSES
         }
         failed_tools = self._failed_tool_counts(snapshot.tool_runs)
+        baseline_matrix_active = any(
+            isinstance(item.metadata, dict)
+            and item.metadata.get("source") == "baseline_detector_matrix"
+            for item in generated
+        )
+        covered_categories = {
+            str(item.category or "")
+            for item in workflow.hypotheses
+            if str(item.category or "") in BASELINE_CATEGORIES
+            and (item.test_attempts > 0 or item.status in TERMINAL_HYPOTHESIS_STATUSES)
+        }
+        uncovered_baseline = (
+            set(BASELINE_CATEGORIES) - covered_categories
+            if baseline_matrix_active else set()
+        )
         considered: List[Dict[str, Any]] = []
         proposal_candidates: List[Tuple[float, HypothesisRecord, PlannerCapability, str, Dict[str, float], List[str], str]] = []
         knowledge_gaps: List[str] = [
@@ -407,6 +493,15 @@ class AdaptiveHypothesisPlanner:
                 continue
 
             score, breakdown = self._score(hypothesis, capability, tool, context, state, request, failed_tools)
+            category_key = str(hypothesis.category or capability.category)
+            # A mapped application must make progress across vulnerability
+            # families.  Surface heuristics can otherwise keep producing a
+            # fresh login/session hypothesis and starve untouched baseline
+            # detectors on later replans.
+            if category_key in BASELINE_CATEGORIES and uncovered_baseline:
+                coverage_adjustment = 0.22 if category_key in uncovered_baseline else -0.18
+                score = round(_clamp(score + coverage_adjustment), 4)
+                breakdown["coverage_bonus"] = round(coverage_adjustment, 4)
             evidence_snapshot = sorted(set(hypothesis.supporting_evidence_ids + hypothesis.contradicting_evidence_ids))
             action_fingerprint = _digest(
                 hypothesis.fingerprint, tool, evidence_snapshot, hypothesis.test_attempts,
@@ -428,8 +523,17 @@ class AdaptiveHypothesisPlanner:
         proposal_candidates.sort(key=lambda item: (-item[0], item[1].fingerprint, item[3]))
         proposals: List[ActionProposal] = []
         selected_ids: List[str] = []
+        selected_categories: set[str] = set()
         for score, hypothesis, capability, tool, breakdown, alternatives, action_fingerprint in proposal_candidates:
-            selected = len(proposals) < self.max_proposals
+            # Keep a single proposal per vulnerability family in one cycle.
+            # Without this diversity cap, several login-like endpoints can
+            # consume the whole budget with repeated session checks and starve
+            # SQLi/XSS/CORS/etc. detector coverage.
+            category_key = str(hypothesis.category or capability.category)
+            selected = (
+                (self.max_proposals is None or len(proposals) < self.max_proposals)
+                and category_key not in selected_categories
+            )
             reason = self._selection_reason(hypothesis, capability, tool, breakdown, selected)
             if not selected:
                 considered.append(self._considered(hypothesis, tool, score, False, reason, breakdown))
@@ -468,6 +572,7 @@ class AdaptiveHypothesisPlanner:
             hypothesis.status = RecordStatus.PROPOSED.value
             hypothesis.decision_reason = reason
             proposals.append(proposal)
+            selected_categories.add(category_key)
             selected_ids.append(proposal.action_id)
             considered.append(self._considered(hypothesis, tool, score, True, reason, breakdown, proposal.action_id))
 
@@ -609,19 +714,30 @@ class AdaptiveHypothesisPlanner:
         *,
         model_actions: Optional[Sequence[Dict[str, Any]]] = None,
         model_id: str = "",
-        mode: str = "shadow",
+        mode: str = "autonomous",
     ) -> ReasoningCycleResult:
-        """Run one bounded reasoning cycle around the existing deterministic planner.
+        """Run one reasoning cycle around the adaptive planner.
 
-        The LLM is an optional proposal source. Deterministic planning, scope,
-        approval, cleanup, and validation remain the source of truth.
+        The live system has one autonomous path. The model proposes strategy
+        and actions; typed scope, approval, cleanup, and validation boundaries
+        remain execution invariants rather than selectable modes.
         """
         snapshot = snapshot or PlanningSnapshot()
         planned = self.plan(context, state, snapshot, request)
         cycle_id = planned.decision.cycle_id
         config = get_config().get("reasoning", {}) or {}
-        max_actions = max(1, min(20, int(config.get("max_actions_per_cycle", self.max_proposals))))
-        max_cycles = max(1, min(100, int(config.get("max_cycles", 10))))
+
+        def optional_count(name: str, fallback: Optional[int] = None) -> Optional[int]:
+            raw = config.get(name, fallback)
+            if raw is None or str(raw).strip().lower() in {"", "auto", "unlimited", "none", "null"}:
+                return None
+            try:
+                return max(1, int(raw))
+            except (TypeError, ValueError):
+                return fallback
+
+        max_actions = optional_count("max_actions_per_cycle", self.max_proposals)
+        max_cycles = optional_count("max_cycles")
         search_branches, branch_transitions, adaptation = self.build_search_branches(
             context, snapshot, planned, cycle_id,
             failed_action_ids=[
@@ -687,7 +803,8 @@ class AdaptiveHypothesisPlanner:
             })
 
         actions: List[PlannerActionV1] = []
-        for proposal in planned.proposals[:max_actions]:
+        selected_proposals = planned.proposals if max_actions is None else planned.proposals[:max_actions]
+        for proposal in selected_proposals:
             side_effect = "mutation" if proposal.cleanup_required or proposal.risk in {"high", "critical"} else "read"
             branch = branch_by_action.get(proposal.action_id)
             actions.append(PlannerActionV1(
@@ -746,7 +863,7 @@ class AdaptiveHypothesisPlanner:
         cycle_status = "stopped" if triggered else ("partial" if any(not item.valid for item in traces) else "succeeded")
         cycle = ReasoningCycleV1(
             cycle_id=cycle_id, session_id=str(context.get("session_id", "")), objective=str(context.get("attack_goal") or request),
-            mode=mode if mode in {"shadow", "strict"} else "shadow", status=cycle_status,
+            mode="autonomous", status=cycle_status,
             snapshot_digest=snapshot.digest(), model_id=model_id, action_budget=max_actions,
             max_cycles=max_cycles, selected_action_ids=[item.action_id for item in actions],
             hypothesis_ids=[item.get("hypothesis_id", "") for item in hypotheses],
@@ -789,8 +906,50 @@ class AdaptiveHypothesisPlanner:
         known_evidence: set[str], known_tools: set[str], model_id: str = "",
         stale_evidence: Optional[set[str]] = None,
     ) -> List[ModelActionTraceV1]:
+        def observed_endpoint(candidate: str) -> bool:
+            """Accept an observed path or its query/child path only.
+
+            A raw string ``startswith`` check lets ``/api/items-evil`` pass
+            when ``/api/items`` was observed.  Compare normalized origins and
+            path boundaries instead; the model may refine a known endpoint's
+            query string, but it cannot widen the host or path namespace.
+            """
+            if candidate in known_targets:
+                return True
+            try:
+                parsed_candidate = urlsplit(candidate)
+                if parsed_candidate.scheme.lower() not in {"http", "https"} or not parsed_candidate.hostname:
+                    return False
+                candidate_origin = (
+                    parsed_candidate.scheme.lower(),
+                    parsed_candidate.netloc.lower(),
+                )
+                candidate_path = parsed_candidate.path or "/"
+            except (TypeError, ValueError):
+                return False
+            for target in known_targets:
+                try:
+                    parsed_target = urlsplit(target)
+                    target_origin = (
+                        parsed_target.scheme.lower(),
+                        parsed_target.netloc.lower(),
+                    )
+                    if candidate_origin != target_origin:
+                        continue
+                    target_path = parsed_target.path or "/"
+                    if target_path == "/" or candidate_path == target_path:
+                        return True
+                    if candidate_path.startswith(target_path.rstrip("/") + "/"):
+                        return True
+                except (TypeError, ValueError):
+                    continue
+            return False
+
         traces: List[ModelActionTraceV1] = []
-        for raw in list(raw_actions)[:20]:
+        # The gateway already bounds the response by bytes/schema. Do not add
+        # a second arbitrary action-count truncation here; retain all model
+        # proposals so the scheduler can choose a dynamic safe batch.
+        for raw in list(raw_actions):
             digest = _digest(raw, length=64)
             try:
                 action = PlannerActionV1(**{**dict(raw), "cycle_id": cycle_id})
@@ -799,7 +958,7 @@ class AdaptiveHypothesisPlanner:
                 continue
             reasons: List[str] = []
             unknown_tool = bool(action.tool_name and action.tool_name not in known_tools)
-            hallucinated = bool(action.endpoint_ref and action.endpoint_ref not in known_targets and not any(action.endpoint_ref.startswith(target) for target in known_targets if target))
+            hallucinated = bool(action.endpoint_ref and not observed_endpoint(action.endpoint_ref))
             invented = any(item not in known_evidence for item in action.evidence_ids)
             stale_context = bool(set(action.evidence_ids) & set(stale_evidence or set()))
             unsafe = action.is_mutating() and (not action.requires_approval or not action.cleanup_ref)
@@ -965,16 +1124,16 @@ class AdaptiveHypothesisPlanner:
         endpoints: Dict[Tuple[str, str], Dict[str, Any]] = {}
         for raw in getattr(state, "endpoints", []) or []:
             item = _as_dict(raw)
-            url = str(item.get("url") or "")
+            url = _safe_endpoint_url(item.get("url"))
             if url:
                 endpoints[(str(item.get("method") or "GET").upper(), url)] = item
         for node in (getattr(state, "attack_surface", {}) or {}).get("nodes", []):
-            url = str(node.get("url") or "")
+            url = _safe_endpoint_url(node.get("url"))
             if url:
                 endpoints.setdefault(("GET", url), {"url": url, "method": "GET", "parameters": [], "kind": node.get("kind")})
         observation_by_target: Dict[str, List[str]] = {}
         for observation in snapshot.observations:
-            url = str(observation.get("target_url") or "")
+            url = _safe_endpoint_url(observation.get("target_url"))
             if url:
                 observation_by_target.setdefault(url, []).append(str(observation.get("observation_id") or ""))
                 metadata = observation.get("metadata") if isinstance(observation.get("metadata"), dict) else {}
@@ -1017,6 +1176,93 @@ class AdaptiveHypothesisPlanner:
                         hypothesis.metadata["identity_contexts_seen"] = len(identities)
                     hypotheses.append(hypothesis)
         return hypotheses
+
+    def _baseline_hypotheses(
+        self, context: Dict[str, Any], state: Any, snapshot: PlanningSnapshot,
+    ) -> List[HypothesisRecord]:
+        """Seed one bounded detector hypothesis per core vulnerability family.
+
+        This only activates after recon has produced an endpoint or surface
+        node. An empty snapshot still yields the recon mission, while a
+        completed recon cannot silently collapse into keyword heuristics only.
+        """
+        endpoints: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        for raw in getattr(state, "endpoints", []) or []:
+            item = _as_dict(raw)
+            url = _safe_endpoint_url(item.get("url"))
+            if url:
+                endpoints[(str(item.get("method") or "GET").upper(), url)] = item
+        for node in (getattr(state, "attack_surface", {}) or {}).get("nodes", []):
+            url = _safe_endpoint_url(node.get("url"))
+            if url:
+                endpoints.setdefault(("GET", url), {"url": url, "method": "GET", "parameters": []})
+        if not endpoints:
+            fallback = _safe_endpoint_url(context.get("target_url"))
+            if fallback:
+                endpoints[("GET", fallback)] = {"url": fallback, "method": "GET", "parameters": []}
+        if not endpoints:
+            return []
+
+        # A hand-built fixture endpoint is not proof that recon has completed.
+        # Enable the matrix only after the session contains a persisted recon
+        # signal (or an attack-surface graph), preserving deterministic planner
+        # control-suite expectations while covering real mapped targets.
+        has_mapped_surface = bool((getattr(state, "attack_surface", {}) or {}).get("nodes"))
+        has_mapped_surface = has_mapped_surface or any(
+            str(item.get("category") or "").lower() == "recon"
+            and str(item.get("status") or "").lower() == "succeeded"
+            for item in snapshot.tool_runs
+        )
+        if not has_mapped_surface:
+            return []
+
+        observation_by_target: Dict[str, List[str]] = {}
+        for observation in snapshot.observations:
+            url = _safe_endpoint_url(observation.get("target_url"))
+            if url:
+                observation_by_target.setdefault(url, []).append(str(observation.get("observation_id") or ""))
+
+        rows = sorted(endpoints.items(), key=lambda item: (item[0][1], item[0][0]))
+
+        def endpoint_score(item: Tuple[Tuple[str, str], Dict[str, Any]], category: str) -> Tuple[int, int, str]:
+            (method, url), endpoint = item
+            lower = url.lower()
+            parameters = endpoint.get("parameters") or []
+            has_input = bool(parameters or urlsplit(url).query or method not in {"GET", "HEAD"})
+            semantic_path = any(token in lower for token in (
+                "login", "search", "query", "api", "graphql", "upload", "socket", "redirect",
+            ))
+            category_path = {
+                "session_security": any(token in lower for token in ("login", "token", "session")),
+                "graphql": "graphql" in lower,
+                "websocket": "socket" in lower or lower.startswith(("ws:", "wss:")),
+                "open_redirect": "redirect" in lower,
+            }.get(category, False)
+            return (int(category_path), int(has_input or semantic_path), url)
+
+        selected: List[HypothesisRecord] = []
+        for category in BASELINE_CATEGORIES:
+            (method, url), details = max(rows, key=lambda item: endpoint_score(item, category))
+            parameters = sorted({str(item) for item in (details.get("parameters") or []) if str(item)})
+            try:
+                parameters.extend(
+                    key for key, _ in parse_qsl(urlsplit(url).query, keep_blank_values=True)
+                    if key not in parameters
+                )
+            except Exception:
+                pass
+            parameter = parameters[0] if parameters else ""
+            hypothesis = self._surface_hypothesis(
+                category, url or context.get("target_url", ""), method, parameter,
+                f"baseline_{category}", observation_by_target.get(url, []), context,
+            )
+            hypothesis.metadata.update({
+                "source": "baseline_detector_matrix",
+                "max_test_attempts": 1,
+                "baseline_category": category,
+            })
+            selected.append(hypothesis)
+        return selected
 
     def _surface_hypothesis(
         self,

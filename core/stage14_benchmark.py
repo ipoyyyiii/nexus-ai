@@ -225,6 +225,6 @@ class Stage14BenchmarkEngine:
 
 def run_stage14_model_shadow_trial(run_id: str, scenario: EvaluationScenarioV1, *, trial_number: int, trial_count: int, model_id: str):
     trial = EvaluationTrialV1(run_id=run_id, scenario_id=scenario.scenario_id, trial_number=trial_number, trial_count=trial_count, mode="model", model_id=model_id, provider="offline_stub", status="succeeded", started_at=now_iso(), finished_at=now_iso())
-    action = ModelActionV1(trial_id=trial.trial_id, action="observe", tool_name="mission_graph_engine", evidence_roles=["baseline"], rationale="Shadow model action is constrained to observation; deterministic engine owns path status.", valid=True)
+    action = ModelActionV1(trial_id=trial.trial_id, action="observe", tool_name="mission_graph_engine", evidence_roles=["baseline"], rationale="Autonomous model action is constrained to observation; deterministic validation owns path status.", valid=True)
     trial.action_count = 1; trial.valid_action_count = 1
     return trial, [action]

@@ -12,6 +12,7 @@ import fnmatch
 import ipaddress
 import json
 import re
+import time
 import uuid
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Optional
@@ -198,8 +199,15 @@ class ReconOrchestrator:
             from core.config_loader import get_config
 
             loaded = dict(get_config().get("recon") or {})
-            loaded.update(configured)
-            return loaded
+            def merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+                merged = dict(base)
+                for key, value in override.items():
+                    if isinstance(value, dict) and isinstance(merged.get(key), dict):
+                        merged[key] = merge(merged[key], value)
+                    else:
+                        merged[key] = value
+                return merged
+            return merge(loaded, configured)
         except Exception:
             return configured
 
@@ -224,6 +232,24 @@ class ReconOrchestrator:
         if statuses & {429, 503}:
             return True
         return bool(statuses & {403, 406} and result.tool_name != "waf_behavior_profile")
+
+    @staticmethod
+    def _retryable_result(result: Any) -> bool:
+        """Only retry typed failures explicitly marked safe by the tool."""
+        return (
+            str(getattr(result, "status", "")).lower() in {"failed", "partial"}
+            and any(bool(getattr(error, "retryable", False)) for error in (getattr(result, "errors", []) or []))
+        )
+
+    @staticmethod
+    def _read_only_retry_limit() -> int:
+        try:
+            from core.config_loader import get_config
+
+            value = (get_config().get("execution", {}) or {}).get("max_attempts_read_only", 3)
+            return max(1, min(5, int(value)))
+        except (TypeError, ValueError, AttributeError):
+            return 3
 
     def _explicit_local_lab_scope(self, target: str, session_id: str) -> bool:
         """Require the session's explicit private-scope opt-in for local skips.
@@ -252,6 +278,18 @@ class ReconOrchestrator:
             ):
                 return True
         return False
+
+    def _bounded_mission_config(self, target: str, session_id: str, config: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
+        """Apply a finite fan-out budget only to explicitly scoped local labs."""
+        if not self._explicit_local_lab_scope(target, session_id):
+            return config, False
+        bounds = dict(config.get("local_lab_bounds") or {})
+        bounded = dict(config)
+        bounded["max_endpoints"] = max(1, min(50, int(bounds.get("max_endpoints", 20) or 20)))
+        bounded["max_depth"] = max(0, min(2, int(bounds.get("max_depth", 1) or 1)))
+        bounded["max_followups_per_endpoint"] = max(0, min(4, int(bounds.get("max_followups_per_endpoint", 2) or 2)))
+        bounded["mission_timeout_seconds"] = max(30.0, min(900.0, float(bounds.get("mission_timeout_seconds", 600) or 600)))
+        return bounded, True
 
     def is_mutating_recon_tool(self, public_name: str) -> bool:
         return any(item.public_name == public_name and item.mutation for item in _specs())
@@ -311,6 +349,9 @@ class ReconOrchestrator:
                 else:
                     eligible_count += 1
 
+            row["skip_class"] = self._skip_class(str(row.get("reason") or ""))
+            row["coverage_required"] = self._coverage_required(row, local_lab_scope)
+
             output.append(row)
 
         # A selected unknown tool is never silently ignored.
@@ -324,8 +365,74 @@ class ReconOrchestrator:
                     "risk": "unknown",
                     "status": "unavailable",
                     "reason": "not_recon_capability",
+                    "skip_class": "unavailable",
+                    "coverage_required": True,
                 })
         return output
+
+    @staticmethod
+    def _skip_class(reason: str) -> str:
+        """Normalize why a capability was not run for coverage accounting.
+
+        A skipped operation is not automatically a coverage failure: perimeter
+        OSINT, provider calls, raw-network probes, and mutation probes may be
+        inapplicable or require separate operator approval. Persisting this
+        class lets a release gate distinguish those cases from missing
+        required web/API coverage.
+        """
+        value = str(reason or "").strip().lower()
+        if value in {"eligible", "recursive_followup"}:
+            return "scheduled"
+        if value in {
+            "local_lab_not_applicable", "provider_queries_disabled",
+            "waf_testing_disabled", "waf_strategy_suppressed",
+        }:
+            return "not_applicable"
+        if value in {"approval_required", "exact_approval_required"}:
+            return "approval_blocked"
+        if value in {
+            "raw_network_disabled", "r2_active_disabled",
+            "recon_circuit_breaker_open", "waf_circuit_breaker_open",
+        }:
+            return "capability_disabled" if value == "r2_active_disabled" else "policy_blocked"
+        if "budget" in value or value in {"mission_timeout", "mission_cancelled"}:
+            return "budget_or_cancelled"
+        if value in {"tool_not_registered", "not_recon_capability"}:
+            return "unavailable"
+        return "not_scheduled"
+
+    @classmethod
+    def _coverage_required(cls, plan: Dict[str, Any], local_lab_scope: bool) -> bool:
+        """Mark required coverage without treating optional perimeter probes as debt."""
+        reason = str(plan.get("reason") or "")
+        if cls._skip_class(reason) == "not_applicable":
+            return False
+        if bool(plan.get("provider")) or bool(plan.get("raw_network")):
+            return False
+        # A circuit breaker is an operational safety response to rate-limit,
+        # WAF, or transport failure. It remains visible in the ledger, but it
+        # is not a missing-coverage obligation while continuing to hit the
+        # same target would be unsafe or misleading.
+        if reason in {"recon_circuit_breaker_open", "waf_circuit_breaker_open"}:
+            return False
+        # R2 is an explicit capability profile, not an execution failure. A
+        # baseline web/API mission with R2 disabled must record the omission,
+        # but must not turn that operator configuration into a fake required
+        # coverage failure. A later phase can enable R2 and score its coverage
+        # independently.
+        if reason == "r2_active_disabled":
+            return False
+        # R2/perimeter discovery is optional in a web application baseline, but
+        # an approval-gated content/application capability (for example POST
+        # parameter discovery or a bounded directory check) is a real
+        # coverage debt.  Keep those distinctions explicit rather than
+        # allowing every R2 skip to disappear from the acceptance gate.
+        if bool(plan.get("r2")) and not (
+            bool(plan.get("approval_required"))
+            and str(plan.get("lane") or "") in {"content", "application"}
+        ):
+            return False
+        return True
 
     def tool_kwargs(self, public_name: str, target: str, session_id: str, goal: str = "") -> Dict[str, Any]:
         host = _host(target)
@@ -369,14 +476,38 @@ class ReconOrchestrator:
     @staticmethod
     def _skip_result(plan: Dict[str, Any], target: str) -> ToolResultV1:
         reason = str(plan.get("reason") or "not_scheduled")
-        return ToolResultV1(
+        skip_class = ReconOrchestrator._skip_class(reason)
+        result = ToolResultV1(
             tool_name=str(plan.get("public_name") or "unknown"),
             category="recon",
             target=target,
             status="skipped" if plan.get("status") == "skipped" else "partial",
             summary=f"Recon capability not executed: {reason}.",
-            errors=[ToolErrorV1(code=f"recon_{reason}", message=f"Recon capability not executed: {reason}.")],
+            errors=[ToolErrorV1(
+                code=f"recon_{reason}",
+                message=f"Recon capability not executed: {reason}.",
+                retryable=False,
+                details={
+                    "skip_reason": reason,
+                    "skip_class": skip_class,
+                    "coverage_required": bool(plan.get(
+                        "coverage_required",
+                        skip_class != "not_applicable",
+                    )),
+                },
+            )],
+            metrics={
+                "skip_reason": reason,
+                "skip_class": skip_class,
+                "coverage_required": bool(plan.get("coverage_required", skip_class != "not_applicable")),
+            },
         )
+        # Keep this constructor safe if a future planner path omits one of
+        # the required fields.  The runner owns the canonical status/error
+        # normalization and is also used by legacy adapter execution.
+        from core.structured_runner import StructuredToolRunner
+
+        return StructuredToolRunner._normalize_result_contract(result)
 
     def _runner(self) -> Any:
         if self.runner is not None:
@@ -391,13 +522,27 @@ class ReconOrchestrator:
         return self.runner
 
     def _persist_skip(self, session_id: str, result: ToolResultV1) -> None:
+        from core.structured_runner import StructuredToolRunner
+
+        result = StructuredToolRunner._normalize_result_contract(result)
         if session_id and self.repository:
             try:
                 self.repository.persist(session_id, result, [])
-            except Exception:
-                # The execution result remains visible in the mission output;
-                # persistence failures must not turn a skip into a false pass.
-                pass
+            except Exception as exc:
+                # A skipped capability is still part of the authoritative
+                # coverage ledger.  Never hide a failed write: convert the
+                # skip into a partial result so the mission cannot report a
+                # clean coverage pass with an unpersisted terminal record.
+                result.errors.append(ToolErrorV1(
+                    code="recon_skip_persistence_error",
+                    message=f"Skipped capability record was not persisted: {type(exc).__name__}: {exc}",
+                    retryable=True,
+                ))
+                result.metrics["persistence_error"] = {
+                    "error_type": type(exc).__name__,
+                    "message": str(exc)[:500],
+                }
+                result.status = "partial"
 
     def _run_waf_profile(self, target: str, session_id: str, job_id: str, approval_granted: bool) -> ToolResultV1:
         config = self._waf_config()
@@ -1917,7 +2062,22 @@ class ReconOrchestrator:
                 version=version,
                 parent_graph_id=str(current.get("graph_id") or ""),
             )
-            knowledge_graph_repository.save_compiled(compiled)
+            persistence_error = None
+            for attempt in range(2):
+                try:
+                    knowledge_graph_repository.save_compiled(compiled)
+                    persistence_error = None
+                    break
+                except Exception as exc:
+                    persistence_error = exc
+                    if attempt == 0:
+                        # Supabase/PostgREST can terminate a transient HTTP
+                        # stream after the tool run has already completed.
+                        # Retry the idempotent, fingerprinted graph write
+                        # once; append-only rows make a retry safe.
+                        time.sleep(0.25)
+            if persistence_error is not None:
+                raise persistence_error
             try:
                 from core.target_state import get_target_state
 
@@ -1951,10 +2111,13 @@ class ReconOrchestrator:
         goal: str = "map the web/API attack surface",
         job_id: str = "",
         selected_tools: Optional[Iterable[str]] = None,
+        adaptive_selection: bool = False,
         approval_granted: bool = False,
         scope: Any = None,
     ) -> Dict[str, Any]:
         config = self._recon_config()
+        config, local_lab_bounds_applied = self._bounded_mission_config(target, session_id, config)
+        local_lab_scope = self._explicit_local_lab_scope(target, session_id)
         self._waf_strategy = {}
         plan = self.plan(target, session_id, selected_tools=selected_tools, approval_granted=approval_granted)
         results: list[ToolResultV1] = []
@@ -1963,6 +2126,11 @@ class ReconOrchestrator:
         failures = 0
         error_threshold = float(config.get("stop_on_error_rate", 0.50) or 0.50)
         max_runs = max(1, int(config.get("max_runs", 128) or 128))
+        mission_timeout_seconds = max(
+            0.01, float(config.get("mission_timeout_seconds", 1800) or 1800)
+        )
+        mission_started = time.monotonic()
+        mission_deadline = mission_started + mission_timeout_seconds
         max_endpoints = max(1, int(config.get("max_endpoints", 100) or 100))
         max_depth = max(0, int(config.get("max_depth", 2) or 2))
         max_followups = max(0, int(config.get("max_followups_per_endpoint", 8) or 8))
@@ -1974,7 +2142,7 @@ class ReconOrchestrator:
         # contract.  Do not silently fan it out into additional browser or
         # crawler runs; callers that want adaptive expansion use the full
         # mission (selected=None) or configure a separate bounded plan.
-        followup_names = [] if selected is not None else [
+        followup_names = [] if selected is not None and not adaptive_selection else [
             str(name) for name in configured_followups if str(name)
         ]
         # An explicit operator/tool pack is already a bounded plan.  Persisting
@@ -1982,7 +2150,9 @@ class ReconOrchestrator:
         # large recon pack spend most of its time in redundant database writes.
         # Keep incremental graph updates for adaptive missions, and always
         # compile the authoritative final snapshot below.
-        incremental_graph_updates = bool(config.get("incremental_graph_updates", True)) and selected is None
+        incremental_graph_updates = bool(config.get("incremental_graph_updates", True)) and (
+            selected is None or adaptive_selection
+        )
         eligible_initial_names = {
             str(item.get("public_name"))
             for item in plan
@@ -1999,6 +2169,8 @@ class ReconOrchestrator:
         max_depth_reached = 0
         waf_circuit_open = False
         waf_actions = 0
+        mission_cancelled = False
+        mission_timed_out = False
 
         # Non-eligible initial capabilities are explicit records, never silent
         # omissions.  Eligible capabilities become deterministic FIFO tasks.
@@ -2017,6 +2189,19 @@ class ReconOrchestrator:
             })
 
         while task_queue:
+            if job_id:
+                try:
+                    from core.cancellation import cancellation_store
+
+                    if cancellation_store.is_cancelled(job_id):
+                        mission_cancelled = True
+                        break
+                except Exception:
+                    pass
+            if time.monotonic() >= mission_deadline:
+                mission_timed_out = True
+                break
+
             task = task_queue.pop(0)
             name = str(task["public_name"])
             task_target = str(task["target"])
@@ -2107,6 +2292,9 @@ class ReconOrchestrator:
                 else:
                     try:
                         tool = self.tool_resolver(capability)
+                        runtime_config = {
+                            "waf_strategy": dict(self._waf_strategy),
+                        } if self._waf_strategy else {}
                         result = runner.execute(
                             tool,
                             self.tool_kwargs(name, task_target, session_id, goal),
@@ -2114,10 +2302,37 @@ class ReconOrchestrator:
                             session_id=session_id,
                             category="recon",
                             job_id=job_id,
-                            runtime_config={
-                                "waf_strategy": dict(self._waf_strategy),
-                            } if self._waf_strategy else None,
+                            runtime_config=runtime_config or None,
                         )
+                        recovery_attempts = 1
+                        # Recon is part of the canonical execution path. A
+                        # retryable read-only transport failure must use the
+                        # same typed recovery contract as the AI loop, or the
+                        # live gate sees a false hard failure and the mission
+                        # cannot distinguish transient transport from a real
+                        # tool defect.
+                        if self._retryable_result(result) and not self.is_mutating_recon_tool(name):
+                            retry_limit = self._read_only_retry_limit()
+                            while recovery_attempts < retry_limit and self._retryable_result(result):
+                                recovery_attempts += 1
+                                previous_run_id = str(getattr(result, "tool_run_id", "") or "")
+                                retry_runtime = dict(runtime_config)
+                                retry_runtime.update({
+                                    "recovery_of_run_id": previous_run_id,
+                                    "recovery_attempt": recovery_attempts,
+                                    "recovery_reason": str(getattr(result, "summary", "") or "retryable_recon_result"),
+                                })
+                                result = runner.execute(
+                                    tool,
+                                    self.tool_kwargs(name, task_target, session_id, goal),
+                                    target=task_target,
+                                    session_id=session_id,
+                                    category="recon",
+                                    job_id=job_id,
+                                    runtime_config=retry_runtime,
+                                )
+                                if str(getattr(result, "status", "")).lower() == "succeeded":
+                                    break
                     except Exception as exc:
                         result = ToolResultV1(
                             tool_name=name,
@@ -2187,6 +2402,64 @@ class ReconOrchestrator:
                     })
                     scheduled_followups += 1
 
+        # Make work that was queued but could not start visible in the
+        # authoritative mission trace. This prevents a deadline/cancel from
+        # looking like a successful omission in the returned plan.
+        if mission_cancelled or mission_timed_out:
+            pending_reason = "mission_cancelled" if mission_cancelled else "mission_timeout"
+            while task_queue:
+                pending = task_queue.pop(0)
+                pending_item = pending.get("plan_item")
+                if pending_item is None:
+                    pending_name = str(pending.get("public_name") or "unknown")
+                    spec = next((item for item in _specs() if item.public_name == pending_name), None)
+                    pending_item = {
+                        "schema_version": "1.0",
+                        "public_name": pending_name,
+                        "lane": spec.lane if spec else "unknown",
+                        "risk": spec.risk if spec else "unknown",
+                        "provider": bool(spec and spec.provider),
+                        "r2": bool(spec and spec.r2),
+                        "raw_network": bool(spec and spec.raw_network),
+                        "approval_required": bool(spec and spec.approval_required),
+                        "status": "skipped",
+                        "reason": pending_reason,
+                        "skip_class": self._skip_class(pending_reason),
+                        "coverage_required": self._coverage_required(
+                            {
+                                "provider": bool(spec and spec.provider),
+                                "r2": bool(spec and spec.r2),
+                                "raw_network": bool(spec and spec.raw_network),
+                                "reason": pending_reason,
+                            },
+                            local_lab_scope,
+                        ),
+                        "target": str(pending.get("target") or target),
+                        "depth": int(pending.get("depth", 0) or 0),
+                        "parent_tool_run_id": str(pending.get("parent_tool_run_id") or ""),
+                        "is_followup": int(pending.get("depth", 0) or 0) > 0,
+                    }
+                    plan.append(pending_item)
+                else:
+                    pending_item.update(status="skipped", reason=pending_reason)
+                    pending_item.setdefault("skip_class", self._skip_class(pending_reason))
+                    pending_item.setdefault("coverage_required", self._coverage_required(pending_item, local_lab_scope))
+                skipped = self._skip_result(pending_item, str(pending.get("target") or target))
+                results.append(skipped)
+                self._persist_skip(session_id, skipped)
+                trace.append({
+                    "sequence": len(trace) + 1,
+                    "tool_run_id": skipped.tool_run_id,
+                    "tool_name": str(pending_item.get("public_name") or "unknown"),
+                    "target": str(pending.get("target") or target),
+                    "depth": int(pending.get("depth", 0) or 0),
+                    "parent_tool_run_id": str(pending.get("parent_tool_run_id") or ""),
+                    "role": "followup" if int(pending.get("depth", 0) or 0) else "seed",
+                    "status": skipped.status,
+                    "reason": pending_reason,
+                    "queue_remaining": len(task_queue),
+                })
+
         sources = self.knowledge_sources(target, plan, results, session_id=session_id)
         if session_id:
             if incremental_graph_updates and graph_updates:
@@ -2196,18 +2469,39 @@ class ReconOrchestrator:
         else:
             graph = {"status": "not_persisted"}
         counts: Dict[str, int] = {}
+        skip_reasons: Dict[str, int] = {}
+        skip_classes: Dict[str, int] = {}
+        required_skips: List[Dict[str, Any]] = []
         for item in plan:
             status = str(item.get("status") or "unknown")
             counts[status] = counts.get(status, 0) + 1
+            if status in {"skipped", "waiting_approval", "unavailable"}:
+                reason = str(item.get("reason") or "not_scheduled")
+                skip_reasons[reason] = skip_reasons.get(reason, 0) + 1
+                skip_class = str(item.get("skip_class") or self._skip_class(reason))
+                skip_classes[skip_class] = skip_classes.get(skip_class, 0) + 1
+                if bool(item.get("coverage_required")):
+                    required_skips.append({
+                        "public_name": str(item.get("public_name") or ""),
+                        "reason": reason,
+                        "skip_class": skip_class,
+                    })
         summaries = []
         for result in results:
             summary = result.llm_summary()
             summaries.append(json.loads(summary) if summary.startswith("{") else summary)
+        mission_status = (
+            "cancelled" if mission_cancelled else
+            "partial" if mission_timed_out else
+            "partial" if required_skips else
+            "succeeded" if all(item.status not in {"failed", "partial"} for item in results)
+            else "partial"
+        )
         return {
             "schema_version": "1.0",
             "mission_id": f"recon_{uuid.uuid4().hex}",
             "target": target,
-            "status": "succeeded" if all(item.status not in {"failed", "partial"} for item in results) else "partial",
+            "status": mission_status,
             "plan": plan,
             "counts": counts,
             "execution": {
@@ -2219,6 +2513,30 @@ class ReconOrchestrator:
                 "waf_strategy": redact(dict(self._waf_strategy)),
                 "max_runs": max_runs,
                 "max_depth": max_depth,
+                "mission_cancelled": mission_cancelled,
+                "mission_timed_out": mission_timed_out,
+                "mission_timeout_seconds": mission_timeout_seconds,
+                "mission_elapsed_seconds": round(time.monotonic() - mission_started, 3),
+                "local_lab_bounds_applied": local_lab_bounds_applied,
+                "local_lab_limits": {
+                    "max_endpoints": max_endpoints,
+                    "max_depth": max_depth,
+                    "max_followups_per_endpoint": max_followups,
+                } if local_lab_bounds_applied else {},
+                "skip_reasons": dict(sorted(skip_reasons.items())),
+                "skip_classes": dict(sorted(skip_classes.items())),
+                "required_coverage_skips": required_skips,
+            },
+            "coverage": {
+                "planned": len(plan),
+                "attempted": attempted,
+                "completed": sum(1 for item in results if item.status in {"succeeded", "partial", "failed"}),
+                "skipped": sum(1 for item in results if item.status == "skipped"),
+                "required_skipped": len(required_skips),
+                "optional_skipped": max(0, sum(1 for item in results if item.status == "skipped") - len(required_skips)),
+                "required_coverage_status": "incomplete" if required_skips else "complete",
+                "skip_reasons": dict(sorted(skip_reasons.items())),
+                "skip_classes": dict(sorted(skip_classes.items())),
             },
             "fanout": {
                 "discovered_endpoints": len(discovered),

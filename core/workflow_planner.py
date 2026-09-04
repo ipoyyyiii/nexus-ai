@@ -3,6 +3,7 @@
 from typing import Any, Dict, List, Optional
 
 from core.adaptive_planner import AdaptiveHypothesisPlanner, PlanningSnapshot
+from core.autonomous_web_pentest import AutonomousWebPentestLoop
 from core.phase_machine import allowed_transitions, can_transition
 from core.session_store import SessionStore
 from core.target_state import TargetState
@@ -58,11 +59,12 @@ class WorkflowPlanner:
                 "observation_count": len(snapshot.observations),
                 "tool_run_count": len(snapshot.tool_runs),
                 "identity_count": len(snapshot.identities),
+                "readiness": AutonomousWebPentestLoop._readiness(snapshot),
             },
             "workflow": workflow.to_dict(),
         }
 
-    def reasoning_cycle(self, session_id: str, request: str = "", *, model_actions: Optional[List[Dict[str, Any]]] = None, model_id: str = "", mode: str = "shadow") -> Dict[str, Any]:
+    def reasoning_cycle(self, session_id: str, request: str = "", *, model_actions: Optional[List[Dict[str, Any]]] = None, model_id: str = "", mode: str = "autonomous") -> Dict[str, Any]:
         context, state = self.load(session_id)
         snapshot = self._snapshot(session_id)
         context = {**context, "session_id": session_id}
@@ -91,7 +93,12 @@ class WorkflowPlanner:
         """Read session-local Stage 1/2 facts; missing additive tables are safe."""
         def rows(table: str, limit: int) -> List[Dict[str, Any]]:
             try:
-                query = self.sessions.sb.table(table).select("*").eq("session_id", session_id)
+                if table == "auth_contexts":
+                    query = self.sessions.sb.table(table).select(
+                        "*, identities!inner(session_id)"
+                    ).eq("identities.session_id", session_id)
+                else:
+                    query = self.sessions.sb.table(table).select("*").eq("session_id", session_id)
                 try:
                     query = query.order("created_at", desc=True)
                 except Exception:
@@ -107,6 +114,19 @@ class WorkflowPlanner:
             tool_runs=rows("tool_runs", 500),
             errors=snapshot_errors,
             identities=rows("identities", 50),
+            auth_contexts=rows("auth_contexts", 100),
+            identity_graphs=rows("identity_graph_versions", 50),
+            identity_coverage_plans=rows("identity_coverage_plans", 100),
+            workflow_matrices=rows("workflow_run_matrices", 100),
+            business_entities=rows("business_entities", 200),
+            published_workflows=rows("browser_workflows", 100),
+            request_templates=rows("request_templates", 200),
+            resource_instances=rows("resource_instances", 200),
+            authorization_expectations=rows("authorization_expectations", 500),
+            authorization_replays=rows("authorization_replay_runs", 100),
+            business_invariants=rows("business_invariants", 200),
+            business_state_transitions=rows("business_state_transitions", 500),
+            browser_runs=rows("browser_runs", 200),
         )
 
     @staticmethod

@@ -118,8 +118,8 @@ class BusinessInvariantCompiler:
 
 
 class BusinessInvariantEngine:
-    def __init__(self, mode: str = "shadow"):
-        self.mode = mode if mode in {"shadow", "strict"} else "shadow"
+    def __init__(self, mode: str = "autonomous"):
+        self.mode = "autonomous"
 
     def evaluate(
         self,
@@ -177,14 +177,14 @@ class BusinessInvariantEngine:
                 severity=str(rule.get("severity", "MEDIUM")).upper(),
                 target_url=str(rule.get("target_url", "")),
                 status="suspected",
-                confidence_score=0.7 if self.mode == "strict" else 0.55,
+                confidence_score=0.7,
                 confidence_reasons=[reason, "deterministic invariant evaluation"],
                 observation_ids=sorted(set(evidence_ids)),
                 metadata={
                     "invariant_id": invariant.invariant_id,
                     "rule_type": invariant.rule_type,
                     "evaluation_id": evaluation.evaluation_id,
-                    "mode": self.mode,
+                    "assessment_mode": self.mode,
                     "typed_rule": True,
                     "graph_id": getattr(invariant, "graph_id", ""),
                     "workflow_matrix_id": getattr(invariant, "workflow_matrix_id", ""),

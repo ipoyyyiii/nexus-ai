@@ -4,7 +4,6 @@ import time
 from typing import Any, Dict, Iterable, Optional
 
 from core.chat_runtime import classify_provider_error
-from core.model_registry import build_chat_llm
 
 
 class ChatProviderError(RuntimeError):
@@ -31,6 +30,10 @@ class ChatProvider:
             attempts.append(label)
             for retry in range(2):
                 try:
+                    # Resolve provider SDKs only when chat is explicitly used;
+                    # canonical API/worker startup must not initialize the
+                    # legacy CrewAI/provider graph.
+                    from core.model_registry import build_chat_llm
                     response = build_chat_llm(model_id).invoke(messages)
                     return str(response.content), {"model": label, "attempts": attempts, "retry": retry}
                 except Exception as exc:

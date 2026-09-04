@@ -1,0 +1,42 @@
+suite_id: nexus-live-web-lab-matrix
+version: "1.0"
+name: Nexus authorized live web-lab matrix
+description: >-
+  Read-only availability and surface probes for locally owned vulnerable labs.
+  This manifest never declares a vulnerability and never enables mutations.
+profiles:
+  - id: juice-shop
+    name: OWASP Juice Shop
+    env_var: NEXUS_LAB_JUICE_SHOP_URL
+    default_target: http://host.docker.internal:3001/
+    safe_probe_path: /
+    expected_surfaces: [spa, api, auth, search]
+    notes: Local Docker lab only.
+  - id: crapi
+    name: crAPI
+    env_var: NEXUS_LAB_CRAPI_URL
+    default_target: http://host.docker.internal:8888/
+    safe_probe_path: /
+    expected_surfaces: [api, auth, business]
+    notes: Local Docker lab only.
+  - id: webgoat
+    name: WebGoat
+    env_var: NEXUS_LAB_WEBGOAT_URL
+    default_target: http://host.docker.internal:8080
+    safe_probe_path: /WebGoat/login
+    expected_surfaces: [auth, forms, lessons]
+    notes: Local Docker lab only.
+  - id: dvwa
+    name: Damn Vulnerable Web Application
+    env_var: NEXUS_LAB_DVWA_URL
+    default_target: http://host.docker.internal:8081/
+    safe_probe_path: /login.php
+    expected_surfaces: [auth, forms, php]
+    notes: Local Docker lab only.
+  - id: owasp-benchmark
+    name: OWASP Benchmark
+    env_var: NEXUS_LAB_OWASP_BENCHMARK_URL
+    default_target: ""
+    safe_probe_path: /
+    expected_surfaces: [java, api, benchmark]
+    notes: Set the URL explicitly; no default port is assumed.

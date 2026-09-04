@@ -6,7 +6,6 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from core.chat_provider import ChatProvider, ChatProviderError
 from core.chat_runtime import ChatStreamEvent, chat_cancellation, new_message_id
-from core.model_registry import build_chat_llm
 from core.session_store import SessionStore
 
 

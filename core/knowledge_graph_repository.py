@@ -38,6 +38,34 @@ class KnowledgeGraphRepository:
         rows = self.sb.table(table).select(column).eq(column, value).limit(1).execute().data or []
         return bool(rows)
 
+    def _existing_values(self, table: str, column: str, values: List[str]) -> set[str]:
+        """Fetch existing keys in bounded batches instead of one query per row."""
+        wanted = {str(value) for value in values if value}
+        existing: set[str] = set()
+        ordered = sorted(wanted)
+        for offset in range(0, len(ordered), 200):
+            batch = ordered[offset:offset + 200]
+            if not batch:
+                continue
+            rows = self.sb.table(table).select(column).in_(column, batch).execute().data or []
+            existing.update(str(row.get(column)) for row in rows if row.get(column))
+        return existing
+
+    def _insert_missing(self, table: str, column: str, rows: List[Dict[str, Any]]) -> int:
+        """Insert deduplicated rows in batches while preserving append-only semantics."""
+        unique: Dict[str, Dict[str, Any]] = {}
+        for row in rows:
+            key = str(row.get(column) or "")
+            if key:
+                unique.setdefault(key, row)
+        if not unique:
+            return 0
+        existing = self._existing_values(table, column, list(unique))
+        pending = [row for key, row in unique.items() if key not in existing]
+        for offset in range(0, len(pending), 100):
+            self.sb.table(table).insert(pending[offset:offset + 100]).execute()
+        return len(pending)
+
     def save_compiled(self, compiled: Dict[str, Any]) -> Dict[str, Any]:
         graph = TargetKnowledgeGraphV1(**dict(compiled.get("graph") or {})).ensure_digest()
         graph_row = self._dump(graph)
@@ -46,25 +74,27 @@ class KnowledgeGraphRepository:
         else:
             graph_row = (self.sb.table("target_knowledge_graph_versions").select("*").eq("graph_id", graph.graph_id).limit(1).execute().data or [graph_row])[0]
 
-        for raw in compiled.get("nodes") or []:
-            node = KnowledgeNodeV1(**dict(raw)).ensure_fingerprint()
-            if not self._exists("target_knowledge_nodes", "node_id", node.node_id):
-                self.sb.table("target_knowledge_nodes").insert(self._dump(node)).execute()
-        for raw in compiled.get("edges") or []:
-            edge = KnowledgeEdgeV1(**dict(raw)).ensure_fingerprint()
-            if not self._exists("target_knowledge_edges", "edge_id", edge.edge_id):
-                self.sb.table("target_knowledge_edges").insert(self._dump(edge)).execute()
-        for raw in compiled.get("contradictions") or []:
-            contradiction = ContradictionSetV1(**dict(raw))
-            if not self._exists("target_knowledge_contradictions", "contradiction_id", contradiction.contradiction_id):
-                self.sb.table("target_knowledge_contradictions").insert(self._dump(contradiction)).execute()
+        node_rows = [
+            self._dump(KnowledgeNodeV1(**dict(raw)).ensure_fingerprint())
+            for raw in compiled.get("nodes") or []
+        ]
+        self._insert_missing("target_knowledge_nodes", "node_id", node_rows)
+        edge_rows = [
+            self._dump(KnowledgeEdgeV1(**dict(raw)).ensure_fingerprint())
+            for raw in compiled.get("edges") or []
+        ]
+        self._insert_missing("target_knowledge_edges", "edge_id", edge_rows)
+        contradiction_rows = [
+            self._dump(ContradictionSetV1(**dict(raw)))
+            for raw in compiled.get("contradictions") or []
+        ]
+        self._insert_missing("target_knowledge_contradictions", "contradiction_id", contradiction_rows)
 
         coverage_rows = []
         for raw in compiled.get("coverage") or []:
             item = CoverageItemV1(**dict(raw)).ensure_fingerprint()
             coverage_rows.append(self._dump(item))
-            if not self._exists("target_coverage_items", "coverage_id", item.coverage_id):
-                self.sb.table("target_coverage_items").insert(self._dump(item)).execute()
+        self._insert_missing("target_coverage_items", "coverage_id", coverage_rows)
         snapshot = {
             "coverage_snapshot_id": graph.coverage_snapshot_id,
             "graph_id": graph.graph_id,
@@ -87,13 +117,8 @@ class KnowledgeGraphRepository:
         }
 
     def save_source_links(self, links: List[KnowledgeSourceLinkV1]) -> int:
-        count = 0
-        for link in links:
-            row = self._dump(link)
-            if not self._exists("target_knowledge_source_links", "link_id", link.link_id):
-                self.sb.table("target_knowledge_source_links").insert(row).execute()
-                count += 1
-        return count
+        rows = [self._dump(link) for link in links]
+        return self._insert_missing("target_knowledge_source_links", "link_id", rows)
 
     def current(self, session_id: str) -> Optional[Dict[str, Any]]:
         rows = self.sb.table("target_knowledge_graph_versions").select("*").eq(

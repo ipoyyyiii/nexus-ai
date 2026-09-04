@@ -26,6 +26,7 @@ ARG TPLMAP_COMMIT=616b0e527f62dd0930e6346ede6bef79e9bcf717
 ARG TESTSSL_COMMIT=1283aff3d49763dffe20bd47c664308c6ec076cf
 ARG GRAPHQL_COP_COMMIT=2b7e086efae672f28b419c7fcdfe6b48d846c9dc
 ARG SECLISTS_COMMIT=e9d6a61ead7193f05a16194252115da4abb33c0e
+ARG WPSCAN_VERSION=3.8.28
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
@@ -34,6 +35,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     unzip \
     nmap \
+    ruby-full \
+    build-essential \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -91,6 +94,11 @@ RUN pip install --no-cache-dir arjun
 
 # Install hydra
 RUN apt-get update && apt-get install -y -qq hydra && apt-get clean
+
+# Install WPScan. Keep the version pinned so the external scanner is
+# reproducible across backend and worker images.
+RUN gem install wpscan --no-document --version "${WPSCAN_VERSION}" \
+    && wpscan --version
 
 # Install katana
 RUN wget -q https://github.com/projectdiscovery/katana/releases/download/v1.1.0/katana_1.1.0_linux_amd64.zip \

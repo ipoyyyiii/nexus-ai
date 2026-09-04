@@ -274,7 +274,7 @@ def _stage13(args: argparse.Namespace) -> int:
         "run": run.model_dump(mode="json"), "release_gate": gate.model_dump(mode="json"),
         "trial_replays": replays,
         "coverage": {"samples": len(coverage), "required": matrix.required_count, "diagnostic": matrix.diagnostic_count, "failure_taxonomy": {key: sum(item.failure_taxonomy == key for item in coverage) for key in sorted({item.failure_taxonomy for item in coverage if item.failure_taxonomy})}},
-        "operational_note": "Crash/soak and external dependency checks are local deterministic simulations; run the operational drill before strict cutover.",
+        "operational_note": "Crash/soak and external dependency checks are local deterministic simulations; run the operational drill before production readiness is claimed.",
     }
     print(json.dumps(redact(summary), sort_keys=True, indent=2))
     return 0 if gate.decision == "ready" else 1

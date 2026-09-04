@@ -292,6 +292,7 @@ class AuthorizationReplayRunV1(AuthorizationModel):
     resource_fingerprint: str
     owner_identity_id: str
     test_identity_ids: List[str] = Field(default_factory=list)
+    negative_control_identity_id: str = ""
     expectation_ids: List[str] = Field(default_factory=list)
     mutation_approved: bool = False
     status: Literal["planned", "running", "succeeded", "partial", "failed", "cancelled"] = "planned"

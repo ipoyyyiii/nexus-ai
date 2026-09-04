@@ -37,6 +37,21 @@ SSTI_PAYLOADS = [
     ("*{7*7}", "49", "Spring EL alternative"),
     ("{{=7*7}}", "49", "Slim/Pug"),
 ]
+MAX_SSTI_PARAMETERS = 8
+
+
+def _bounded_parameter_list(values: list[str], limit: int = MAX_SSTI_PARAMETERS) -> list[str]:
+    """Deduplicate and cap parameter fan-out for one autonomous action."""
+    result = []
+    seen = set()
+    for value in values:
+        item = str(value or "").strip()
+        if item and item not in seen:
+            seen.add(item)
+            result.append(item)
+        if len(result) >= max(1, int(limit)):
+            break
+    return result
 
 
 def _test_ssti_on_param(url: str, param: str, method: str = "GET") -> list:
@@ -49,6 +64,8 @@ def _test_ssti_on_param(url: str, param: str, method: str = "GET") -> list:
         if not payload:
             continue
         try:
+            if check_cancelled(exec_logger):
+                return findings
             rate_limiter.wait(domain)
 
             if method.upper() == "GET":
@@ -235,7 +252,7 @@ def ssti_tester(target_url: str, params: str = "") -> str:
 
     # Resolve parameter list
     if params:
-        param_list = [p.strip() for p in params.split(",") if p.strip()]
+        param_list = _bounded_parameter_list(params.split(","))
     else:
         # Auto-detect from URL query string
         from urllib.parse import urlparse, parse_qs
@@ -247,9 +264,7 @@ def ssti_tester(target_url: str, params: str = "") -> str:
                         "lang", "redirect", "url", "path", "file", "view",
                         "theme", "layout", "format", "type", "id", "msg"]
 
-        for p in common_params:
-            if p not in param_list:
-                param_list.append(p)
+        param_list = _bounded_parameter_list(param_list + common_params)
 
     exec_logger.add_log("SSTI Tester", "PROCESSING", f"Testing {len(param_list)} parameters")
 

@@ -55,7 +55,7 @@ def web_crawler(url: str, depth: int = 2, scope: str = "subdomain") -> str:
     approved = require_approval(
         action=f"Web crawl on {url}",
         context=f"Discovering endpoints with depth={depth}, scope={scope}",
-        risk="low",
+        risk="read_only",
         exec_logger=logger,
     )
     if not approved:

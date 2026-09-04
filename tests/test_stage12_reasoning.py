@@ -1,11 +1,13 @@
 import unittest
+import uuid
 
 from core.adaptive_planner import AdaptiveHypothesisPlanner, PlanningSnapshot
 from core.stage12_benchmark import Stage12BenchmarkEngine, load_stage12_suite
 from core.structured_contract import PlannerActionV1, ReportClaimV1, ReportNarrativeV1
-from core.structured_repository import StructuredRepository
+from core.structured_repository import ReasoningPersistenceError, StructuredRepository
 from core.target_state import TargetState
 from core.workflow_models import WorkflowState
+from core.workflow_report import calculate_report_quality
 from tools.report_generator import ReportGenerator
 
 
@@ -18,8 +20,24 @@ class _FakeTable:
         self.records.setdefault(self.name, []).append(dict(row))
         return self
 
+    def select(self, *_args, **_kwargs):
+        return self
+
+    def eq(self, key, value):
+        self.filter_key = key
+        self.filter_value = value
+        return self
+
+    def limit(self, *_args, **_kwargs):
+        return self
+
     def execute(self):
-        return type("Response", (), {"data": []})()
+        rows = self.records.get(self.name, [])
+        key = getattr(self, "filter_key", None)
+        value = getattr(self, "filter_value", None)
+        if key is not None:
+            rows = [row for row in rows if row.get(key) == value]
+        return type("Response", (), {"data": [dict(row) for row in rows]})()
 
 
 class _FakeSupabase:
@@ -30,9 +48,44 @@ class _FakeSupabase:
         return _FakeTable(name, self.records)
 
 
+class _ConflictTable(_FakeTable):
+    def upsert(self, row, **_kwargs):
+        # Simulate PostgREST's ignore_duplicates path when an old append-only
+        # audit row already owns the conflict key. The repository read-back
+        # must detect that the durable row is not the requested row.
+        if self.name == "reasoning_model_calls" and any(
+            item.get("call_id") == row.get("call_id")
+            for item in self.records.get(self.name, [])
+        ):
+            return self
+        return super().upsert(row, **_kwargs)
+
+
+class _ConflictSupabase(_FakeSupabase):
+    def table(self, name):
+        return _ConflictTable(name, self.records)
+
+
 class _FakeStore:
     def __init__(self):
         self.sb = _FakeSupabase()
+
+
+class _FailingTable(_FakeTable):
+    def execute(self):
+        if self.name == "reasoning_model_calls":
+            raise RuntimeError("migration 023 is unavailable")
+        return super().execute()
+
+
+class _FailingSupabase(_FakeSupabase):
+    def table(self, name):
+        return _FailingTable(name, self.records)
+
+
+class _FailingStore(_FakeStore):
+    def __init__(self):
+        self.sb = _FailingSupabase()
 
 
 class Stage12ReasoningTests(unittest.TestCase):
@@ -105,6 +158,27 @@ class Stage12ReasoningTests(unittest.TestCase):
         self.assertFalse(traces[1].valid)
         self.assertTrue(traces[1].unsafe_mutation)
 
+    def test_model_action_validation_preserves_all_bounded_response_actions(self):
+        raw_actions = [
+            {
+                "action_type": "run_read_only",
+                "tool_name": "scan_sql_injection",
+                "endpoint_ref": "http://fixture.local/search",
+                "hypothesis_id": f"h-{index}",
+            }
+            for index in range(24)
+        ]
+
+        traces = AdaptiveHypothesisPlanner.validate_model_actions(
+            "cycle-many-actions",
+            raw_actions,
+            known_targets={"http://fixture.local/search"},
+            known_evidence=set(),
+            known_tools={"scan_sql_injection"},
+        )
+
+        self.assertEqual(len(traces), 24)
+
     def test_reasoning_persistence_whitelists_contract_metadata(self):
         planner = AdaptiveHypothesisPlanner({"max_proposals": 1})
         result = planner.build_reasoning_cycle(
@@ -127,8 +201,129 @@ class Stage12ReasoningTests(unittest.TestCase):
             },
         )
         self.assertEqual(stored["session_id"], "session-1")
+        self.assertTrue(stored["_persistence"]["strict"])
+        self.assertEqual(stored["_persistence"]["attempted"]["reasoning_cycles"], 1)
         self.assertNotIn("schema_version", fake.sb.records["reasoning_cycles"][0])
         self.assertNotIn("source_candidate_ids", fake.sb.records["reasoning_hypotheses"][0])
+
+    def test_reasoning_model_call_persistence_fails_loud(self):
+        repository = StructuredRepository(_FailingStore())
+        with self.assertRaisesRegex(RuntimeError, "reasoning_model_calls"):
+            repository.save_reasoning_result(
+                "session-1",
+                {
+                    "cycle": {"cycle_id": "cycle-1", "session_id": "session-1"},
+                    "model_calls": [{
+                        "call_id": "call-1", "cycle_id": "cycle-1",
+                        "session_id": "session-1", "status": "succeeded",
+                    }],
+                },
+            )
+
+    def test_reasoning_persistence_normalizes_uuid_job_ids_and_auto_budgets(self):
+        job_id = str(uuid.uuid4())
+        repository = StructuredRepository(_FakeStore())
+        repository.save_reasoning_result(
+            "session-1",
+            {
+                "cycle": {
+                    "cycle_id": "cycle-normalized",
+                    "session_id": "wrong-session-is-overridden",
+                    "job_id": f"job_{job_id}",
+                    "action_budget": None,
+                    "max_cycles": None,
+                    "status": "succeeded",
+                },
+                "model_calls": [{
+                    "call_id": "call-normalized",
+                    "cycle_id": "cycle-normalized",
+                    "session_id": "wrong-session-is-overridden",
+                    "job_id": f"job_{job_id}",
+                    "status": "succeeded",
+                    "attempt_number": 1,
+                }],
+            },
+        )
+        fake = repository.sb
+        assert fake.records["reasoning_cycles"][0]["session_id"] == "session-1"
+        assert fake.records["reasoning_cycles"][0]["job_id"] == job_id
+        assert fake.records["reasoning_cycles"][0]["action_budget"] == 0
+        assert fake.records["reasoning_cycles"][0]["max_cycles"] == 0
+        assert fake.records["reasoning_model_calls"][0]["job_id"] == job_id
+
+    def test_reasoning_action_readback_requires_ai_dispatch_outcome(self):
+        repository = StructuredRepository(_FakeStore())
+        base = {
+            "cycle": {
+                "cycle_id": "cycle-action-link",
+                "session_id": "session-1",
+                "status": "succeeded",
+                "action_budget": 1,
+                "max_cycles": 1,
+            },
+            "actions": [{
+                "action_id": "action-link",
+                "cycle_id": "cycle-action-link",
+                "action_type": "run_read_only",
+                "status": "completed",
+                "metadata": {
+                    "ai_dispatch_expected": True,
+                    "dispatch_outcome": {
+                        "outcome_status": "succeeded",
+                        "tool_run_id": "run-link",
+                    },
+                },
+            }],
+        }
+        repository.save_reasoning_result("session-1", base)
+
+        missing_outcome = {
+            **base,
+            "cycle": {**base["cycle"], "cycle_id": "cycle-action-missing"},
+            "actions": [{
+                **base["actions"][0],
+                "cycle_id": "cycle-action-missing",
+                "metadata": {"ai_dispatch_expected": True},
+            }],
+        }
+        with self.assertRaisesRegex(ReasoningPersistenceError, "no durable dispatch outcome"):
+            repository.save_reasoning_result("session-1", missing_outcome)
+
+    def test_reasoning_persistence_rejects_non_uuid_job_id(self):
+        repository = StructuredRepository(_FakeStore())
+        with self.assertRaisesRegex(RuntimeError, "job_id must be a UUID"):
+            repository.save_reasoning_result(
+                "session-1",
+                {"cycle": {"cycle_id": "cycle-invalid", "job_id": "not-a-uuid"}},
+            )
+
+    def test_reasoning_readback_rejects_ignored_conflicting_model_call(self):
+        repository = StructuredRepository(type("Store", (), {"sb": _ConflictSupabase()})())
+        repository.save_reasoning_result(
+            "session-1",
+            {
+                "cycle": {"cycle_id": "cycle-old", "status": "succeeded"},
+                "model_calls": [{
+                    "call_id": "call-append-only",
+                    "cycle_id": "cycle-old",
+                    "session_id": "session-1",
+                    "status": "failed",
+                }],
+            },
+        )
+        with self.assertRaisesRegex(RuntimeError, "durable read-back mismatch"):
+            repository.save_reasoning_result(
+                "session-1",
+                {
+                    "cycle": {"cycle_id": "cycle-new", "status": "succeeded"},
+                    "model_calls": [{
+                        "call_id": "call-append-only",
+                        "cycle_id": "cycle-new",
+                        "session_id": "session-1",
+                        "status": "succeeded",
+                    }],
+                },
+            )
 
     def test_report_contract_marks_only_evidence_backed_claim_as_grounded(self):
         grounded = ReportClaimV1(
@@ -146,6 +341,26 @@ class Stage12ReasoningTests(unittest.TestCase):
         self.assertTrue(grounded.grounded)
         self.assertFalse(ungrounded.grounded)
         self.assertFalse(narrative.grounding_complete)
+
+    def test_report_quality_requires_grounding_and_evidence(self):
+        grounded = ReportClaimV1(
+            report_id="report-1", claim_type="finding", text="validated finding",
+            evidence_ids=["obs-1"], validated=True, grounded=True,
+        )
+        quality = calculate_report_quality(
+            [grounded],
+            [{"candidate_id": "candidate-1", "metadata": {"evidence_ids": ["obs-1"]}}],
+        )
+        self.assertEqual(quality["status"], "ready")
+        self.assertEqual(quality["quality_score"], 1.0)
+
+        ungrounded = grounded.model_copy(update={"evidence_ids": [], "grounded": False})
+        quality = calculate_report_quality(
+            [ungrounded],
+            [{"candidate_id": "candidate-1", "metadata": {}}],
+        )
+        self.assertEqual(quality["status"], "review_required")
+        self.assertFalse(quality["gates"]["all_claims_grounded"])
 
     def test_legacy_report_adapter_cannot_promote_phase_text_or_candidates(self):
         generator = ReportGenerator()

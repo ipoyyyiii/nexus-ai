@@ -12,7 +12,6 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import urlsplit
 
 from core.structured_contract import CandidateFindingV1, ToolResultV1
-from core.config_loader import get_setting
 
 
 @dataclass(frozen=True)
@@ -79,7 +78,7 @@ class ValidationEngine:
         metadata = candidate.metadata or {}
         roles = {role: self._roles(observations, role) for role in ("baseline", "test", "negative_control", "reproduction")}
         checks = [
-            {"name": "deterministic_invariant_violated", "passed": metadata.get("evaluation_id", "") != "" and metadata.get("mode") == "strict"},
+            {"name": "deterministic_invariant_violated", "passed": metadata.get("evaluation_id", "") != "" and metadata.get("assessment_mode", "autonomous") == "autonomous"},
             {"name": "baseline_present", "passed": bool(roles["baseline"])},
             {"name": "negative_control_present", "passed": bool(roles["negative_control"])},
             {"name": "reproduction_present", "passed": bool(roles["reproduction"])},
@@ -87,7 +86,7 @@ class ValidationEngine:
         ]
         passed = sum(bool(item["passed"]) for item in checks)
         decision = "validated" if all(item["passed"] for item in checks) else "inconclusive"
-        return ValidationDecision(candidate.candidate_id, "business_logic_invariant", "1.0", decision, passed / len(checks), "Business-logic validation requires strict deterministic evaluation, baseline, negative control, clean reproduction, and cleanup verification.", checks)
+        return ValidationDecision(candidate.candidate_id, "business_logic_invariant", "1.0", decision, passed / len(checks), "Business-logic validation requires an authoritative deterministic evaluation, baseline, negative control, clean reproduction, and cleanup verification.", checks)
 
     def _race_condition(self, candidate: CandidateFindingV1, observations: List[Any]) -> ValidationDecision:
         metadata = candidate.metadata or {}
@@ -127,12 +126,7 @@ class ValidationEngine:
             {"name": "reproduction_present", "passed": bool(reproductions and reproduction_ids.intersection(test_identities))},
         ]
         decision = "validated" if all(item["passed"] for item in checks) else "inconclusive"
-        graph_mode = self.authorization_graph_mode or str(get_setting("authorization_graph_mode", "strict"))
-        if decision == "validated" and graph_mode.lower() == "shadow":
-            decision = "inconclusive"
-            reason = "Authorization graph is in shadow mode; deterministic result is recorded but not promoted."
-        else:
-            reason = "Authorization requires isolated identities, an explicit deny expectation or private canary, semantic access evidence, and reproduction."
+        reason = "Authorization requires isolated identities, an explicit deny expectation or private canary, semantic access evidence, and reproduction."
         return ValidationDecision(
             candidate.candidate_id, "authorization_differential", "1.0", decision,
             sum(bool(item["passed"]) for item in checks) / len(checks),

@@ -196,6 +196,9 @@ class StatefulBrowserRunner:
                 approval_ref=inherited.approval_ref if inherited else "",
                 approval_digest=inherited.approval_digest if inherited else "",
                 approval_granted=inherited.approval_granted if inherited else False,
+                authorized_lab_mode=inherited.authorized_lab_mode if inherited else False,
+                authorized_lab_origin=inherited.authorized_lab_origin if inherited else "",
+                suite_preapproval_id=inherited.suite_preapproval_id if inherited else "",
             )
             context_manager = use_execution_context(context)
             with context_manager:

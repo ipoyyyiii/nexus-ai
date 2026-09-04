@@ -1,4 +1,5 @@
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -46,6 +47,58 @@ def test_guarded_network_fails_closed_without_safety_kernel():
     with use_execution_context(context):
         with pytest.raises(SafetyViolation, match="no safety kernel"):
             guarded_requests.get("https://example.invalid")
+
+
+def test_guarded_http_ignores_ambient_proxy_for_direct_egress(monkeypatch):
+    import requests as real_requests
+    from core.safety_kernel import GuardedHttpClient
+
+    class SessionScope:
+        def get(self, _session_id):
+            return {
+                "scope_rules": [{
+                    "rule_type": "allow",
+                    "pattern": "127.0.0.1",
+                    "allow_private": True,
+                }]
+            }
+
+        def validate_active_scope(self, _session_id, _target):
+            return True, "in scope"
+
+    response = real_requests.Response()
+    response.status_code = 200
+    response.url = "http://127.0.0.1:18000/fixture"
+    response._content = b"ok"
+    response.headers = {}
+
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:1")
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:1")
+    client = GuardedHttpClient(
+        SafetyKernel(session_store=SessionScope()),
+        "session",
+        job_id="job",
+        tool_run_id="run",
+    )
+    with patch.object(client._session, "request", return_value=response) as request:
+        result = client.get("http://127.0.0.1:18000/fixture")
+
+    assert result.status_code == 200
+    assert "proxies" not in request.call_args.kwargs
+    assert client._session.trust_env is False
+
+
+def test_guarded_http_accepts_only_exact_operator_proxy(monkeypatch):
+    from core.safety_kernel import GuardedHttpClient
+
+    proxy_url = "http://proxy.internal:8080"
+    monkeypatch.setenv("NEXUS_OPERATOR_PROXY_URL", proxy_url)
+    assert GuardedHttpClient._validated_proxy({"http": proxy_url, "https": proxy_url}) == {
+        "http": proxy_url,
+        "https": proxy_url,
+    }
+    with pytest.raises(SafetyViolation, match="operator-configured"):
+        GuardedHttpClient._validated_proxy({"http": "http://untrusted:8080"})
 
 
 def test_guarded_subprocess_rejects_shell_and_unknown_command():
@@ -104,9 +157,67 @@ def test_private_fixture_requires_explicit_session_scope_opt_in():
 
     denied = SafetyKernel().decide(
         "session", "http_get", "http://localhost:18000/fixture",
+        allow_private=True,
     )
     assert denied.decision == "blocked"
     assert denied.reason_code == "private_ip_rejected"
+
+
+def test_metadata_targets_remain_blocked_even_with_private_opt_in():
+    for target in (
+        "http://169.254.169.254/latest/meta-data/",
+        "http://100.100.100.200/latest/meta-data/",
+        "http://metadata.google.internal/computeMetadata/v1/",
+    ):
+        decision = SafetyKernel().decide(
+            "session", "http_get", target, allow_private=True,
+        )
+        assert decision.decision == "blocked"
+        assert decision.reason_code == "metadata_target_rejected"
+
+
+def test_explicit_private_scope_applies_to_non_lab_target_too():
+    class SessionScope:
+        def get(self, session_id):
+            return {
+                "scope_rules": [{
+                    "pattern": "10.20.30.40",
+                    "rule_type": "allow",
+                    "allow_private": True,
+                }],
+            }
+
+        def validate_active_scope(self, session_id, target):
+            return True, "in scope"
+
+    allowed = SafetyKernel(session_store=SessionScope()).decide(
+        "session", "http_get", "http://10.20.30.40:8080/internal",
+    )
+    assert allowed.decision == "allowed"
+
+    class NoPrivateScope(SessionScope):
+        def get(self, session_id):
+            return {"scope_rules": [{
+                "pattern": "10.20.30.40",
+                "rule_type": "allow",
+                "allow_private": False,
+            }]}
+
+    denied = SafetyKernel(session_store=NoPrivateScope()).decide(
+        "session", "http_get", "http://10.20.30.40:8080/internal",
+    )
+    assert denied.decision == "blocked"
+    assert denied.reason_code == "private_ip_rejected"
+
+
+def test_operator_owned_oob_origin_is_allowlisted_from_deployment_env(monkeypatch):
+    monkeypatch.setenv("OOB_SERVER_URL", "http://oob.example.test")
+    monkeypatch.setenv("OOB_DOMAIN", "oob.example.test")
+    kernel = SafetyKernel()
+
+    assert kernel.provider_for("http://oob.example.test/register") == "oob"
+    assert kernel.provider_for("http://ssrf-ab12.oob.example.test/callback") == "oob"
+    assert kernel.provider_for("http://unrelated.example.test/register") != "oob"
 
 
 def test_projectdiscovery_httpx_binary_is_not_shadowed_by_python_httpx():

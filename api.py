@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -6,6 +7,7 @@ load_dotenv()
 import uuid
 import asyncio
 import json
+import httpx
 from core.target_state import set_target_state
 from core.interactive_flow import run_phase1, run_phase2_interactive, run_phase3
 import secrets
@@ -14,12 +16,12 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List
 from urllib.parse import urlparse
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Header
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from supabase import create_client, Client
+from supabase.lib.client_options import SyncClientOptions
 from langchain_core.messages import HumanMessage
-from crewai import Agent, Task, Crew
 
 from tools.custom_tools import (
     baca_log_burp, tembak_payload, recon_target,
@@ -40,7 +42,6 @@ from tools.js_analysis import analyze_js_deep
 from core.session_memory import SessionMemory, MEMORY_TABLE_SQL
 from core.scope import validate_target
 from core.checkpoint import checkpoint_store, current_job_id
-from core.model_registry import build_llm, build_chat_llm, list_available_models, chain_summary
 from core.session_store import SessionStore, SESSION_CONTEXT_SQL
 from core.chat_orchestrator import ChatOrchestrator
 from core.workflow_planner import WorkflowPlanner
@@ -73,7 +74,9 @@ from core.secret_vault import SecretVault
 from core.validation_engine import validation_engine
 from core.detection_validation_api import register_detection_validation_routes
 from core.detection_validation_v2 import validation_engine_v2
+from core.proof_pipeline import proof_pipeline
 from core.identity_context import ToolExecutionContext, set_execution_context, reset_execution_context
+from core.authorized_lab_mode import issue_preapproval
 from core.chain_planner import ChainPlanner
 from core.mission_contract import MissionV1
 from core.mission_graph import MissionGraphEngine, MissionGraphError
@@ -84,7 +87,9 @@ from core.knowledge_graph_repository import KnowledgeGraphRepository
 from core.impact_service import ImpactService
 from core.cleanup_registry import cleanup_registry
 from core.retest_service import RetestService
+from core.schema_readiness import Phase1SchemaNotReadyError, verify_phase1_acceptance_schema
 from core.workflow_report import WorkflowReport
+from core.tool_decorator import invoke_tool_compat
 from core.artifact_store import ArtifactStore
 from core.browser_workflow_contract import (
     BrowserRunV1, BrowserStepV1, BrowserWorkflowV1, BusinessInvariantV1,
@@ -95,7 +100,7 @@ from core.business_logic_engine import RULE_REGISTRY, business_invariant_compile
 from core.workflow_discovery import workflow_discovery_service
 from core.recon_orchestrator import ReconOrchestrator
 from core.identity_workflow_matrix import identity_workflow_matrix
-from core.config_loader import get_setting, get_config
+from core.config_loader import get_setting, get_config, merged_config_snapshot
 from core.execution_contract import ExecutionJobV1, ResourceBudgetV1, stable_digest
 from core.production_contract import (
     ArtifactSweepV1, CutoverDecisionV1, OperatorIncidentV1,
@@ -134,6 +139,13 @@ from tools.shodan_censys_tools import shodan_scanner, censys_scanner
 from tools.playwright_tools import login_automator, inject_session
 from tools.access_control_scanners import csrf_exploit_scanner, mass_assignment_scanner, http_method_tampering_scanner
 from tools.report_generator import report_generator
+from tools.report_export import (
+    ReportExportError,
+    ReportExporter,
+    ReportNotReadyError,
+    ReportUnavailableError,
+    normalize_report_format,
+)
 from tools.modern_protocol_tools import compare_protocol_captures, normalize_protocol_capture, operation_dicts
 from tools.waf_detector import waf_detector
 from tools.html_injection_scanner import html_injection_scanner
@@ -172,7 +184,29 @@ if os.environ.get("OPENROUTER_API_KEY"):
 
 url: str = os.environ.get("SUPABASE_URL")
 key: str = os.environ.get("SUPABASE_KEY")
-supabase: Client = create_client(url, key)
+# Bound PostgREST calls so a remote disconnect or degraded Supabase session
+# cannot hold the API background runner indefinitely during graph persistence.
+# Tool evidence remains durable when available; graph persistence reports a
+# bounded warning and the mission can still terminalize fail-closed.
+supabase: Client = create_client(
+    url,
+    key,
+    SyncClientOptions(
+        postgrest_client_timeout=10,
+        storage_client_timeout=10,
+        function_client_timeout=10,
+        # The current postgrest-py client enables HTTP/2 by default.  A
+        # transient HTTP/2 stream termination was observed during the real
+        # recon graph write, which made the mission lose its graph while the
+        # tool evidence itself had already completed.  Use one bounded,
+        # HTTP/1.1 client for deterministic Supabase persistence.
+        httpx_client=httpx.Client(
+            http2=False,
+            follow_redirects=True,
+            timeout=httpx.Timeout(10.0),
+        ),
+    ),
+)
 durable_execution_repository = DurableExecutionRepository(supabase)
 production_readiness_repository = ProductionReadinessRepository(supabase)
 evaluation_engine = EvaluationEngine()
@@ -228,7 +262,7 @@ class CutoverDecisionRequest(BaseModel):
     image_digest: str = ""
     soak_run_id: str = ""
     slo_snapshot_id: str = ""
-    rollback_ref: str = "config/pentest_config.yaml:execution_platform_mode"
+    rollback_ref: str = "config/pentest_config.yaml:assessment_mode"
 
 
 class RecoveryVerificationRequest(BaseModel):
@@ -250,24 +284,48 @@ async def health_live():
 
 
 @app.get("/health/ready")
-async def health_ready():
-    """Readiness proves the control plane can see the durable schema."""
-    checks: Dict[str, str] = {"config": "ok", "supabase": "unknown", "durable_schema": "unknown"}
+def health_ready():
+    """Readiness proves the control plane can see the durable schema.
+
+    The Supabase client is synchronous. Running these checks in an ``async``
+    route blocked Uvicorn's event loop while the database was slow, which
+    could make the independent liveness probe flap. FastAPI dispatches this
+    synchronous handler to its threadpool, preserving liveness responsiveness.
+    """
+    checks: Dict[str, str] = {
+        "config": "ok",
+        "supabase": "unknown",
+        "durable_schema": "unknown",
+        "phase1_acceptance_schema": "unknown",
+    }
     try:
         supabase.table("sessions").select("id").limit(1).execute()
         checks["supabase"] = "ok"
         supabase.table("workflow_jobs").select("job_id").limit(1).execute()
         supabase.table("workflow_job_attempts").select("attempt_id").limit(1).execute()
-        if _execution_mode() == "strict":
-            supabase.table("workflow_events").select("sequence").limit(1).execute()
-            supabase.table("worker_nodes").select("worker_id").limit(1).execute()
-            supabase.table("production_cutover_decisions").select("decision_id").limit(1).execute()
+        supabase.table("workflow_events").select("sequence").limit(1).execute()
+        supabase.table("worker_nodes").select("worker_id").limit(1).execute()
+        supabase.table("production_cutover_decisions").select("decision_id").limit(1).execute()
+        # A reachable table is not enough: 023/024 are acceptance-critical
+        # because missing telemetry or integrity triggers can make a run look
+        # successful while its audit trail is incomplete. Migration 025 writes
+        # markers only after checking the underlying tables/triggers.
+        verify_phase1_acceptance_schema(supabase)
+        checks["phase1_acceptance_schema"] = "ok"
         checks["durable_schema"] = "ok"
+    except Phase1SchemaNotReadyError as exc:
+        # Core Supabase connectivity and the pre-existing durable schema have
+        # already passed above. Keep those signals accurate while explicitly
+        # reporting the Phase 1 migration gate as the failing check.
+        checks["supabase"] = "ok"
+        checks["durable_schema"] = "ok"
+        checks["phase1_acceptance_schema"] = "error"
+        raise HTTPException(status_code=503, detail={"status": "not_ready", "checks": checks, "error": redact(str(exc))[:300]})
     except Exception as exc:
         checks["supabase"] = "error"
         checks["durable_schema"] = "error"
-        if _execution_mode() == "strict":
-            raise HTTPException(status_code=503, detail={"status": "not_ready", "checks": checks, "error": redact(str(exc))[:300]})
+        checks["phase1_acceptance_schema"] = "error"
+        raise HTTPException(status_code=503, detail={"status": "not_ready", "checks": checks, "error": redact(str(exc))[:300]})
     status = "ready" if all(value == "ok" for value in checks.values()) else "degraded"
     return {"status": status, "mode": _execution_mode(), "checks": checks}
 
@@ -468,12 +526,11 @@ async def cutover_preview(readiness_run_id: str, _: bool = Depends(require_api_k
         blockers.append("readiness_gate_not_ready")
     if not bool(run.get("cutover_candidate", False)):
         blockers.append("run_not_marked_cutover_candidate")
-    if _execution_mode() == "strict":
-        blockers.append("already_in_strict_mode")
+    blockers.append("single_autonomous_runtime_no_cutover_required")
     recovery = supabase.table("workflow_jobs").select("job_id").eq("status", "recovery_required").limit(1).execute().data or []
     if recovery:
         blockers.append("mutation_recovery_required")
-    return {"readiness_run_id": readiness_run_id, "from_mode": _execution_mode(), "to_mode": "strict", "eligible": not blockers, "blockers": blockers, "rollback_ref": "config/pentest_config.yaml:execution_platform_mode"}
+    return {"readiness_run_id": readiness_run_id, "from_mode": _execution_mode(), "to_mode": "autonomous", "eligible": False, "blockers": blockers, "rollback_ref": "config/pentest_config.yaml:assessment_mode"}
 
 
 @app.post("/ops/cutover/decision")
@@ -531,8 +588,7 @@ async def sweep_artifacts(dry_run: bool = True, _: bool = Depends(require_api_ke
     try:
         supabase.table("artifact_sweeps").insert(sweep.model_dump(mode="json")).execute()
     except Exception as exc:
-        if _execution_mode() == "strict":
-            raise HTTPException(status_code=503, detail="Artifact sweep audit persistence unavailable.") from exc
+        raise HTTPException(status_code=503, detail="Artifact sweep audit persistence unavailable.") from exc
     return sweep.model_dump(mode="json")
 
 
@@ -705,7 +761,7 @@ class WorkflowPlanRequest(BaseModel):
 class ReasoningCycleRequest(BaseModel):
     request: str = ""
     model_id: str = ""
-    mode: str = Field(default="shadow", pattern="^(shadow|strict)$")
+    mode: str = Field(default="autonomous", pattern="^autonomous$")
     model_actions: List[Dict[str, Any]] = Field(default_factory=list)
 
 
@@ -875,6 +931,11 @@ class RetestRecordRequest(BaseModel):
     status: str
     comparison: str
     evidence: Dict[str, Any] = {}
+
+
+class RetestCompareRequest(BaseModel):
+    original_result: Dict[str, Any]
+    retest_result: Dict[str, Any]
 
 
 class EvidenceRequest(BaseModel):
@@ -1058,6 +1119,10 @@ class AuthorizationReplayRequest(BaseModel):
     resource_fingerprint: str
     owner_identity_id: str
     test_identity_ids: List[str]
+    negative_control_identity_id: str = ""
+    # Optional explicit mapping prevents an identity with multiple active
+    # sessions from being selected arbitrarily during differential replay.
+    auth_contexts: Dict[str, str] = {}
     bindings: Dict[str, Any] = {}
     approved: bool = False
 
@@ -1098,6 +1163,7 @@ def save_message(session_id: str, role: str, content: str):
         print(f"[WARN] Supabase save failed: {e}")
 
 def update_job(job_id: str, **kwargs):
+    local_job = jobs.get(job_id)
     if job_id in jobs:
         jobs[job_id].update(kwargs)
         jobs[job_id]["updated_at"] = datetime.now().isoformat()
@@ -1106,9 +1172,40 @@ def update_job(job_id: str, **kwargs):
         except Exception as persist_err:
             print(f"[WORKFLOW] Job persistence warning: {persist_err}")
 
+    # A worker imports this module in a separate process, so ``jobs`` is empty
+    # there. Persist terminal compatibility fields through the durable
+    # repository as an append-only application event; the queue RPC remains
+    # the owner of the leased lifecycle transition.
+    status = str(kwargs.get("status") or "")
+    terminal_statuses = {"done", "error", "cancelled", "partial", "failed"}
+    if status in terminal_statuses:
+        session_id = str((local_job or {}).get("session_id") or "")
+        if not session_id:
+            try:
+                durable_job = durable_execution_repository.get_job(job_id) or {}
+                session_id = str(durable_job.get("session_id") or "")
+            except Exception:
+                session_id = ""
+        try:
+            durable_execution_repository.record_application_state(
+                job_id,
+                session_id=session_id,
+                status=status,
+                message=str(kwargs.get("message") or ""),
+                summary=kwargs.get("summary"),
+                logs=kwargs.get("logs"),
+                result_ref=str(kwargs.get("result_ref") or ""),
+                error_code=str(kwargs.get("error_code") or ""),
+                error_message=str(kwargs.get("error_message") or ""),
+            )
+        except Exception as persist_err:
+            print(f"[WORKFLOW] Durable application state warning: {persist_err}")
+
 
 def _execution_mode() -> str:
-    return str(get_setting("execution_platform_mode", "shadow")).lower()
+    # Kept as a tiny compatibility helper for older callers; operational
+    # execution is no longer split into shadow versus strict.
+    return "autonomous"
 
 
 def _agent_models_for_context(context: Dict[str, Any]) -> Dict[str, str]:
@@ -1171,20 +1268,10 @@ def _enqueue_execution_job(
         budget=_execution_budget(),
         max_attempts=max_attempts,
     )
-    # In shadow mode, pentest jobs are executed by the API background task.
-    # Enqueuing the same job for the general worker creates two independent
-    # executions (duplicate requests, browser sessions, and findings).  Keep
-    # durable enqueue for worker-owned job types such as evaluations and
-    # readiness soaks; a pentest becomes worker-owned only in strict mode.
-    if job_type == "pentest" and _execution_mode() != "strict":
-        print("[DURABLE] shadow pentest stays API-background-owned")
-        return job
     try:
         durable_execution_repository.enqueue(job)
     except Exception as exc:
-        if require_queue or _execution_mode() == "strict":
-            raise RuntimeError(f"Durable execution queue unavailable: {exc}") from exc
-        print(f"[DURABLE] shadow enqueue skipped: {type(exc).__name__}: {exc}")
+        raise RuntimeError(f"Durable execution queue unavailable: {exc}") from exc
     return job
 
 
@@ -1193,8 +1280,76 @@ def _legacy_job_view(job: Dict[str, Any]) -> Dict[str, Any]:
     view["status"] = {"succeeded": "done", "failed": "error", "dead_lettered": "error"}.get(
         str(view.get("status", "")), view.get("status")
     )
+    if view.get("application_status") in {"done", "error", "cancelled", "partial"}:
+        view["status"] = view["application_status"]
     view.setdefault("message", view.get("error_message", ""))
     return view
+
+
+def _phase_execution_trace(output: str, phase: str) -> Dict[str, Any]:
+    """Extract a compact, durable action/cycle trace before summary truncation."""
+    try:
+        payload = json.loads(str(output or ""))
+    except (TypeError, ValueError):
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+
+    def safe_int(value: Any, default: int = 0) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+
+    actions = [item for item in (payload.get("actions") or []) if isinstance(item, dict)]
+    blocked = [item for item in (payload.get("blocked") or []) if isinstance(item, dict)]
+    cycles = [item for item in (payload.get("cycle_summaries") or []) if isinstance(item, dict)]
+    trace: List[Dict[str, Any]] = []
+    cursor = 0
+    for cycle in cycles:
+        try:
+            count = max(0, int(cycle.get("executed") or 0))
+        except (TypeError, ValueError):
+            count = 0
+        for action in actions[cursor:cursor + count]:
+            trace.append({
+                "ordinal": len(trace) + 1,
+                "cycle": cycle.get("cycle"),
+                "action_id": str(action.get("action_id") or ""),
+                "tool": str(action.get("tool") or ""),
+                "category": str(action.get("category") or ""),
+                "status": str(action.get("status") or ""),
+                "tool_run_id": str(action.get("tool_run_id") or ""),
+                "evidence_ids": list(action.get("evidence_ids") or [])[:50],
+            })
+        cursor += count
+    # Keep actions visible even if a future loop version omits cycle summaries.
+    for action in actions[cursor:]:
+        trace.append({
+            "ordinal": len(trace) + 1,
+            "cycle": action.get("cycle"),
+            "action_id": str(action.get("action_id") or ""),
+            "tool": str(action.get("tool") or ""),
+            "category": str(action.get("category") or ""),
+            "status": str(action.get("status") or ""),
+            "tool_run_id": str(action.get("tool_run_id") or ""),
+            "evidence_ids": list(action.get("evidence_ids") or [])[:50],
+        })
+    status_counts: Dict[str, int] = {}
+    for item in trace:
+        value = item["status"] or "unknown"
+        status_counts[value] = status_counts.get(value, 0) + 1
+    return {
+        "trace_version": "1.0",
+        "phase": phase,
+        "cycle_count": len(cycles) or max(0, safe_int(payload.get("cycles"))),
+        "action_count": len(trace),
+        "blocked_action_count": len(blocked),
+        "status_counts": dict(sorted(status_counts.items())),
+        "tools": sorted({item["tool"] for item in trace if item["tool"]}),
+        "trace": trace[:1000],
+        "trace_digest": stable_digest(trace, 64),
+    }
 
 
 def _ingest_phase_result(session_id: str, target: str, phase: str, output: str, run_id: str):
@@ -1204,6 +1359,7 @@ def _ingest_phase_result(session_id: str, target: str, phase: str, output: str, 
     create findings through severity regex parsing.
     """
     try:
+        trace = _phase_execution_trace(output, phase)
         observation = ObservationV1(
             role="external",
             kind="phase_narrative",
@@ -1217,8 +1373,12 @@ def _ingest_phase_result(session_id: str, target: str, phase: str, output: str, 
             tool_name=f"phase:{phase}",
             category="phase_narrative",
             target=target,
-            summary=output[:4000],
+            summary=(
+                f"Phase {phase} completed; durable autonomous trace is in metrics."
+                if trace else output[:4000]
+            ),
             observations=[observation],
+            metrics={"autonomous_trace": trace} if trace else {},
         )
         structured_repository.persist(session_id, result, [])
         return {"tool_run_id": result.tool_run_id, "observation_id": observation.observation_id}
@@ -1259,11 +1419,68 @@ def _execution_integrity_failure(
     ]
     failed_runs = [
         row for row in authoritative_runs
-        if str(row.get("status", "")).lower() in {"failed", "error", "partial"}
+        if str(row.get("status", "")).lower() in {"failed", "error"}
     ]
-    if failed_runs:
-        names = sorted({str(row.get("tool_name", "unknown")) for row in failed_runs})
+    partial_runs = [
+        row for row in authoritative_runs
+        if str(row.get("status", "")).lower() == "partial"
+    ]
+
+    def _is_retryable(row: Dict[str, Any]) -> bool:
+        errors = row.get("errors") or []
+        if isinstance(errors, dict):
+            errors = [errors]
+        return any(
+            isinstance(error, dict) and bool(error.get("retryable"))
+            for error in errors
+        )
+
+    def _timestamp(row: Dict[str, Any]) -> str:
+        # These values are ISO-8601 strings in the durable repository, so a
+        # lexical comparison is stable and avoids making persistence depend
+        # on a particular datetime parser/timezone implementation.
+        for key in ("started_at", "created_at", "finished_at"):
+            value = str(row.get(key) or "").strip()
+            if value:
+                return value
+        return ""
+
+    def _was_recovered(failed: Dict[str, Any]) -> bool:
+        if not _is_retryable(failed):
+            return False
+        failed_tool = str(failed.get("tool_name") or "")
+        failed_target = str(failed.get("target") or "")
+        failed_time = _timestamp(failed)
+        for candidate in authoritative_runs:
+            if candidate is failed:
+                continue
+            if str(candidate.get("tool_name") or "") != failed_tool:
+                continue
+            if failed_target and str(candidate.get("target") or "") != failed_target:
+                continue
+            if str(candidate.get("status") or "").lower() != "succeeded":
+                continue
+            candidate_time = _timestamp(candidate)
+            # A previous success is not recovery. If timestamps are absent,
+            # fail closed rather than guessing from repository row order.
+            if failed_time and candidate_time and candidate_time > failed_time:
+                return True
+        return False
+
+    unrecovered_failures = [
+        row for row in failed_runs
+        if not _was_recovered(row)
+    ]
+    unrecovered_partials = [
+        row for row in partial_runs
+        if not _was_recovered(row)
+    ]
+    if unrecovered_failures:
+        names = sorted({str(row.get("tool_name", "unknown")) for row in unrecovered_failures})
         return f"authoritative tool execution failed: {', '.join(names)}"
+    if unrecovered_partials:
+        names = sorted({str(row.get("tool_name", "unknown")) for row in unrecovered_partials})
+        return f"authoritative tool execution partial: {', '.join(names)}"
     if not any(str(tool).strip() for tool in tools_executed) and not authoritative_runs:
         return "no authoritative tool execution was recorded"
 
@@ -1299,8 +1516,55 @@ def _merge_structured_execution_summary(
     summary["structured_tool_runs"] = len(authoritative)
     summary["error_count"] = int(summary.get("error_count") or 0) + sum(
         1 for row in authoritative
-        if str(row.get("status", "")).lower() in {"failed", "error", "partial"}
+        if str(row.get("status", "")).lower() in {"failed", "error"}
     )
+    summary["partial_tool_runs"] = sum(
+        1 for row in authoritative if str(row.get("status", "")).lower() == "partial"
+    )
+
+    def _is_retryable(row: Dict[str, Any]) -> bool:
+        errors = row.get("errors") or []
+        if isinstance(errors, dict):
+            errors = [errors]
+        return any(
+            isinstance(error, dict) and bool(error.get("retryable"))
+            for error in errors
+        )
+
+    def _timestamp(row: Dict[str, Any]) -> str:
+        for key in ("started_at", "created_at", "finished_at"):
+            value = str(row.get(key) or "").strip()
+            if value:
+                return value
+        return ""
+
+    recovered_retryable_failures = []
+    for failed in authoritative:
+        if str(failed.get("status") or "").lower() not in {"failed", "error"}:
+            continue
+        if not _is_retryable(failed):
+            continue
+        failed_time = _timestamp(failed)
+        if not failed_time:
+            continue
+        for candidate in authoritative:
+            if candidate is failed:
+                continue
+            if str(candidate.get("tool_name") or "") != str(failed.get("tool_name") or ""):
+                continue
+            if str(failed.get("target") or "") != str(candidate.get("target") or ""):
+                continue
+            if str(candidate.get("status") or "").lower() != "succeeded":
+                continue
+            candidate_time = _timestamp(candidate)
+            if candidate_time and candidate_time > failed_time:
+                recovered_retryable_failures.append({
+                    "tool_name": str(failed.get("tool_name") or "unknown"),
+                    "failed_tool_run_id": str(failed.get("tool_run_id") or ""),
+                    "recovered_by_tool_run_id": str(candidate.get("tool_run_id") or ""),
+                })
+                break
+    summary["recovered_retryable_failures"] = recovered_retryable_failures
     merged["summary"] = summary
     return merged
 
@@ -1319,6 +1583,156 @@ def _persist_report_file(
     return report_file
 
 
+REPORT_STORAGE_ROOT = os.path.realpath(os.environ.get("NEXUS_REPORT_DIR", "/app/reports"))
+
+
+def _report_payload(job: Dict[str, Any]) -> Dict[str, Any]:
+    """Read compatibility fields from either queue or legacy job payloads."""
+    merged: Dict[str, Any] = {}
+    # Durable queue rows expose ``payload_redacted`` while older session jobs
+    # expose ``payload``. Read both so a mixed-version API can resolve the
+    # report reference regardless of which process created the job.
+    for key in ("payload", "payload_redacted"):
+        payload = job.get(key)
+        if not isinstance(payload, dict):
+            continue
+        for field, value in payload.items():
+            if field not in merged or merged[field] in (None, "", [], {}):
+                merged[field] = value
+    return merged
+
+
+def _merge_report_job_fields(job: Dict[str, Any], fallback: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Flatten durable/legacy payload fields without mutating the DB response."""
+    view = dict(job or {})
+    if fallback:
+        for key, value in fallback.items():
+            if key not in view or view.get(key) in (None, "", [], {}):
+                view[key] = value
+
+    payload = _report_payload(view)
+    for key in (
+        "report", "result_ref", "report_ref", "report_path", "report_file",
+        "target", "goal", "created_at", "updated_at", "summary", "logs", "findings",
+    ):
+        if key not in view or view.get(key) in (None, "", [], {}):
+            if key in payload:
+                view[key] = payload[key]
+    return view
+
+
+def _load_report_job(job_id: str) -> Dict[str, Any]:
+    """Load the authoritative job view across API and worker processes.
+
+    The worker owns the terminal transition and persists ``result_ref`` on the
+    durable queue row. The API must prefer that view over its process-local
+    dictionary, while retaining legacy inline fields when they are available.
+    """
+    local_job = jobs.get(job_id)
+    durable_error: Optional[Exception] = None
+    try:
+        durable = durable_execution_repository.get_job(job_id)
+    except Exception as exc:
+        durable = None
+        durable_error = exc
+
+    if durable:
+        return _merge_report_job_fields(_legacy_job_view(durable), local_job)
+    if local_job:
+        return _merge_report_job_fields(local_job)
+    if durable_error:
+        raise ReportExportError(
+            "Durable job state is unavailable; report state cannot be resolved.",
+            details={"job_id": job_id, "cause": type(durable_error).__name__},
+        ) from durable_error
+    raise HTTPException(status_code=404, detail="Job not found")
+
+
+def _report_text(value: Any) -> str:
+    """Coerce supported legacy inline report values to Markdown text."""
+    if isinstance(value, bytes):
+        decoded = value.decode("utf-8", errors="replace")
+        return decoded if decoded.strip() else ""
+    if isinstance(value, str):
+        return value if value.strip() else ""
+    if isinstance(value, dict):
+        for key in ("markdown", "content", "text", "report"):
+            text = _report_text(value.get(key))
+            if text:
+                return text
+    return ""
+
+
+def _safe_report_path(reference: Any) -> Optional[str]:
+    """Resolve a worker-written report reference inside the shared volume."""
+    raw_reference = str(reference or "").strip()
+    if not raw_reference:
+        return None
+    if raw_reference.startswith("file://"):
+        raw_reference = raw_reference[7:]
+
+    root = os.path.realpath(REPORT_STORAGE_ROOT)
+    candidate = raw_reference if os.path.isabs(raw_reference) else os.path.join(root, raw_reference)
+    resolved = os.path.realpath(candidate)
+    try:
+        inside_root = os.path.commonpath([root, resolved]) == root
+    except ValueError:
+        inside_root = False
+    if not inside_root or not os.path.isfile(resolved):
+        return None
+    return resolved
+
+
+def _load_persisted_report(job: Dict[str, Any], job_id: str) -> str:
+    """Return inline or shared-volume report content, or a typed failure."""
+    inline = _report_text(job.get("report"))
+    if inline:
+        return inline
+
+    payload = _report_payload(job)
+    references: List[str] = []
+    for key in ("result_ref", "report_ref", "report_path", "report_file"):
+        for source in (job, payload):
+            reference = str(source.get(key) or "").strip() if isinstance(source, dict) else ""
+            if reference and reference not in references:
+                references.append(reference)
+
+    for reference in references:
+        report_path = _safe_report_path(reference)
+        if not report_path:
+            continue
+        try:
+            with open(report_path, encoding="utf-8") as report_handle:
+                report = report_handle.read()
+        except OSError:
+            continue
+        if report.strip():
+            return report
+
+    raise ReportUnavailableError(
+        "Job is complete but its persisted report artifact is unavailable.",
+        details={
+            "job_id": job_id,
+            "status": str(job.get("status") or job.get("application_status") or "unknown"),
+            "references_present": bool(references),
+        },
+    )
+
+
+def _resolve_report_for_export(job_id: str) -> tuple[Dict[str, Any], str]:
+    """Resolve a completed report and its durable body for any export format."""
+    job = _load_report_job(job_id)
+    status = str(job.get("application_status") or job.get("status") or "").lower()
+    if status not in {"done", "succeeded"}:
+        raise ReportNotReadyError(
+            "Report is not available until the job reaches done.",
+            details={"job_id": job_id, "status": status or "unknown"},
+        )
+    report = _load_persisted_report(job, job_id)
+    job["report"] = report
+    return job, report
+
+
 # ============================================================
 # BACKGROUND PENTEST RUNNER
 # Ini that dulu blocking sekarang jalan di background thread.
@@ -1330,9 +1744,20 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
     Auto-Pilot mode: skip manual approval, auto-continue.
     """
     agent_models = agent_models or {}
-    scan_config = scan_config or {}
+    scan_config = dict(scan_config or {})
     auto_pilot = scan_config.get("auto_pilot", False)
     stealth_mode = scan_config.get("stealth_mode", False)
+
+    # Session authorization is the one operator consent for an explicitly
+    # allowlisted local-lab suite. The preapproval is still checked again for
+    # every checkpointed action by core.checkpoint.
+    session_context = session_store.get(session_id) or {}
+    lab_preapproval = issue_preapproval(
+        session_id=session_id,
+        target=target,
+        session_context=session_context,
+        scan_config=scan_config,
+    )
     
     # Modes and budgets are immutable per-job context, never process-global state.
     from core.safety_kernel import SafetyKernel
@@ -1342,11 +1767,21 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
         session_id=session_id, job_id=job_id, identity_id="primary", target_origin=target,
         attempt_id=attempt_id, tool_name="pentest_job",
         auto_pilot=bool(auto_pilot), stealth_mode=bool(stealth_mode),
-        budget=budget_contract, config_snapshot=dict(scan_config),
+        budget=budget_contract,
+        # Request-level scan settings are overrides. Preserve the complete
+        # merged policy across the API -> worker -> tool boundary so a nested
+        # override cannot silently drop sibling defaults.
+        config_snapshot=merged_config_snapshot(scan_config),
         safety_kernel=SafetyKernel(session_store=session_store, repository=safety_repository),
         repository=structured_repository,
         secret_vault=secret_vault,
         worker_capabilities=tuple(worker_capabilities),
+        approval_ref=lab_preapproval.preapproval_id,
+        approval_digest=lab_preapproval.preapproval_id,
+        approval_granted=lab_preapproval.approved,
+        authorized_lab_mode=lab_preapproval.approved,
+        authorized_lab_origin=lab_preapproval.target_origin,
+        suite_preapproval_id=lab_preapproval.preapproval_id,
     ))
     try:
         authorization_repository.create_identity(session_id, IdentityV1(
@@ -1365,14 +1800,27 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
         cancellation_store.register(job_id)
 
         update_job(job_id, status="running", message="Validasi scope target...")
-        allowed, reason = validate_target(target, supabase)
+        allowed, reason = validate_target(target, supabase, session_id=session_id)
         if not allowed:
             update_job(job_id, status="error", message=f"DITOLAK SCOPE: {reason}", report=None)
             save_message(session_id, "agent", f"SCOPE REJECTED: {reason}")
-            return
+            return "error"
 
         update_job(job_id, status="running", message="Inisialisasi agents & model chain...")
         clear_execution_logs()
+        if lab_preapproval.approved:
+            from tools.custom_tools import exec_logger
+            exec_logger.add_log(
+                "HITL",
+                "SUITE-AUTO-APPROVED",
+                "Authorized local-lab suite preapproval active for this job",
+                {
+                    "source": lab_preapproval.source,
+                    "preapproval_id": lab_preapproval.preapproval_id,
+                    "target_origin": lab_preapproval.target_origin,
+                    "reason": lab_preapproval.reason,
+                },
+            )
 
         # ── WAF Detection ─────────────────────────────────────────────────────
         try:
@@ -1418,7 +1866,7 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
                 update_job(job_id, status="running", message=f"Auto-login ke {domain}...")
                 try:
                     from tools.playwright_tools import login_automator
-                    login_result = login_automator.invoke({
+                    login_result = invoke_tool_compat(login_automator, {
                         "url": credentials.get("login_url", target),
                         "username": credentials.get("username", ""),
                         "password": credentials.get("password", ""),
@@ -1431,7 +1879,7 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
                 update_job(job_id, status="running", message=f"Injecting session for {domain}...")
                 try:
                     from tools.playwright_tools import inject_session
-                    inject_result = inject_session.invoke({
+                    inject_result = invoke_tool_compat(inject_session, {
                         "url": target,
                         "cookies": credentials.get("cookies", ""),
                         "headers": json.dumps(credentials.get("headers", {})),
@@ -1444,11 +1892,26 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
         # Load intelligence lama
         memory_context = memory.build_context(target)
 
-        # Build LLMs
-        llm_recon = build_llm(agent_models.get("recon"))
-        llm_analis = build_llm(agent_models.get("analis"))
-        llm_eksekutor = build_llm(agent_models.get("eksekutor"))
-        llm_assessor = build_llm(agent_models.get("assessor"))
+        # The full/recon presets use the canonical ReasoningGateway and typed
+        # runners. Do not instantiate four legacy CrewAI/OpenRouter clients on
+        # that path: besides wasting resources, those clients made an
+        # AI-native run report provider errors from an assessor that was never
+        # authoritative. Keep construction only for an explicitly selected
+        # legacy preset or when the autonomous path is disabled.
+        preset = scan_config.get("scan_preset") or session_context.get("scan_preset", "full")
+        autonomous_enabled = bool((get_setting("autonomous_web_pentest", {}) or {}).get("enabled", True))
+        canonical_phase1 = preset in {"full", "recon-only"} and autonomous_enabled
+        if canonical_phase1:
+            llm_recon = llm_analis = llm_eksekutor = llm_assessor = None
+        else:
+            # The legacy CrewAI graph is an explicit compatibility path.
+            # Import its provider factory only when that path is selected so
+            # canonical AI-native jobs do not initialize legacy SDKs.
+            from core.model_registry import build_llm as legacy_build_llm
+            llm_recon = legacy_build_llm(agent_models.get("recon"))
+            llm_analis = legacy_build_llm(agent_models.get("analis"))
+            llm_eksekutor = legacy_build_llm(agent_models.get("eksekutor"))
+            llm_assessor = legacy_build_llm(agent_models.get("assessor"))
 
         # ── Initialize Target State ────────────────────────────────────────────
         target_state = session_store.load_state(session_id)
@@ -1469,8 +1932,6 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
         except Exception:
             structured_run_ids_before = set()
         
-        session_context = session_store.get(session_id) or {}
-        preset = scan_config.get("scan_preset") or session_context.get("scan_preset", "full")
         phase1_success = run_phase1(
             job_id=job_id,
             session_id=session_id,
@@ -1491,12 +1952,14 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
             scan_preset=preset,
             recommended_tools=scan_config.get("recommended_tools"),
             planner_context=scan_config.get("planner_context"),
+            reasoning_model_id=str(agent_models.get("analis") or ""),
+            reasoning_fallback_models=(get_setting("reasoning", {}) or {}).get("fallback_model_ids", []),
         )
         
         if not phase1_success:
             update_job(job_id, status="cancelled", message="Phase 1 cancelled by user.")
             save_message(session_id, "agent", "JOB CANCELLED by user during Phase 1.")
-            return
+            return "cancelled"
 
         # Do not let an LLM-generated report turn a provider/tool-contract
         # failure into a successful pentest. The phase narrative is persisted
@@ -1525,7 +1988,7 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
                 logs=phase1_logs["logs"],
                 summary=phase1_logs["summary"],
             )
-            return
+            return "error"
 
         # A recon-only request is a complete bounded workflow.  Do not enter
         # the legacy interactive consultation or assessor phases: they are
@@ -1535,6 +1998,27 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
             logs_data = _merge_structured_execution_summary(
                 get_execution_logs(), structured_runs_after,
             )
+            try:
+                recon_payload = json.loads(str(all_results.get("recon") or "{}"))
+                recon_execution = recon_payload.get("execution") or {}
+                recon_status = str(recon_payload.get("status") or "succeeded")
+            except Exception:
+                recon_execution = {}
+                recon_status = "succeeded"
+            if recon_status == "cancelled":
+                update_job(
+                    job_id,
+                    status="cancelled",
+                    message="Reconnaissance cancelled.",
+                    report=None,
+                    logs=[],
+                    summary={
+                        "tools_executed": logs_data.get("summary", {}).get("tools_executed", []),
+                        "structured_tool_runs": len(structured_runs_after),
+                        "recon_status": recon_status,
+                    },
+                )
+                return "cancelled"
             # The structured repository and knowledge graph are authoritative
             # for bounded recon.  Do not push the complete legacy log bundle
             # (which can be very large for a local lab) through the workflow
@@ -1546,16 +2030,19 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
                 "structured_tool_runs": len(structured_runs_after),
                 "log_count": len(logs_data.get("logs", [])),
                 "recon_source": "structured_tool_runs_and_knowledge_graph",
+                "recon_status": recon_status,
+                "mission_timed_out": bool(recon_execution.get("mission_timed_out", False)),
             }
+            terminal_status = "partial" if recon_status == "partial" else "done"
             update_job(
                 job_id,
-                status="done",
-                message="Reconnaissance complete.",
+                status=terminal_status,
+                message="Reconnaissance complete." if terminal_status == "done" else "Reconnaissance partial: mission budget exhausted.",
                 report=None,
                 logs=[],
                 summary=compact_summary,
             )
-            return
+            return terminal_status
 
         # ── Phase 2: Interactive Consultation (Co-Pilot Chat) ─────────────────
         phase2_success = run_phase2_interactive(
@@ -1573,11 +2060,12 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
         if not phase2_success:
             update_job(job_id, status="cancelled", message="Phase 2 cancelled by user.")
             save_message(session_id, "agent", "JOB CANCELLED by user during Phase 2.")
-            return
+            return "cancelled"
 
         # ── Phase 3: Automated Synthesis & Reporting ─────────────────────────
+        assessment_result = None
         if scan_config.get("assessor", True):
-            run_phase3(
+            assessment_result = run_phase3(
                 job_id=job_id,
                 session_id=session_id,
                 target=target,
@@ -1586,33 +2074,43 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
                 llm_assessor=llm_assessor,
                 cancellation_store=cancellation_store,
                 update_job=update_job,
-                save_message=save_message
+                save_message=save_message,
+                reasoning_model_id=str(
+                    agent_models.get("assessor")
+                    or agent_models.get("analis")
+                    or ""
+                ),
+                reasoning_fallback_models=(
+                    get_setting("reasoning", {}) or {}
+                ).get("fallback_model_ids", []),
             )
+            if isinstance(assessment_result, dict) and assessment_result.get("status") != "succeeded":
+                message = (
+                    "Execution integrity failure: canonical assessment did not complete: "
+                    f"{assessment_result.get('error_code') or assessment_result.get('persistence_error') or 'provider_failure'}."
+                )
+                save_message(session_id, "agent", f"JOB FAILED: {message}")
+                update_job(
+                    job_id,
+                    status="error",
+                    message=message,
+                    report=None,
+                    logs=get_execution_logs().get("logs", []),
+                    summary=get_execution_logs().get("summary", {}),
+                )
+                return "error"
 
         # ── Finalize ──────────────────────────────────────────────────────────
         target_state.scan_end = datetime.now().isoformat()
         raw_report = "\n\n---\n\n".join(all_reports) if all_reports else "No results."
 
-        # Structured evidence is authoritative in strict mode. The old LLM
-        # report remains available only as a migration/shadow comparison.
-        structured_mode = str(get_setting("structured_evidence_mode", "strict")).lower()
-        if structured_mode == "shadow":
-            try:
-                from tools.report_generator import ReportGenerator
-                gen = ReportGenerator()
-                report = gen.generate_from_phase_results(
-                    phase_results=all_results,
-                    target=target,
-                )
-            except Exception as report_err:
-                print(f"[REPORT] Generate failed (non-critical): {report_err}")
-                report = raw_report
-        else:
-            try:
-                report = workflow_report.generate(session_id)["markdown"]
-            except Exception as report_err:
-                print(f"[REPORT] Structured report failed: {report_err}")
-                report = "# Structured report unavailable\n\nEvidence persistence or schema migration is not ready. No unvalidated LLM findings were promoted."
+        # Structured evidence is always authoritative. There is no separate
+        # shadow report path that can disagree with the finding pipeline.
+        try:
+            report = workflow_report.generate(session_id)["markdown"]
+        except Exception as report_err:
+            print(f"[REPORT] Structured report failed: {report_err}")
+            report = "# Structured report unavailable\n\nEvidence persistence or schema migration is not ready. No unvalidated LLM findings were promoted."
 
         logs_data = _merge_structured_execution_summary(
             get_execution_logs(), structured_runs_after,
@@ -1642,10 +2140,18 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
                     logs=logs_data["logs"],
                     summary=logs_data["summary"],
                 )
-                return
+                return "error"
 
             save_message(session_id, "agent", report)
-            update_job(job_id, status="done", message="Complete.", report=report, logs=logs_data["logs"], summary=logs_data["summary"])
+            update_job(
+                job_id,
+                status="done",
+                message="Complete.",
+                report=report,
+                result_ref=report_file,
+                logs=logs_data["logs"],
+                summary=logs_data["summary"],
+            )
 
             # ── Save scan history ─────────────────────────────────────────────
             try:
@@ -1665,14 +2171,27 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
             except Exception as mem_err:
                 print(f"[MEMORY] Auto-save failed (non-critical): {mem_err}")
 
+            return "done"
+
     except Exception as e:
         err = str(e)
         save_message(session_id, "agent", f"ERROR: {err}")
         update_job(job_id, status="error", message=err, report=None)
+        return "error"
     finally:
         job_record = jobs.get(job_id, {})
+        if not job_record:
+            try:
+                job_record = durable_execution_repository.get_job(job_id) or {}
+            except Exception:
+                job_record = {}
         action_id = str(job_record.get("workflow_action_id") or "")
-        terminal_status = str(job_record.get("status") or "")
+        terminal_status = str(
+            job_record.get("application_status")
+            or {"succeeded": "done", "failed": "error", "dead_lettered": "error"}.get(
+                str(job_record.get("status") or ""), job_record.get("status") or ""
+            )
+        )
         if action_id and terminal_status in {"done", "error", "cancelled"}:
             try:
                 succeeded = terminal_status == "done"
@@ -1812,8 +2331,7 @@ async def create_reasoning_cycle(session_id: str, req: ReasoningCycleRequest, _:
             structured_repository.save_reasoning_result(session_id, result)
             persistence = "supabase"
         except Exception as exc:
-            if req.mode == "strict":
-                raise HTTPException(status_code=503, detail=f"Reasoning persistence unavailable: {type(exc).__name__}") from exc
+            raise HTTPException(status_code=503, detail=f"Reasoning persistence unavailable: {type(exc).__name__}") from exc
         return {**result, "persistence": persistence}
     except HTTPException:
         raise
@@ -2012,7 +2530,7 @@ async def ingest_target_knowledge(session_id: str, req: KnowledgeIngestRequest, 
         sources = _knowledge_graph_sources(session_id, req.sources)
         compiled = knowledge_graph_engine.compile(session_id, target, sources, scope=req.scope, version=version, parent_graph_id=parent)
         saved = knowledge_graph_repository.save_compiled(compiled)
-        return {"mode": get_setting("target_knowledge_mode", "shadow"), "compiled": compiled, "saved": saved}
+        return {"mode": "autonomous", "compiled": compiled, "saved": saved}
     except KnowledgeGraphError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     except ValueError as exc:
@@ -2033,7 +2551,7 @@ def _closure_plan_from_graph(session_id: str, graph_id: str, *, freshness_bounda
     plan = knowledge_graph_engine.synthesize_recon_closure(
         detail, sources, freshness_boundary=freshness_boundary, max_actions=max_actions,
     )
-    return {"session_id": session_id, "mode": get_setting("target_knowledge_mode", "shadow"), "plan": plan}
+    return {"session_id": session_id, "mode": "autonomous", "plan": plan}
 
 
 @app.get("/sessions/{session_id}/knowledge/closure-plan")
@@ -2048,7 +2566,7 @@ async def get_target_recon_closure_plan(
         current = knowledge_graph_repository.current(session_id)
         selected = graph_id or str((current or {}).get("graph_id", ""))
         if not selected:
-            return {"session_id": session_id, "mode": get_setting("target_knowledge_mode", "shadow"), "plan": None}
+            return {"session_id": session_id, "mode": "autonomous", "plan": None}
         return _closure_plan_from_graph(session_id, selected, freshness_boundary=freshness_boundary, max_actions=max_actions)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -2077,7 +2595,7 @@ async def create_target_recon_closure_plan(
         )
         return {
             "session_id": session_id,
-            "mode": get_setting("target_knowledge_mode", "shadow"),
+            "mode": "autonomous",
             "persisted": False,
             "plan": plan,
         }
@@ -2243,7 +2761,7 @@ async def create_mission(session_id: str, req: MissionCreateRequest, _: bool = D
             config_digest=stable_digest(get_config()), policy_version="14.0",
         )
         row = mission_repository.create(mission)
-        return {"mission": row, "mode": get_setting("mission_graph_mode", "shadow")}
+        return {"mission": row, "mode": "autonomous"}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
@@ -2264,7 +2782,7 @@ async def get_mission(session_id: str, mission_id: str, _: bool = Depends(requir
         row = mission_repository.get(session_id, mission_id)
         if not row:
             raise HTTPException(status_code=404, detail="Mission not found.")
-        return {"mission": row, "mode": get_setting("mission_graph_mode", "shadow")}
+        return {"mission": row, "mode": "autonomous"}
     except HTTPException:
         raise
     except Exception as exc:
@@ -2289,7 +2807,7 @@ async def plan_mission(session_id: str, mission_id: str, req: MissionPlanRequest
         selected = (planned.get("paths") or [None])[0]
         status = "waiting_approval" if selected and selected.get("status") == "waiting_approval" else "planning"
         mission_repository.update_status(session_id, mission_id, status)
-        return {"session_id": session_id, **planned, "mode": get_setting("mission_graph_mode", "shadow")}
+        return {"session_id": session_id, **planned, "mode": "autonomous"}
     except MissionGraphError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     except ValueError as exc:
@@ -2342,7 +2860,7 @@ async def check_mission_dispatch(session_id: str, mission_id: str, path_id: str,
             path, approved=req.approved, approval_ref=req.approval_ref,
             approval_digest=req.approval_digest,
         )
-        return {"mission_id": mission_id, "path_id": path_id, "decision": decision, "mode": get_setting("mission_graph_mode", "shadow")}
+        return {"mission_id": mission_id, "path_id": path_id, "decision": decision, "mode": "autonomous"}
     except HTTPException:
         raise
     except Exception as exc:
@@ -2364,7 +2882,7 @@ async def replan_mission(session_id: str, mission_id: str, req: MissionPlanReque
         mission_repository.save_paths(session_id, planned)
         mission_repository.save_decision(session_id, planned["decision"])
         mission_repository.save_event(session_id, planned["event"])
-        return {"session_id": session_id, **planned, "mode": get_setting("mission_graph_mode", "shadow")}
+        return {"session_id": session_id, **planned, "mode": "autonomous"}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
@@ -2377,7 +2895,7 @@ async def build_workflow_chain(session_id: str, req: ChainBuildRequest, _: bool 
         graph = chain_planner.build_graph(session_id, req.objective, req.protocol_operations)
         if graph.get("status") == "proposed":
             structured_repository.save_chain_graph(session_id, graph)
-        return {"session_id": session_id, **graph, "mode": get_setting("exploit_chain_mode", "shadow")}
+        return {"session_id": session_id, **graph, "mode": "autonomous"}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
@@ -2404,7 +2922,7 @@ async def compile_impact_graph(session_id: str, req: ImpactGraphCompileRequest, 
         )
         if graph.get("status") == "proposed":
             structured_repository.save_chain_graph(session_id, graph)
-        return {"session_id": session_id, **graph, "mode": get_setting("identity_business_impact_mode", "shadow")}
+        return {"session_id": session_id, **graph, "mode": "autonomous"}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
@@ -2425,7 +2943,7 @@ async def evaluate_impact_graph(session_id: str, req: ImpactChainEvaluateRequest
             mutation=req.mutation,
         )
         saved = structured_repository.save_chain_evaluation(session_id, evaluation)
-        return {"session_id": session_id, "evaluation": saved, "mode": get_setting("identity_business_impact_mode", "shadow")}
+        return {"session_id": session_id, "evaluation": saved, "mode": "autonomous"}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
@@ -2476,7 +2994,7 @@ async def create_chain_impact_plan(session_id: str, req: ImpactPlanRequest, _: b
         plan_row = dict(result["plan"])
         plan_row["exact_steps"] = plan_row.pop("exact_steps", [])
         structured_repository.save_impact_plan(session_id, plan_row)
-        return {"session_id": session_id, **result, "mode": get_setting("exploit_chain_mode", "shadow")}
+        return {"session_id": session_id, **result, "mode": "autonomous"}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
@@ -2598,23 +3116,16 @@ async def approve_workflow_action(
             dispatch = workflow_dispatcher.dispatch(session_id, action_id)
             context = session_store.require(session_id)
             agent_models = _agent_models_for_context(context)
-            if _execution_mode() == "strict":
-                _enqueue_execution_job(
-                    job_id=dispatch["job_id"], session_id=session_id,
-                    target=context["target_url"], goal=context["attack_goal"], job_type="pentest",
-                    payload={
-                        "scan_config": dispatch["scan_config"],
-                        "workflow_action_id": action_id,
-                        "agent_models": agent_models,
-                    },
-                    risk="read_only", idempotency_key=dispatch["job_id"],
-                )
-            else:
-                background_tasks.add_task(
-                    run_pentest_job,
-                    dispatch["job_id"], context["target_url"], context["attack_goal"], session_id,
-                    agent_models, None, dispatch["scan_config"],
-                )
+            _enqueue_execution_job(
+                job_id=dispatch["job_id"], session_id=session_id,
+                target=context["target_url"], goal=context["attack_goal"], job_type="pentest",
+                payload={
+                    "scan_config": dispatch["scan_config"],
+                    "workflow_action_id": action_id,
+                    "agent_models": agent_models,
+                },
+                risk="read_only", idempotency_key=dispatch["job_id"],
+            )
             result.update({"job_id": dispatch["job_id"], "stream_token": dispatch["stream_token"]})
         return result
     except ValueError as exc:
@@ -2730,7 +3241,7 @@ async def discover_browser_workflow(session_id: str, req: BrowserDiscoveryReques
             raise ValueError(f"Scope rejected: {reason}")
         workflow = workflow_discovery_service.discover(session_id, req.origin, req.goal, req.captures, req.identity_ids)
         browser_workflow_repository.save_workflow(workflow)
-        return {"workflow": workflow.model_dump(mode="json"), "mode": "shadow", "requires_review": True}
+        return {"workflow": workflow.model_dump(mode="json"), "mode": "autonomous", "requires_review": True}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -2793,39 +3304,33 @@ async def create_browser_run(session_id: str, req: BrowserRunRequest, _: bool = 
         workflow = browser_workflow_repository.get_workflow(session_id, req.workflow_id)
         if workflow.status != "published":
             raise ValueError("Only a published workflow version may run.")
-        if _execution_mode() != "strict" and workflow.has_mutations() and (req.approved or req.approval_action_id):
-            raise ValueError("Mutating runs must be approved through the existing workflow proposal endpoint, then resumed.")
-        if _execution_mode() == "strict":
-            approval_ref = ""
-            if workflow.has_mutations():
-                if not req.approval_action_id:
-                    raise ValueError("Mutating durable browser runs require an approved workflow proposal.")
-                proposal = _approved_browser_proposal(session_id, req.approval_action_id, req.parent_run_id or "")
-                approval_ref = proposal.action_id
-            run = BrowserRunV1(
-                session_id=session_id, workflow_id=workflow.workflow_id, workflow_version=workflow.version,
-                identity_id=req.identity_id, auth_context_id=req.auth_context_id, role=req.role,
-                total_steps=len(workflow.steps), status="planned",
-                graph_id=req.graph_id, matrix_id=req.matrix_id,
-                entity_fingerprints=req.entity_fingerprints, clean_context=req.clean_context,
-            )
-            browser_workflow_repository.save_run(run)
-            durable = _enqueue_execution_job(
-                job_id=str(uuid.uuid4()), session_id=session_id, target=context["target_url"],
-                goal=workflow.goal, job_type="browser_workflow",
-                payload={
-                    "workflow_id": workflow.workflow_id, "identity_id": req.identity_id,
-                    "auth_context_id": req.auth_context_id, "role": req.role,
-                    "bindings": req.bindings, "browser_run_id": run.run_id,
-                    "approval_digest": req.approval_digest,
-                    "graph_id": req.graph_id, "matrix_id": req.matrix_id,
-                    "entity_fingerprints": req.entity_fingerprints, "clean_context": req.clean_context,
-                }, risk="medium" if workflow.has_mutations() else "read_only", approval_ref=approval_ref,
-            )
-            return {"run": run.model_dump(mode="json"), "job_id": durable.job_id, "approval_proposal": None}
-        run = await stateful_browser_runner.run(workflow, session_id=session_id, target=context["target_url"], identity_id=req.identity_id, auth_context_id=req.auth_context_id, role=req.role, bindings=req.bindings, parent_run_id=req.parent_run_id, graph_id=req.graph_id, matrix_id=req.matrix_id, entity_fingerprints=req.entity_fingerprints, clean_context=req.clean_context)
-        proposal = _browser_mutation_proposal(session_id, workflow, run, req.bindings) if run.status == "approval_required" else None
-        return {"run": run.model_dump(mode="json"), "approval_proposal": proposal.__dict__ if proposal else None}
+        approval_ref = ""
+        if workflow.has_mutations():
+            if not req.approval_action_id:
+                raise ValueError("Mutating durable browser runs require an approved workflow proposal.")
+            proposal = _approved_browser_proposal(session_id, req.approval_action_id, req.parent_run_id or "")
+            approval_ref = proposal.action_id
+        run = BrowserRunV1(
+            session_id=session_id, workflow_id=workflow.workflow_id, workflow_version=workflow.version,
+            identity_id=req.identity_id, auth_context_id=req.auth_context_id, role=req.role,
+            total_steps=len(workflow.steps), status="planned",
+            graph_id=req.graph_id, matrix_id=req.matrix_id,
+            entity_fingerprints=req.entity_fingerprints, clean_context=req.clean_context,
+        )
+        browser_workflow_repository.save_run(run)
+        durable = _enqueue_execution_job(
+            job_id=str(uuid.uuid4()), session_id=session_id, target=context["target_url"],
+            goal=workflow.goal, job_type="browser_workflow",
+            payload={
+                "workflow_id": workflow.workflow_id, "identity_id": req.identity_id,
+                "auth_context_id": req.auth_context_id, "role": req.role,
+                "bindings": req.bindings, "browser_run_id": run.run_id,
+                "approval_digest": req.approval_digest,
+                "graph_id": req.graph_id, "matrix_id": req.matrix_id,
+                "entity_fingerprints": req.entity_fingerprints, "clean_context": req.clean_context,
+            }, risk="medium" if workflow.has_mutations() else "read_only", approval_ref=approval_ref,
+        )
+        return {"run": run.model_dump(mode="json"), "job_id": durable.job_id, "approval_proposal": None}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -2896,7 +3401,7 @@ async def create_business_invariant(session_id: str, req: BusinessInvariantCreat
             invariant.workflow_matrix_id = req.workflow_matrix_id
             invariant.source_observation_ids = req.source_observation_ids
         browser_workflow_repository.save_invariant(invariant)
-        return {"invariant": invariant.model_dump(mode="json"), "mode": "shadow"}
+        return {"invariant": invariant.model_dump(mode="json"), "mode": "autonomous"}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -2970,11 +3475,11 @@ async def evaluate_business_invariant(session_id: str, invariant_id: str, req: B
             validation_decisions = validation_engine.validate(result)
             v2_decisions = validation_engine_v2.validate(
                 result,
-                mode=get_setting("detection_depth_mode", "shadow"),
-                apply_status=False,
+                mode="autonomous",
+                apply_status=True,
             )
             structured_repository.persist(session_id, result, validation_decisions)
-        return {"evaluation": evaluation.model_dump(mode="json"), "candidate": candidate.model_dump(mode="json") if candidate else None, "validation_v2": [item.model_dump(mode="json") for item in v2_decisions] if candidate else [], "mode": get_setting("detection_depth_mode", "shadow")}
+        return {"evaluation": evaluation.model_dump(mode="json"), "candidate": candidate.model_dump(mode="json") if candidate else None, "validation_v2": [item.model_dump(mode="json") for item in v2_decisions] if candidate else [], "mode": "autonomous"}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -2993,10 +3498,50 @@ async def get_browser_artifact(session_id: str, artifact_id: str, _: bool = Depe
         raise HTTPException(status_code=404, detail=str(exc))
 
 
+@app.get("/sessions/{session_id}/artifacts/{artifact_id}/content")
+async def get_browser_artifact_content(session_id: str, artifact_id: str, _: bool = Depends(require_api_key)):
+    """Serve a private local-fallback artifact after session authorization."""
+    try:
+        artifact = browser_workflow_repository.artifact(session_id, artifact_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    storage_uri = str(artifact.get("storage_uri") or "")
+    if not storage_uri.startswith("local://"):
+        raise HTTPException(status_code=404, detail="Artifact is not stored on the local fallback backend.")
+    try:
+        bucket_and_path = storage_uri.removeprefix("local://")
+        bucket, relative_path = bucket_and_path.split("/", 1)
+        if bucket != browser_artifact_store.bucket:
+            raise ValueError("Artifact bucket mismatch.")
+        root = browser_artifact_store.local_root.resolve()
+        candidate = (root / relative_path).resolve()
+        if root not in candidate.parents or not candidate.is_file():
+            raise ValueError("Artifact content not found.")
+    except (ValueError, OSError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    return FileResponse(
+        candidate,
+        media_type=str(artifact.get("mime_type") or "application/octet-stream"),
+        headers={"X-Artifact-SHA256": str(artifact.get("sha256") or "")},
+    )
+
+
 @app.get("/sessions/{session_id}/artifacts/{artifact_id}/signed-url")
 async def get_browser_artifact_url(session_id: str, artifact_id: str, _: bool = Depends(require_api_key)):
     try:
         artifact = browser_workflow_repository.artifact(session_id, artifact_id)
+        if str(artifact.get("storage_uri") or "").startswith("local://"):
+            # This is an authenticated API path, not a public URL. Keep the
+            # response shape compatible for clients that already request a
+            # signed URL, while making the fallback's shorter lifetime clear.
+            return {
+                "artifact_id": artifact_id,
+                "signed_url": f"/sessions/{session_id}/artifacts/{artifact_id}/content",
+                "expires_in": 0,
+                "storage_backend": "local_fallback",
+            }
         url = browser_artifact_store.signed_url(artifact.get("storage_uri", ""))
         if not url:
             raise ValueError("Artifact does not have a signed storage URL.")
@@ -3008,6 +3553,36 @@ async def list_structured_tool_runs(session_id: str, limit: int = 100, _: bool =
     try:
         session_store.require(session_id)
         return {"session_id": session_id, "tool_runs": structured_repository.list_runs(session_id, min(limit, 500))}
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@app.get("/sessions/{session_id}/execution/trace")
+async def get_execution_trace(session_id: str, _: bool = Depends(require_api_key)):
+    """Return the durable autonomous cycle/action trace for a session."""
+    try:
+        session_store.require(session_id)
+        runs = structured_repository.list_runs(session_id, 500)
+        phase_traces = []
+        for row in runs:
+            if str(row.get("category") or "") != "phase_narrative":
+                continue
+            metrics = row.get("metrics") if isinstance(row.get("metrics"), dict) else {}
+            trace = metrics.get("autonomous_trace")
+            if isinstance(trace, dict) and trace.get("trace_version"):
+                phase_traces.append({
+                    "tool_run_id": row.get("tool_run_id", ""),
+                    "tool_name": row.get("tool_name", ""),
+                    **trace,
+                })
+        return {
+            "session_id": session_id,
+            "trace_version": "1.0",
+            "phases": phase_traces,
+            "cycle_count": sum(int(item.get("cycle_count") or 0) for item in phase_traces),
+            "action_count": sum(int(item.get("action_count") or 0) for item in phase_traces),
+            "blocked_action_count": sum(int(item.get("blocked_action_count") or 0) for item in phase_traces),
+        }
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
@@ -3157,7 +3732,7 @@ async def build_session_identity_graph(session_id: str, req: IdentityGraphBuildR
     previous_version = int(previous[0].get("version", 0)) if previous else 0
     graph = build_identity_graph(session_id, identities, claims, contexts, previous_version)
     row = authorization_repository.save_identity_graph(session_id, graph)
-    return {"graph": row, "relations": [item.model_dump(mode="json") for item in graph.relations], "mode": "shadow"}
+    return {"graph": row, "relations": [item.model_dump(mode="json") for item in graph.relations], "mode": "autonomous"}
 
 
 @app.get("/sessions/{session_id}/identity-graph")
@@ -3236,7 +3811,7 @@ async def evaluate_identity_access_matrix(session_id: str, req: IdentityAccessEv
             require_clean_reproduction=req.require_clean_reproduction,
             require_cleanup=req.require_cleanup,
         ),
-        "mode": get_setting("identity_business_impact_mode", "shadow"),
+        "mode": "autonomous",
     }
 
 
@@ -3349,7 +3924,7 @@ async def discover_identity_workflow_intelligence(
             authorization_repository.save_workflow_prerequisite(WorkflowPrerequisiteV1(**raw))
     return {
         "session_id": session_id,
-        "mode": get_setting("identity_workflow_mode", "shadow"),
+        "mode": "autonomous",
         "persisted": bool(req.persist),
         "inventory": redact(compiled.get("identity_workflow_inventory") or {}),
         "workflows": redact(compiled.get("workflows") or []),
@@ -3412,6 +3987,27 @@ async def run_authorization_replay(session_id: str, req: AuthorizationReplayRequ
     if not allowed:
         raise HTTPException(status_code=403, detail=reason)
     expectations = [AuthorizationExpectationV1(**item) for item in authorization_repository.list_expectations(session_id)]
+    auth_contexts: Dict[str, str] = {}
+    for identity_id in [req.owner_identity_id, *req.test_identity_ids]:
+        contexts = [
+            item for item in authorization_repository.list_auth_contexts(session_id, identity_id)
+            if str(item.get("status") or "").lower() == "active" and item.get("auth_context_id")
+        ]
+        requested_context_id = str((req.auth_contexts or {}).get(identity_id) or "")
+        if requested_context_id:
+            active_context = next(
+                (item for item in contexts if str(item.get("auth_context_id")) == requested_context_id),
+                None,
+            )
+        elif len(contexts) == 1:
+            active_context = contexts[0]
+        elif len(contexts) > 1:
+            raise HTTPException(status_code=409, detail=f"Multiple active auth contexts for identity '{identity_id}'; provide auth_contexts explicitly.")
+        else:
+            active_context = None
+        if not active_context:
+            raise HTTPException(status_code=409, detail=f"No active auth context for identity: {identity_id}")
+        auth_contexts[identity_id] = str(active_context["auth_context_id"])
     run = AuthorizationReplayRunV1(
         session_id=session_id, template_id=template.template_id,
         resource_fingerprint=resource.fingerprint, owner_identity_id=req.owner_identity_id,
@@ -3421,14 +4017,40 @@ async def run_authorization_replay(session_id: str, req: AuthorizationReplayRequ
     result = engine.run_differential(
         session_id, template, resource, req.owner_identity_id,
         req.test_identity_ids, expectations, req.bindings, req.approved, run,
+        auth_contexts=auth_contexts,
+        negative_control_identity_id=req.negative_control_identity_id,
     )
     validations = validation_engine.validate(result) if result.candidate_findings else []
+    validation_v2 = validation_engine_v2.validate(
+        result,
+        mode="autonomous",
+        apply_status=True,
+    ) if result.candidate_findings else []
+    result.metrics["validation_v2"] = [
+        {
+            "candidate_id": item.candidate_id,
+            "policy_id": item.policy_id,
+            "decision": item.decision,
+            "score": item.score,
+            "input_digest": item.input_digest,
+        }
+        for item in validation_v2
+    ]
+    result.metrics["proof"] = [
+        item.model_dump(mode="json")
+        for item in proof_pipeline.summarize(result, validation_v2)
+    ]
     structured_repository.persist(session_id, result, validations)
     if engine.last_run:
         authorization_repository.create_replay_run(session_id, engine.last_run)
         for attempt in engine.last_run.attempts:
             authorization_repository.save_attempt(session_id, attempt)
-    return {"result": result.model_dump(), "replay": engine.last_run.model_dump() if engine.last_run else {}}
+    return {
+        "result": result.model_dump(),
+        "replay": engine.last_run.model_dump() if engine.last_run else {},
+        "validation_v2": [item.model_dump(mode="json") for item in validation_v2],
+        "validation_mode": "autonomous",
+    }
 
 
 @app.get("/sessions/{session_id}/authorization/replays")
@@ -3449,13 +4071,14 @@ async def get_authorization_replay(session_id: str, replay_run_id: str, _: bool 
 async def get_workflow_report(session_id: str, _: bool = Depends(require_api_key)):
     try:
         report = workflow_report.generate(session_id)
-        persistence = "memory"
         try:
             structured_repository.save_report_narrative(session_id, report["narrative"], report["claims"])
-            persistence = "supabase"
-        except Exception:
-            pass
-        return {**report, "persistence": persistence}
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Report persistence unavailable: {redact(str(exc))[:500]}",
+            ) from exc
+        return {**report, "persistence": "supabase"}
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
@@ -3510,6 +4133,19 @@ async def record_workflow_retest(session_id: str, req: RetestRecordRequest, _: b
         if not finding_id:
             raise ValueError("evidence.finding_id is required.")
         return retest_service.record(session_id, finding_id, req.status, req.comparison, req.evidence)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/sessions/{session_id}/workflow/retest/compare")
+async def compare_workflow_retest(session_id: str, req: RetestCompareRequest, _: bool = Depends(require_api_key)):
+    try:
+        return {
+            "session_id": session_id,
+            "comparison": retest_service.compare_structured_results(
+                session_id, req.original_result, req.retest_result
+            ),
+        }
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -3675,18 +4311,12 @@ async def send_session_message(
                 "The job will stay within this session's scope; I'll show progress in the execution stream."
             )
             save_message(session_id, "agent", queued_reply)
-            if _execution_mode() == "strict":
-                _enqueue_execution_job(
-                    job_id=job_id, session_id=session_id, target=context["target_url"],
-                    goal=context["attack_goal"], job_type="pentest",
-                    payload={"agent_models": {"recon": req.model_id, "analis": req.model_id}, "scan_config": scan_config},
-                    risk="read_only", idempotency_key=job_id,
-                )
-            else:
-                background_tasks.add_task(
-                    run_pentest_job, job_id, context["target_url"], context["attack_goal"], session_id,
-                    {"recon": req.model_id, "analis": req.model_id}, None, scan_config,
-                )
+            _enqueue_execution_job(
+                job_id=job_id, session_id=session_id, target=context["target_url"],
+                goal=context["attack_goal"], job_type="pentest",
+                payload={"agent_models": {"recon": req.model_id, "analis": req.model_id}, "scan_config": scan_config},
+                risk="read_only", idempotency_key=job_id,
+            )
             return {
                 "session_id": session_id,
                 "role": "agent",
@@ -3741,6 +4371,9 @@ async def get_session_messages(session_id: str, _: bool = Depends(require_api_ke
 @app.get("/models")
 async def get_models(_: bool = Depends(require_api_key)):
     """Return daftar model that available for selected di frontend."""
+    # Model registry/provider SDKs are an explicit chat/legacy capability, not
+    # part of canonical AI-native execution startup.
+    from core.model_registry import list_available_models
     return list_available_models()
 
 
@@ -3814,7 +4447,7 @@ async def start_pentest(req: PentestRequest, background_tasks: BackgroundTasks, 
     """
     # Cek scope DULU senot yet bikin session/job apapun — fail fast, jangan
     # nunggu sampai background job jalan baru ketauan rejected.
-    allowed, reason = validate_target(req.target, supabase)
+    allowed, reason = validate_target(req.target, supabase, session_id=req.session_id or "")
     if not allowed:
         raise HTTPException(status_code=403, detail=f"Target out of scope: {reason}")
 
@@ -3863,13 +4496,6 @@ async def start_pentest(req: PentestRequest, background_tasks: BackgroundTasks, 
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
 
-    if _execution_mode() == "strict":
-        return {"job_id": job_id, "session_id": session_id, "status": "queued", "stream_token": stream_token}
-
-    background_tasks.add_task(
-        run_pentest_job, job_id, req.target, req.goal, session_id, req.agent_models, req.credentials, req.scan_config
-    )
-
     return {"job_id": job_id, "session_id": session_id, "status": "queued", "stream_token": stream_token}
 
 
@@ -3894,20 +4520,13 @@ async def list_execution_events(session_id: str, job_id: str, after_sequence: in
 @app.get("/job/{job_id}")
 async def get_job(job_id: str, _: bool = Depends(require_api_key)):
     """Poll status job."""
-    if _execution_mode() == "strict":
-        try:
-            durable = durable_execution_repository.get_job(job_id)
-        except Exception as exc:
-            raise HTTPException(status_code=503, detail="Durable job state unavailable.") from exc
-        if durable:
-            return _legacy_job_view(durable)
+    try:
+        durable = durable_execution_repository.get_job(job_id)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Durable job state unavailable.") from exc
+    if durable:
+        return _legacy_job_view(durable)
     if job_id not in jobs:
-        try:
-            durable = durable_execution_repository.get_job(job_id)
-        except Exception:
-            durable = None
-        if durable:
-            return _legacy_job_view(durable)
         raise HTTPException(status_code=404, detail="Job not found")
     return jobs[job_id]
 
@@ -3919,22 +4538,13 @@ async def cancel_job(job_id: str, _: bool = Depends(require_api_key)):
     tool senot yet eksekusi — tool that not yet jalan will berhenti, tool yang
     currently berjalan will completed dulu baru berhenti di tool berikutnya.
     """
-    if _execution_mode() == "strict":
-        try:
-            durable = durable_execution_repository.get_job(job_id)
-        except Exception as exc:
-            raise HTTPException(status_code=503, detail="Durable job state unavailable.") from exc
-        if not durable:
-            raise HTTPException(status_code=404, detail="Job not found")
+    try:
+        durable = durable_execution_repository.get_job(job_id)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Durable job state unavailable.") from exc
+    if durable:
         return {"ok": durable_execution_repository.request_cancel(job_id), "job_id": job_id, "source": "durable"}
     if job_id not in jobs:
-        try:
-            durable = durable_execution_repository.get_job(job_id)
-        except Exception:
-            durable = None
-        if durable:
-            ok = durable_execution_repository.request_cancel(job_id)
-            return {"ok": ok, "job_id": job_id, "source": "durable"}
         raise HTTPException(status_code=404, detail="Job not found")
 
     job = jobs[job_id]
@@ -4139,17 +4749,14 @@ async def export_report_markdown(job_id: str, _: bool = Depends(require_api_key)
     Export laporan dalam format Markdown siap paste ke HackerOne.
     Return plain text with Content-Disposition biar browser auto-download.
     """
-    if job_id not in jobs:
-        raise HTTPException(status_code=404, detail="Job not found")
-
-    job = jobs[job_id]
-    if job.get("status") != "done" or not job.get("report"):
-        raise HTTPException(status_code=400, detail="Report not yet tersedia. Tunggu job selesai.")
+    try:
+        job, raw_report = _resolve_report_for_export(job_id)
+    except ReportExportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.as_detail()) from exc
 
     target = job.get("target", "Unknown")
     goal = job.get("goal", "Unknown")
     created_at = job.get("created_at", "")[:10]
-    raw_report = job.get("report", "")
     logs = job.get("logs", [])
     summary = job.get("summary", {})
 
@@ -4237,58 +4844,42 @@ async def export_report(job_id: str, format: str = "md", _: bool = Depends(requi
     Export report in multiple formats: md, pdf, docx.
     Query param: ?format=md|pdf|docx
     """
-    if job_id not in jobs:
-        # Fallback: coba ambil dari workflow_jobs (durable) biar gak 404 setelah restart
-        try:
-            res = supabase.table("workflow_jobs").select("*").eq("job_id", job_id).execute()
-            db_job = (res.data or [None])[0]
-            if db_job:
-                payload = db_job.pop("payload", {}) or {}
-                db_job.update(payload)
-                jobs[job_id] = db_job
-        except Exception:
-            pass
-        if job_id not in jobs:
-            raise HTTPException(status_code=404, detail="Job not found")
+    try:
+        normalized_format = normalize_report_format(format)
+        job, raw_report = _resolve_report_for_export(job_id)
+    except ReportExportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.as_detail()) from exc
 
-    job = jobs[job_id]
-    if job.get("status") != "done" or not job.get("report"):
-        raise HTTPException(status_code=400, detail="Report not yet available.")
-
-    from tools.report_export import ReportExporter
     from fastapi.responses import Response as FastAPIResponse
 
     exporter = ReportExporter()
     report_data = {
         "target": job.get("target", "Unknown"),
-        "findings": [],
-        "phases": {"recon": job.get("report", "")[:2000]},
+        "findings": job.get("findings") if isinstance(job.get("findings"), list) else [],
+        "phases": job.get("phases") if isinstance(job.get("phases"), dict) else {},
+        "report": raw_report,
     }
 
     try:
-        if format == "pdf":
-            pdf_bytes = exporter.to_pdf(report_data)
-            return FastAPIResponse(
-                content=pdf_bytes,
-                media_type="application/pdf",
-                headers={"Content-Disposition": f'attachment; filename="nexus-report-{job_id[:8]}.pdf"'},
-            )
-        elif format == "docx":
-            docx_bytes = exporter.to_docx(report_data)
-            return FastAPIResponse(
-                content=docx_bytes,
-                media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                headers={"Content-Disposition": f'attachment; filename="nexus-report-{job_id[:8]}.docx"'},
-            )
-        else:
-            md = exporter.to_markdown(report_data)
-            return FastAPIResponse(
-                content=md,
-                media_type="text/markdown",
-                headers={"Content-Disposition": f'attachment; filename="nexus-report-{job_id[:8]}.md"'},
-            )
-    except RuntimeError as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        exported = exporter.export(report_data, normalized_format)
+    except ReportExportError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.as_detail()) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "report_export_failed",
+                "message": "Report format conversion failed.",
+                "format": normalized_format,
+                "cause": type(exc).__name__,
+            },
+        ) from exc
+
+    return FastAPIResponse(
+        content=exported.content,
+        media_type=exported.media_type,
+        headers={"Content-Disposition": f'attachment; filename="nexus-report-{job_id[:8]}.{exported.extension}"'},
+    )
 
 @app.get("/logs")
 async def get_logs(_: bool = Depends(require_api_key)):

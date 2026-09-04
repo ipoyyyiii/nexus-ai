@@ -28,9 +28,7 @@ def main(argv: list[str] | None = None) -> int:
     config = get_config()
     result = {
         "config_digest": stable_digest(config),
-        "execution_platform_mode": config.get("execution_platform_mode"),
-        "tool_boundary_mode": config.get("tool_boundary_mode"),
-        "production_readiness_mode": config.get("production_readiness_mode"),
+        "assessment_mode": config.get("assessment_mode", "autonomous"),
         "worker_concurrency": config.get("execution", {}).get("worker_concurrency"),
         "supabase_configured": bool(os.environ.get("SUPABASE_URL") and os.environ.get("SUPABASE_KEY")),
     }

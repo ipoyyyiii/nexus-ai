@@ -34,13 +34,9 @@ class NexusWorker:
         self.active_attempt: Any = None
         self.last_health = 0.0
 
-    @staticmethod
-    def _strict_mode() -> bool:
-        return str(get_setting("execution_platform_mode", "shadow")).lower() == "strict"
-
     def preflight(self) -> None:
-        """Fail closed before polling when strict mode lacks durable primitives."""
-        if not self._strict_mode() or not bool(get_setting("execution", {}).get("strict_startup_preflight", True)):
+        """Fail closed before polling when durable primitives are unavailable."""
+        if not bool(get_setting("execution", {}).get("startup_preflight", True)):
             return
         try:
             # An empty queue claim validates the deployed RPC signature and
@@ -51,11 +47,11 @@ class NexusWorker:
                 "p_lease_seconds": 10,
             }).execute()
             if result.data not in (None, [], {}):
-                raise RuntimeError("strict preflight unexpectedly claimed a job")
+                raise RuntimeError("autonomous preflight unexpectedly claimed a job")
             self.repository.sb.table("workflow_events").select("sequence").limit(1).execute()
             self.repository.sb.table("worker_nodes").select("worker_id").limit(1).execute()
         except Exception as exc:
-            raise RuntimeError("strict worker preflight failed; durable execution is unavailable") from exc
+            raise RuntimeError("autonomous worker preflight failed; durable execution is unavailable") from exc
 
     def _transition(self, job_id: str, attempt_id: str, worker_id: str, lease_token: str, status: str, **values: Any) -> bool:
         ok = self.repository.transition(job_id, attempt_id, worker_id, lease_token, status, **values)
@@ -84,19 +80,33 @@ class NexusWorker:
         return queues
 
     def _recover_expired(self) -> None:
-        try:
-            result = self.repository.sb.rpc("recover_expired_execution_jobs", {}).execute()
-            data = result.data
-            recovered = int(data[0] if isinstance(data, list) and data else data or 0)
-            if recovered:
-                self.repository.record_recovery(RecoveryEventV1(
-                    job_id="system", worker_id=self.worker_id,
-                    kind="lease_expired", decision="recovered",
-                    reason=f"recovered={recovered}",
-                ))
-        except Exception:
-            if str(get_setting("execution_platform_mode", "shadow")).lower() == "strict":
-                raise
+        execution = get_setting("execution", {}) or {}
+        attempts = max(0, min(4, int(execution.get("worker_rpc_retry_attempts", 2))))
+        backoff = max(0.05, min(5.0, float(execution.get("worker_rpc_retry_backoff_seconds", 0.5))))
+        last_error = None
+        for retry_index in range(attempts + 1):
+            try:
+                result = self.repository.sb.rpc("recover_expired_execution_jobs", {}).execute()
+                data = result.data
+                recovered = int(data[0] if isinstance(data, list) and data else data or 0)
+                if recovered:
+                    self.repository.record_recovery(RecoveryEventV1(
+                        job_id="system", worker_id=self.worker_id,
+                        kind="lease_expired", decision="recovered",
+                        reason=f"recovered={recovered}",
+                    ))
+                return
+            except Exception as exc:
+                last_error = exc
+                if retry_index >= attempts:
+                    # An intermittent control-plane disconnect must not kill
+                    # the worker. The next poll performs the same bounded
+                    # recovery attempt; an actual job remains fenced by its
+                    # lease and can be recovered by the database RPC later.
+                    return
+                time.sleep(backoff * (2 ** retry_index))
+        if last_error:  # pragma: no cover - loop always returns on final try
+            return
 
     def _execute_attempt(self, attempt: Any, lease_seconds: int) -> None:
         job = self.repository.get_job(attempt.job_id)
@@ -144,10 +154,18 @@ class NexusWorker:
             try:
                 if not self.repository.heartbeat(attempt, lease_seconds):
                     return
+                # ``run_forever`` is blocked while a pentest is executing, so
+                # publishing health only from its poll loop makes the
+                # container look dead during a healthy long-running attempt.
+                # The lease heartbeat is the authoritative liveness tick.
+                self._write_health_file()
             except Exception:
-                if str(get_setting("execution_platform_mode", "shadow")).lower() == "strict":
-                    self.stop_requested = True
-                return
+                # A single transient telemetry/heartbeat disconnect should
+                # not terminate the worker process. Keep the health file
+                # fresh and let the next heartbeat retry; lease fencing still
+                # prevents stale work from committing.
+                self._write_health_file()
+                continue
 
     def _publish_health(self) -> None:
         now = time.monotonic()
@@ -165,7 +183,7 @@ class NexusWorker:
                 active_job_id=str(getattr(attempt, "job_id", "") or ""),
                 active_attempt_id=str(getattr(attempt, "attempt_id", "") or ""),
                 resource_sample=self._resource_sample(),
-                metadata={"pid": os.getpid(), "platform_mode": get_setting("execution_platform_mode", "shadow")},
+                metadata={"pid": os.getpid(), "assessment_mode": "autonomous"},
             )
             self.repository.record_worker_health(health)
             self.repository.record_resource_sample(ResourceSampleV1(
@@ -176,8 +194,10 @@ class NexusWorker:
                 process_count=health.resource_sample.get("process_count"),
             ))
         except Exception:
-            if str(get_setting("execution_platform_mode", "shadow")).lower() == "strict":
-                raise
+            # Health telemetry is observability, not the worker's execution
+            # control path. Supabase disconnects must degrade telemetry while
+            # polling/dispatch continues and Docker health remains truthful.
+            return
 
     @staticmethod
     def _resource_sample() -> dict:
@@ -235,7 +255,7 @@ class NexusWorker:
     def _pentest(self, job: Dict[str, Any], attempt: Any, lease_seconds: int) -> None:
         import api
         payload = job.get("payload_redacted") or job.get("payload") or {}
-        api.run_pentest_job(
+        terminal = api.run_pentest_job(
             attempt.job_id, str(job.get("target", "")), str(job.get("goal", "")),
             str(job.get("session_id", "")), payload.get("agent_models") or {},
             None, payload.get("scan_config") or {},
@@ -244,7 +264,26 @@ class NexusWorker:
             worker_capabilities=tuple(self.capabilities),
             execution_repository=self.repository,
         )
-        self._transition(attempt.job_id, attempt.attempt_id, attempt.worker_id, attempt.lease_token, "succeeded")
+        # ``run_pentest_job`` owns the application-level terminal state.  Do
+        # not turn an internal ``error``/``cancelled`` return into a durable
+        # worker success.  Older handlers that return None are treated as an
+        # integrity failure rather than guessed as successful.
+        if terminal == "done":
+            worker_status = "succeeded"
+        elif terminal == "partial":
+            worker_status = "partial"
+        elif terminal == "cancelled":
+            worker_status = "cancelled"
+        elif terminal in {"error", "failed"}:
+            worker_status = "failed"
+        else:
+            raise RuntimeError(
+                "pentest handler returned no authoritative terminal status"
+            )
+        self._transition(
+            attempt.job_id, attempt.attempt_id, attempt.worker_id,
+            attempt.lease_token, worker_status,
+        )
 
     def _readiness_soak(self, job: Dict[str, Any], attempt: Any, lease_seconds: int) -> None:
         from core.soak_executor import DurableSoakExecutor, SoakCancelled

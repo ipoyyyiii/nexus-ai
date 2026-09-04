@@ -14,6 +14,8 @@ from core.redact import redact
 # 1. Taruh import proxy router di sthis men
 from core.proxy_router import proxy_router
 from core.auth_store import inject_into_session
+from core.safety_kernel import SafetyViolation
+from core.structured_contract import ToolErrorV1, ToolResultV1
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -33,6 +35,68 @@ def _logger():
         return exec_logger
     except Exception:
         return None
+
+
+def _auth_session(url: str):
+    """Create a context-bound session and attach any operator auth state."""
+    session = requests.Session()
+    session.verify = True
+    inject_into_session(session, _domain_of(url))
+    return session
+
+
+def _proxy_kwargs(proxy: Optional[dict]) -> dict:
+    """Pass a proxy only when one was explicitly configured.
+
+    Passing ``proxies=None`` through compatibility layers used to re-enable
+    ambient HTTP(S)_PROXY handling in requests.  Direct local-lab traffic
+    must remain direct and operator-configured proxy traffic must remain
+    explicit.
+    """
+    return {"proxies": proxy} if proxy else {}
+
+
+def _request_error(tool_name: str, url: str, exc: BaseException, *, phase: str) -> ToolErrorV1:
+    if isinstance(exc, SafetyViolation):
+        code = str(exc.reason_code or "tool_transport_error")
+        retryable = code in {"tool_timeout", "tool_transport_error"}
+    elif isinstance(exc, requests.exceptions.Timeout):
+        code, retryable = "tool_timeout", True
+    elif isinstance(exc, requests.exceptions.ProxyError):
+        code, retryable = "tool_transport_error", True
+    elif isinstance(exc, requests.exceptions.ConnectionError):
+        code, retryable = "tool_transport_error", True
+    elif isinstance(exc, requests.exceptions.RequestException):
+        code, retryable = "tool_request_error", True
+    else:
+        code, retryable = "tool_execution_error", False
+    return ToolErrorV1(
+        code=code,
+        message=f"{tool_name} {phase} failed: {type(exc).__name__}: {str(exc)[:500]}",
+        retryable=retryable,
+        details={
+            "phase": phase,
+            "target_url": url,
+            "tool_name": tool_name,
+            "error_type": type(exc).__name__,
+        },
+    )
+
+
+def _failed_request_result(tool_name: str, url: str, error: ToolErrorV1) -> ToolResultV1:
+    return ToolResultV1(
+        tool_name=tool_name,
+        category="recon",
+        target=url,
+        status="failed",
+        summary=f"{tool_name} could not establish its baseline request.",
+        errors=[error],
+        metrics={
+            "request_failures": 1,
+            "baseline_request_failed": True,
+            "transport_diagnostic": error.model_dump(mode="json"),
+        },
+    )
 
 
 # ── Wordlists ─────────────────────────────────────────────────────────────────
@@ -97,7 +161,8 @@ def _run_arjun_discovery(url: str, logger) -> list:
     import os
 
     tool_name = "Arjun Parameter Discovery"
-    
+    output_file = ""
+
     try:
         # Create temp output file
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
@@ -127,7 +192,7 @@ def _run_arjun_discovery(url: str, logger) -> list:
 
         # Parse arjun output
         params = []
-        if os.path.exists(output_file):
+        if output_file and os.path.exists(output_file):
             try:
                 import json
                 with open(output_file, 'r') as f:
@@ -145,20 +210,24 @@ def _run_arjun_discovery(url: str, logger) -> list:
                     pass
 
         if params:
-            logger.add_log(tool_name, "SUCCESS", f"Arjun found {len(params)} parameters")
+            if logger:
+                logger.add_log(tool_name, "SUCCESS", f"Arjun found {len(params)} parameters")
         
         return params
 
     except subprocess.TimeoutExpired:
-        if os.path.exists(output_file):
+        if output_file and os.path.exists(output_file):
             os.unlink(output_file)
-        logger.add_log(tool_name, "WARNING", "Arjun timed out")
+        if logger:
+            logger.add_log(tool_name, "WARNING", "Arjun timed out")
         return []
     except FileNotFoundError:
-        logger.add_log(tool_name, "WARNING", "Arjun not found")
+        if logger:
+            logger.add_log(tool_name, "WARNING", "Arjun not found")
         return []
     except Exception as e:
-        logger.add_log(tool_name, "WARNING", f"Arjun error: {str(e)[:100]}")
+        if logger:
+            logger.add_log(tool_name, "WARNING", f"Arjun error: {str(e)[:100]}")
         return []
 
 
@@ -180,38 +249,38 @@ def param_discovery_get(url: str, tech_stack: str = "") -> str:
     approved = require_approval(
         action=f"GET parameter discovery on {url}",
         context=f"Bruteforce {len(COMMON_GET_PARAMS)} common parameters. Tech stack: {tech_stack or 'unknown'}",
-        risk="low",
+        risk="read_only",
         exec_logger=logger,
     )
     if not approved:
         return "DIBATALKAN: approval rejected atau timeout."
 
-    SESSION = requests.Session()
-    SESSION.verify = True
-
+    SESSION = _auth_session(url)
     domain = _domain_of(url)
-
-    # Inject auth session jika ada
-    inject_into_session(SESSION, domain)
 
     wordlist = list(COMMON_GET_PARAMS)
     if tech_stack and tech_stack.lower() in TECH_SPECIFIC:
         tech_params = TECH_SPECIFIC[tech_stack.lower()]
         wordlist = tech_params + [p for p in wordlist if p not in tech_params]
 
-    # ── Baseline request with Proxy ──────────────────────────────────────────
+    request_errors: list[ToolErrorV1] = []
+    failed_requests = 0
+
+    # ── Baseline request through the guarded transport ───────────────────────
     rate_limiter.wait(domain)
     current_proxy = proxy_router.get_proxy()
     try:
-        baseline = SESSION.get(url, headers=HEADERS, proxies=current_proxy, timeout=5)
+        baseline = SESSION.get(url, headers=HEADERS, **_proxy_kwargs(current_proxy), timeout=5)
         baseline_length = len(baseline.text)
         baseline_status = baseline.status_code
-    except (requests.exceptions.ProxyError, requests.exceptions.Timeout):
+    except Exception as exc:
         if current_proxy:
             proxy_router.remove_dead_proxy(current_proxy)
-        return json.dumps({"error": "Baseline GET request failed karena kendala proxy."})
-    except Exception as e:
-        return json.dumps({"error": f"Baseline request failed: {str(e)}"})
+        return _failed_request_result(
+            tool_name,
+            url,
+            _request_error(tool_name, url, exc, phase="baseline"),
+        )
 
     if logger:
         logger.add_log(tool_name, "PROCESSING", f"Baseline: status={baseline_status}, length={baseline_length}. Testing {len(wordlist)} params...")
@@ -234,7 +303,7 @@ def param_discovery_get(url: str, tech_stack: str = "") -> str:
         rate_limiter.wait(domain)
         current_proxy = proxy_router.get_proxy()
         try:
-            resp = SESSION.get(test_url, headers=HEADERS, proxies=current_proxy, timeout=4)
+            resp = SESSION.get(test_url, headers=HEADERS, **_proxy_kwargs(current_proxy), timeout=4)
             tested += 1
 
             length_diff = abs(len(resp.text) - baseline_length)
@@ -243,11 +312,12 @@ def param_discovery_get(url: str, tech_stack: str = "") -> str:
             if length_diff > 100 or status_diff:
                 interesting_batches.append(batch)
 
-        except (requests.exceptions.ProxyError, requests.exceptions.Timeout):
+        except Exception as exc:
             if current_proxy:
                 proxy_router.remove_dead_proxy(current_proxy)
-            continue
-        except Exception:
+            failed_requests += 1
+            if len(request_errors) < 10:
+                request_errors.append(_request_error(tool_name, test_url, exc, phase="batch"))
             continue
 
     # ── Individual test for batch that interesting with Proxy ───────────────
@@ -263,7 +333,7 @@ def param_discovery_get(url: str, tech_stack: str = "") -> str:
             rate_limiter.wait(domain)
             current_proxy = proxy_router.get_proxy()
             try:
-                resp = SESSION.get(test_url, headers=HEADERS, proxies=current_proxy, timeout=4)
+                resp = SESSION.get(test_url, headers=HEADERS, **_proxy_kwargs(current_proxy), timeout=4)
                 tested += 1
 
                 resp_length = len(resp.text)
@@ -292,11 +362,12 @@ def param_discovery_get(url: str, tech_stack: str = "") -> str:
                         "test_url": test_url,
                     })
 
-            except (requests.exceptions.ProxyError, requests.exceptions.Timeout):
+            except Exception as exc:
                 if current_proxy:
                     proxy_router.remove_dead_proxy(current_proxy)
-                continue
-            except Exception:
+                failed_requests += 1
+                if len(request_errors) < 10:
+                    request_errors.append(_request_error(tool_name, test_url, exc, phase="individual"))
                 continue
 
     result = {
@@ -306,11 +377,21 @@ def param_discovery_get(url: str, tech_stack: str = "") -> str:
         "discovered_params": discovered,
         "total_discovered": len(discovered),
         "wordlist_size": len(wordlist),
-        "status": "success" if not check_cancelled(logger) else "cancelled"
+        "status": (
+            "cancelled" if check_cancelled(logger)
+            else "partial" if request_errors
+            else "succeeded"
+        ),
+        "request_failures": failed_requests,
+        "request_error_samples": [item.model_dump(mode="json") for item in request_errors],
     }
 
     if logger:
-        logger.add_log(tool_name, "SUCCESS" if discovered else "INFO", f"Discovery selesai. {tested} params tested, {len(discovered)} discovered.")
+        logger.add_log(
+            tool_name,
+            "WARNING" if request_errors else "SUCCESS" if discovered else "INFO",
+            f"Discovery selesai. {tested} params tested, {len(discovered)} discovered, {failed_requests} request failures.",
+        )
 
     # ── ARJUN CONFIRMATION STEP ───────────────────────────────────────────────
     if logger:
@@ -332,7 +413,15 @@ def param_discovery_get(url: str, tech_stack: str = "") -> str:
         result["total_discovered"] = len(discovered)
         result["arjun_discovered"] = len(arjun_result)
 
-    return json.dumps(redact(result), indent=2)
+    return ToolResultV1(
+        tool_name=tool_name,
+        category="recon",
+        target=url,
+        status=result["status"],
+        summary=f"GET parameter discovery completed with {tested} tested requests and {failed_requests} failures.",
+        metrics=redact(result),
+        errors=request_errors,
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -359,25 +448,30 @@ def param_discovery_post(url: str, content_type: str = "application/x-www-form-u
     if not approved:
         return "DIBATALKAN: approval rejected atau timeout."
 
+    SESSION = _auth_session(url)
     domain = _domain_of(url)
     use_json = "json" in content_type.lower()
+    request_errors: list[ToolErrorV1] = []
+    failed_requests = 0
 
-    # Baseline POST request with Proxy
+    # Baseline POST request through the guarded transport
     rate_limiter.wait(domain)
     current_proxy = proxy_router.get_proxy()
     try:
         if use_json:
-            baseline = SESSION.post(url, json={}, headers={**HEADERS, "Content-Type": "application/json"}, proxies=current_proxy, timeout=5)
+            baseline = SESSION.post(url, json={}, headers={**HEADERS, "Content-Type": "application/json"}, **_proxy_kwargs(current_proxy), timeout=5)
         else:
-            baseline = SESSION.post(url, data={}, headers=HEADERS, proxies=current_proxy, timeout=5)
+            baseline = SESSION.post(url, data={}, headers=HEADERS, **_proxy_kwargs(current_proxy), timeout=5)
         baseline_length = len(baseline.text)
         baseline_status = baseline.status_code
-    except (requests.exceptions.ProxyError, requests.exceptions.Timeout):
+    except Exception as exc:
         if current_proxy:
             proxy_router.remove_dead_proxy(current_proxy)
-        return json.dumps({"error": "Baseline POST request failed karena kendala proxy."})
-    except Exception as e:
-        return json.dumps({"error": f"Baseline POST failed: {str(e)}"})
+        return _failed_request_result(
+            tool_name,
+            url,
+            _request_error(tool_name, url, exc, phase="baseline"),
+        )
 
     discovered = []
     tested = 0
@@ -395,7 +489,7 @@ def param_discovery_post(url: str, content_type: str = "application/x-www-form-u
                     url,
                     json={param: test_value},
                     headers={**HEADERS, "Content-Type": "application/json"},
-                    proxies=current_proxy,
+                    **_proxy_kwargs(current_proxy),
                     timeout=4
                 )
             else:
@@ -403,7 +497,7 @@ def param_discovery_post(url: str, content_type: str = "application/x-www-form-u
                     url,
                     data={param: test_value},
                     headers=HEADERS,
-                    proxies=current_proxy,
+                    **_proxy_kwargs(current_proxy),
                     timeout=4
                 )
             tested += 1
@@ -430,11 +524,12 @@ def param_discovery_post(url: str, content_type: str = "application/x-www-form-u
                     "found_status": resp.status_code,
                 })
 
-        except (requests.exceptions.ProxyError, requests.exceptions.Timeout):
+        except Exception as exc:
             if current_proxy:
                 proxy_router.remove_dead_proxy(current_proxy)
-            continue
-        except Exception:
+            failed_requests += 1
+            if len(request_errors) < 10:
+                request_errors.append(_request_error(tool_name, url, exc, phase="parameter"))
             continue
 
     result = {
@@ -444,12 +539,30 @@ def param_discovery_post(url: str, content_type: str = "application/x-www-form-u
         "total_tested": tested,
         "discovered_params": discovered,
         "total_discovered": len(discovered),
-        "status": "success" if not check_cancelled(logger) else "cancelled"
+        "status": (
+            "cancelled" if check_cancelled(logger)
+            else "partial" if request_errors
+            else "succeeded"
+        ),
+        "request_failures": failed_requests,
+        "request_error_samples": [item.model_dump(mode="json") for item in request_errors],
     }
 
     if logger:
-        logger.add_log(tool_name, "SUCCESS" if discovered else "INFO", f"POST discovery selesai. {tested} tested, {len(discovered)} discovered.")
-    return json.dumps(redact(result), indent=2)
+        logger.add_log(
+            tool_name,
+            "WARNING" if request_errors else "SUCCESS" if discovered else "INFO",
+            f"POST discovery selesai. {tested} tested, {len(discovered)} discovered, {failed_requests} request failures.",
+        )
+    return ToolResultV1(
+        tool_name=tool_name,
+        category="recon",
+        target=url,
+        status=result["status"],
+        summary=f"POST parameter discovery completed with {tested} tested requests and {failed_requests} failures.",
+        metrics=redact(result),
+        errors=request_errors,
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -466,6 +579,15 @@ def param_discovery_headers(url: str) -> str:
 
     if check_cancelled(logger):
         return "DIBATALKAN: job di-cancel oleh user."
+
+    approved = require_approval(
+        action=f"Header parameter discovery on {url}",
+        context="Test read-only diagnostic headers against the target baseline.",
+        risk="read_only",
+        exec_logger=logger,
+    )
+    if not approved:
+        return "DIBATALKAN: approval rejected atau timeout."
 
     INTERESTING_HEADERS = [
         "X-Debug", "X-Debug-Mode", "X-Dev-Mode", "X-Internal",
@@ -484,21 +606,26 @@ def param_discovery_headers(url: str) -> str:
         "X-HTTP-Method-Override", "X-Method-Override",
     ]
 
+    SESSION = _auth_session(url)
     domain = _domain_of(url)
+    request_errors: list[ToolErrorV1] = []
+    failed_requests = 0
 
-    # Baseline with Proxy
+    # Baseline through the guarded transport
     rate_limiter.wait(domain)
     current_proxy = proxy_router.get_proxy()
     try:
-        baseline = SESSION.get(url, headers=HEADERS, proxies=current_proxy, timeout=5)
+        baseline = SESSION.get(url, headers=HEADERS, **_proxy_kwargs(current_proxy), timeout=5)
         baseline_length = len(baseline.text)
         baseline_status = baseline.status_code
-    except (requests.exceptions.ProxyError, requests.exceptions.Timeout):
+    except Exception as exc:
         if current_proxy:
             proxy_router.remove_dead_proxy(current_proxy)
-        return json.dumps({"error": "Baseline Header request failed karena kendala proxy."})
-    except Exception as e:
-        return json.dumps({"error": f"Baseline failed: {str(e)}"})
+        return _failed_request_result(
+            tool_name,
+            url,
+            _request_error(tool_name, url, exc, phase="baseline"),
+        )
 
     interesting_headers = []
     tested = 0
@@ -511,7 +638,7 @@ def param_discovery_headers(url: str) -> str:
         current_proxy = proxy_router.get_proxy()
         try:
             test_headers = {**HEADERS, header: "nexus-test-1337"}
-            resp = SESSION.get(url, headers=test_headers, proxies=current_proxy, timeout=4)
+            resp = SESSION.get(url, headers=test_headers, **_proxy_kwargs(current_proxy), timeout=4)
             tested += 1
 
             length_diff = abs(len(resp.text) - baseline_length)
@@ -527,11 +654,12 @@ def param_discovery_headers(url: str) -> str:
                     "evidence": f"Response berbeda: status {baseline_status}→{resp.status_code}, length diff {length_diff}",
                 })
 
-        except (requests.exceptions.ProxyError, requests.exceptions.Timeout):
+        except Exception as exc:
             if current_proxy:
                 proxy_router.remove_dead_proxy(current_proxy)
-            continue
-        except Exception:
+            failed_requests += 1
+            if len(request_errors) < 10:
+                request_errors.append(_request_error(tool_name, url, exc, phase="header"))
             continue
 
     result = {
@@ -539,9 +667,27 @@ def param_discovery_headers(url: str) -> str:
         "total_tested": tested,
         "interesting_headers": interesting_headers,
         "total_found": len(interesting_headers),
-        "status": "success" if not check_cancelled(logger) else "cancelled"
+        "status": (
+            "cancelled" if check_cancelled(logger)
+            else "partial" if request_errors
+            else "succeeded"
+        ),
+        "request_failures": failed_requests,
+        "request_error_samples": [item.model_dump(mode="json") for item in request_errors],
     }
 
     if logger:
-        logger.add_log(tool_name, "WARNING" if interesting_headers else "INFO", f"Header discovery selesai. {tested} tested, {len(interesting_headers)} interesting.")
-    return json.dumps(redact(result), indent=2)
+        logger.add_log(
+            tool_name,
+            "WARNING" if request_errors or interesting_headers else "INFO",
+            f"Header discovery selesai. {tested} tested, {len(interesting_headers)} interesting, {failed_requests} request failures.",
+        )
+    return ToolResultV1(
+        tool_name=tool_name,
+        category="recon",
+        target=url,
+        status=result["status"],
+        summary=f"Header parameter discovery completed with {tested} tested requests and {failed_requests} failures.",
+        metrics=redact(result),
+        errors=request_errors,
+    )

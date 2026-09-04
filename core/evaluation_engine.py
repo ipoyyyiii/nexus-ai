@@ -98,7 +98,7 @@ class DeterministicFixtureRegistry:
     """
 
     def __init__(self, validation: Optional[ValidationEngine] = None):
-        self.validation = validation or ValidationEngine(authorization_graph_mode="strict")
+        self.validation = validation or ValidationEngine()
         self.handlers: Dict[str, Callable[[], FixtureResult]] = {
             "positive_error_sqli": self.positive_error_sqli,
             "negative_error_sqli": self.negative_error_sqli,

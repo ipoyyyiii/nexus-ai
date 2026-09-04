@@ -1,16 +1,12 @@
 """Supabase-backed durable execution repository.
 
 The worker uses the RPC methods created by migration 004 for atomic leasing.
-The small table-operation fallback is intentionally only for shadow mode and
-local tests; it is not advertised as a distributed claim algorithm.
+There is one durable execution path; the old shadow table fallback is gone.
 """
 
 from __future__ import annotations
 
-import secrets
-import time
 import uuid
-from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional
 
 from core.execution_contract import (
@@ -20,7 +16,25 @@ from core.execution_contract import (
     JobCheckpointV1,
     now_iso,
 )
-from core.config_loader import get_setting
+from core.redact import redact
+
+
+def _bounded_application_value(value: Any, *, depth: int = 0) -> Any:
+    """Keep compatibility-state events useful without storing unbounded logs."""
+    if depth > 3:
+        return redact(str(value))[:500]
+    if isinstance(value, dict):
+        return {
+            str(key)[:120]: _bounded_application_value(item, depth=depth + 1)
+            for key, item in list(value.items())[:80]
+        }
+    if isinstance(value, list):
+        return [_bounded_application_value(item, depth=depth + 1) for item in value[:100]]
+    if isinstance(value, str):
+        return redact(value)[:4000]
+    if isinstance(value, (int, float, bool)) or value is None:
+        return value
+    return redact(str(value))[:1000]
 
 
 class LeaseConflict(RuntimeError):
@@ -31,10 +45,6 @@ class DurableExecutionRepository:
     def __init__(self, supabase: Any):
         self.sb = supabase
 
-    @staticmethod
-    def _strict() -> bool:
-        return str(get_setting("execution_platform_mode", "shadow")).lower() == "strict"
-
     def enqueue(self, job: ExecutionJobV1) -> ExecutionJobV1:
         existing = self.find_idempotent(job.session_id, job.idempotency_key)
         if existing and existing.get("status") not in {"succeeded", "failed", "cancelled", "dead_lettered"}:
@@ -43,16 +53,7 @@ class DurableExecutionRepository:
         try:
             self.sb.table("workflow_jobs").upsert(row, on_conflict="job_id").execute()
         except Exception:
-            if self._strict():
-                raise
-            # Shadow compatibility before migration 004. The durable worker
-            # never relies on this reduced row for claiming.
-            self.sb.table("workflow_jobs").upsert({
-                "job_id": job.job_id, "session_id": job.session_id,
-                "status": job.status, "target": job.target, "goal": job.goal,
-                "payload": job.payload_redacted, "created_at": job.created_at,
-                "updated_at": job.updated_at,
-            }, on_conflict="job_id").execute()
+            raise
         try:
             self.append_event(ExecutionEventV1(
             session_id=job.session_id, job_id=job.job_id,
@@ -78,12 +79,15 @@ class DurableExecutionRepository:
         result = self.sb.table("workflow_jobs").select("*").eq("job_id", job_id).limit(1).execute()
         if not result.data:
             return None
-        return self._flatten_job(result.data[0])
+        return self._with_application_state(self._flatten_job(result.data[0]), job_id)
 
     def list_jobs(self, session_id: str, limit: int = 100) -> List[Dict[str, Any]]:
         result = (self.sb.table("workflow_jobs").select("*").eq("session_id", session_id)
                   .order("updated_at", desc=True).limit(min(max(limit, 1), 500)).execute())
-        return [self._flatten_job(row) for row in (result.data or [])]
+        return [
+            self._with_application_state(self._flatten_job(row), str(row.get("job_id", "")))
+            for row in (result.data or [])
+        ]
 
     def claim(self, worker_id: str, queues: Iterable[str] = ("general",), lease_seconds: int = 60) -> Optional[ExecutionAttemptV1]:
         try:
@@ -98,34 +102,7 @@ class DurableExecutionRepository:
                 return ExecutionAttemptV1(**self._attempt_from_row(row))
             return None
         except Exception:
-            if self._strict():
-                raise
-            # Shadow/local fallback.  Production strict mode requires the RPC
-            # and should fail closed instead of silently claiming a job twice.
-            return self._claim_fallback(worker_id, list(queues), lease_seconds)
-
-    def _claim_fallback(self, worker_id: str, queues: List[str], lease_seconds: int) -> Optional[ExecutionAttemptV1]:
-        result = (self.sb.table("workflow_jobs").select("*").in_("queue_name", queues)
-                  .in_("status", ["queued", "retry_wait"])
-                  .order("priority").order("created_at").limit(1).execute())
-        if not result.data:
-            return None
-        row = result.data[0]
-        token = secrets.token_urlsafe(24)
-        expires = datetime.now(timezone.utc) + timedelta(seconds=max(10, int(lease_seconds)))
-        update = (self.sb.table("workflow_jobs").update({
-            "status": "leased", "lease_owner": worker_id, "lease_token": token,
-            "lease_expires_at": expires.isoformat(), "heartbeat_at": now_iso(),
-        }).eq("job_id", row["job_id"]).eq("status", row.get("status", "queued"))).execute()
-        if not update.data:
-            return None
-        attempt = ExecutionAttemptV1(
-            job_id=row["job_id"], attempt_number=int(row.get("attempt_count", 0)) + 1,
-            worker_id=worker_id, lease_token=token,
-            lease_expires_at=expires.isoformat(), heartbeat_at=now_iso(), status="leased",
-        )
-        self.sb.table("workflow_job_attempts").insert(self._attempt_row(attempt)).execute()
-        return attempt
+            raise
 
     def heartbeat(self, attempt: ExecutionAttemptV1, lease_seconds: int = 60) -> bool:
         result = self.sb.rpc("heartbeat_execution_attempt", {
@@ -145,12 +122,58 @@ class DurableExecutionRepository:
             }).execute()
             return bool(result.data)
         except Exception:
-            if self._strict():
-                raise
-            result = (self.sb.table("workflow_jobs").update(payload)
-                      .eq("job_id", job_id).eq("lease_owner", worker_id)
-                      .eq("lease_token", lease_token).execute())
-            return bool(result.data)
+            raise
+
+    def record_application_state(
+        self,
+        job_id: str,
+        *,
+        session_id: str = "",
+        status: str = "",
+        message: str = "",
+        summary: Any = None,
+        logs: Any = None,
+        result_ref: str = "",
+        error_code: str = "",
+        error_message: str = "",
+    ) -> bool:
+        """Persist the app/compatibility result from a worker-owned process.
+
+        The API process-local ``jobs`` dictionary is intentionally not a source
+        of truth: the worker imports the application in a different process.
+        Durable queue state owns lifecycle transitions, while this append-only
+        event carries the compatibility fields needed by the existing UI.
+        """
+        compatibility_status = str(status or "")[:64]
+        message = redact(str(message or ""))[:2000]
+        error_message = redact(str(
+            error_message or (message if compatibility_status in {"error", "failed"} else "")
+        ))[:2000]
+        payload: Dict[str, Any] = {
+            "compatibility_status": compatibility_status,
+            "message": message,
+            "summary": _bounded_application_value(summary or {}),
+            "logs": _bounded_application_value(logs or []),
+        }
+        if result_ref:
+            payload["result_ref"] = redact(str(result_ref))[:1000]
+
+        # Keep queue lifecycle ownership with the leased worker transition.
+        # Only fields that are already part of workflow_jobs are written here.
+        durable_values: Dict[str, Any] = {"updated_at": now_iso()}
+        if result_ref:
+            durable_values["result_ref"] = redact(str(result_ref))[:1000]
+        if compatibility_status in {"error", "failed"} or error_code or error_message:
+            durable_values["error_code"] = redact(str(error_code or "application_error"))[:200]
+            durable_values["error_message"] = error_message
+        self.sb.table("workflow_jobs").update(durable_values).eq("job_id", job_id).execute()
+        self.append_event(ExecutionEventV1(
+            session_id=session_id,
+            job_id=job_id,
+            event_type="job_application_terminal",
+            payload=payload,
+        ))
+        return True
 
     def request_cancel(self, job_id: str) -> bool:
         result = (self.sb.table("workflow_jobs").update({
@@ -189,13 +212,7 @@ class DurableExecutionRepository:
         try:
             self.sb.table("workflow_events").insert(row).execute()
         except Exception:
-            if self._strict():
-                raise
-            self.sb.table("workflow_events").insert({
-                "id": row["id"], "session_id": event.session_id,
-                "job_id": event.job_id or None, "event_type": event.event_type,
-                "payload": event.payload, "created_at": event.created_at,
-            }).execute()
+            raise
         return event
 
     def persist_safety_decision(self, decision: Any) -> Any:
@@ -211,7 +228,7 @@ class DurableExecutionRepository:
         row = health.model_dump(mode="json")
         # schema_version belongs to the versioned application contract, not
         # to the telemetry table.  Keep the database row additive and avoid a
-        # silent PGRST204 failure in shadow mode.
+        # Avoid silently swallowing a schema mismatch in autonomous mode.
         row.pop("schema_version", None)
         self.sb.table("worker_health_snapshots").insert(row).execute()
         self.sb.table("worker_nodes").upsert({
@@ -224,7 +241,12 @@ class DurableExecutionRepository:
         return health
 
     def record_recovery(self, recovery: Any) -> Any:
-        self.sb.table("recovery_events").insert(recovery.model_dump(mode="json")).execute()
+        # RecoveryEventV1 is versioned at the application boundary, while the
+        # append-only telemetry table intentionally stores only its columns.
+        # Older/live deployments do not have a schema_version column.
+        row = recovery.model_dump(mode="json")
+        row.pop("schema_version", None)
+        self.sb.table("recovery_events").insert(row).execute()
         return recovery
 
     def record_resource_sample(self, sample: Any) -> Any:
@@ -286,6 +308,33 @@ class DurableExecutionRepository:
             data["budget"] = data["budget"]
         return data
 
+    def _with_application_state(self, data: Dict[str, Any], job_id: str) -> Dict[str, Any]:
+        """Merge the latest compatibility terminal event into a job view."""
+        try:
+            result = (
+                self.sb.table("workflow_events")
+                .select("payload,event_type,created_at")
+                .eq("job_id", job_id)
+                .eq("event_type", "job_application_terminal")
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            rows = result.data or []
+            payload = rows[0].get("payload") if rows else {}
+            if isinstance(payload, dict):
+                data["application_status"] = payload.get("compatibility_status", "")
+                data["message"] = payload.get("message", "")
+                data["summary"] = payload.get("summary", {})
+                data["logs"] = payload.get("logs", [])
+                if payload.get("result_ref") and not data.get("result_ref"):
+                    data["result_ref"] = payload["result_ref"]
+        except Exception:
+            # Older deployments may not yet expose the event ordering columns;
+            # the durable lifecycle row remains readable in that case.
+            pass
+        return data
+
     @staticmethod
     def _attempt_row(attempt: ExecutionAttemptV1) -> Dict[str, Any]:
         row = attempt.model_dump(mode="json")
@@ -305,12 +354,13 @@ class DurableExecutionRepository:
 
 
 class InMemoryExecutionRepository:
-    """Deterministic fake for unit tests and local shadow-mode development."""
+    """Deterministic in-memory fake for unit tests."""
 
     def __init__(self):
         self.jobs: Dict[str, ExecutionJobV1] = {}
         self.events: List[ExecutionEventV1] = []
         self.checkpoints: List[JobCheckpointV1] = []
+        self.application_states: Dict[str, Dict[str, Any]] = {}
 
     def enqueue(self, job: ExecutionJobV1) -> ExecutionJobV1:
         for current in self.jobs.values():
@@ -322,7 +372,33 @@ class InMemoryExecutionRepository:
 
     def get_job(self, job_id: str) -> Optional[Dict[str, Any]]:
         item = self.jobs.get(job_id)
-        return item.model_dump(mode="json") if item else None
+        if not item:
+            return None
+        data = item.model_dump(mode="json")
+        data.update(self.application_states.get(job_id, {}))
+        return data
+
+    def record_application_state(self, job_id: str, **values: Any) -> bool:
+        state = {
+            "application_status": str(values.get("status") or "")[:64],
+            "message": redact(str(values.get("message") or ""))[:2000],
+            "summary": _bounded_application_value(values.get("summary") or {}),
+            "logs": _bounded_application_value(values.get("logs") or []),
+        }
+        result_ref = values.get("result_ref")
+        if result_ref:
+            state["result_ref"] = redact(str(result_ref))[:1000]
+        if values.get("error_message") or state["application_status"] in {"error", "failed"}:
+            state["error_code"] = str(values.get("error_code") or "application_error")[:200]
+            state["error_message"] = redact(str(values.get("error_message") or values.get("message") or ""))[:2000]
+        self.application_states[job_id] = state
+        self.events.append(ExecutionEventV1(
+            session_id=str(values.get("session_id") or ""),
+            job_id=job_id,
+            event_type="job_application_terminal",
+            payload=state,
+        ))
+        return True
 
     def list_events(self, job_id: str, after_sequence: int = 0, limit: int = 200) -> List[Dict[str, Any]]:
         return [item.model_dump(mode="json") for item in self.events if item.job_id == job_id][-limit:]

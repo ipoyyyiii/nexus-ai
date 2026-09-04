@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
@@ -17,7 +18,6 @@ from urllib.parse import urlsplit, urlunsplit
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from core.redact import redact
-from core.config_loader import get_setting
 
 
 ToolStatus = Literal["running", "succeeded", "partial", "skipped", "failed", "cancelled"]
@@ -36,7 +36,9 @@ ParserContext = Literal[
     "unknown", "json", "form", "multipart", "xml", "graphql", "websocket_message",
     "sse_event", "grpc_web_frame", "jwt", "signed_url", "html", "binary",
 ]
-ReasoningCycleMode = Literal["shadow", "strict"]
+# ``shadow`` and ``strict`` are historical values kept so old persisted
+# cycles can still be read. New runtime cycles always use ``autonomous``.
+ReasoningCycleMode = Literal["autonomous", "shadow", "strict"]
 ReasoningCycleStatus = Literal["queued", "running", "waiting_approval", "waiting_auth", "stopped", "succeeded", "partial", "failed", "cancelled"]
 ReasoningHypothesisStatus = Literal["proposed", "testable", "supported", "contradicted", "inconclusive", "blocked", "closed"]
 ReasoningActionType = Literal["observe", "hypothesize", "run_read_only", "propose_payload", "request_approval", "stop"]
@@ -416,15 +418,15 @@ class ReasoningCycleV1(ContractModel):
     session_id: str
     job_id: str = ""
     objective: str = ""
-    mode: ReasoningCycleMode = "shadow"
+    mode: ReasoningCycleMode = "autonomous"
     status: ReasoningCycleStatus = "queued"
     snapshot_digest: str = ""
     config_digest: str = ""
     model_id: str = ""
     prompt_version: str = ""
-    action_budget: int = Field(default=3, ge=0, le=100)
+    action_budget: Optional[int] = Field(default=None, ge=0)
     cycle_number: int = Field(default=1, ge=1)
-    max_cycles: int = Field(default=10, ge=1, le=100)
+    max_cycles: Optional[int] = Field(default=None, ge=1)
     selected_action_ids: List[str] = Field(default_factory=list)
     hypothesis_ids: List[str] = Field(default_factory=list)
     branch_ids: List[str] = Field(default_factory=list)
@@ -584,6 +586,39 @@ class ModelActionTraceV1(ContractModel):
         return redact(str(value or ""))[:2000]
 
 
+class ModelCallTraceV1(ContractModel):
+    """Auditable metadata for one reasoning-provider attempt.
+
+    Prompt and completion bodies are intentionally absent.  The gateway stores
+    only stable digests, bounded status metadata, and a redacted error code so
+    provider fallback can be evaluated without turning the reasoning ledger
+    into a secret or target-content sink.
+    """
+
+    schema_version: Literal["1.0"] = "1.0"
+    call_id: str = Field(default_factory=lambda: f"mcall_{uuid.uuid4().hex}")
+    cycle_id: str = ""
+    session_id: str = ""
+    job_id: str = ""
+    model_id: str = ""
+    provider: str = ""
+    prompt_version: str = ""
+    attempt_number: int = Field(default=1, ge=1, le=100)
+    fallback_index: int = Field(default=0, ge=0, le=100)
+    status: Literal["succeeded", "failed", "skipped"] = "failed"
+    input_digest: str = ""
+    output_digest: str = ""
+    latency_ms: float = Field(default=0.0, ge=0.0)
+    error_code: str = ""
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    created_at: str = Field(default_factory=now_iso)
+
+    @field_validator("model_id", "provider", "prompt_version", "error_code", mode="before")
+    @classmethod
+    def redact_call_text(cls, value: Any) -> str:
+        return redact(str(value or ""))[:500]
+
+
 class ReasoningDecisionV1(ContractModel):
     schema_version: Literal["1.0"] = "1.0"
     decision_id: str = Field(default_factory=lambda: f"rdec_{uuid.uuid4().hex}")
@@ -729,8 +764,75 @@ def result_from_legacy(tool_name: str, target: str, output: Any, tool_run_id: st
     JSON objects with explicit finding/vulnerability arrays become candidates.
     Free-form text becomes an observation only.
     """
-    raw = output if isinstance(output, str) else json.dumps(output, default=str)
+    raw = "" if output is None else output if isinstance(output, str) else json.dumps(output, default=str)
+    raw = str(raw or "")
+    if not raw.strip():
+        return ToolResultV1(
+            tool_run_id=tool_run_id or f"run_{uuid.uuid4().hex}",
+            tool_name=tool_name,
+            category="legacy",
+            target=target,
+            inputs_redacted={},
+            status="failed",
+            summary=f"{tool_name} returned no output.",
+            observations=[],
+            errors=[ToolErrorV1(
+                code="legacy_empty_output",
+                message="Legacy tool returned empty output.",
+                retryable=True,
+            )],
+            legacy_source=True,
+        )
+    # Legacy tools historically used several human-facing cancellation
+    # prefixes (including Indonesian ``DIBATALKAN`` and a leading tool label).
+    # Treat every explicit cancellation marker as terminal cancellation before
+    # the generic text adapter can turn it into a successful observation.
+    cancellation_match = re.match(
+        r"^\s*(?:(?:[A-Za-z][A-Za-z _-]{0,80})\s+)?"
+        r"(?:DIBATALKAN|CANCELLED|CANCELED)\b\s*:?(.*)$",
+        raw,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if cancellation_match:
+        reason = cancellation_match.group(1).strip() or "Legacy tool reported cancellation."
+        return ToolResultV1(
+            tool_run_id=tool_run_id or f"run_{uuid.uuid4().hex}",
+            tool_name=tool_name,
+            category="legacy",
+            target=target,
+            inputs_redacted={},
+            status="cancelled",
+            summary=redact(raw)[:4000],
+            observations=[],
+            errors=[ToolErrorV1(
+                code="legacy_cancelled",
+                message=redact(reason)[:2000],
+                retryable=False,
+            )],
+            metrics={"termination_reason": "legacy_cancellation_marker"},
+            legacy_source=True,
+        )
+
+    def legacy_failure_retryable(message: str) -> bool:
+        lowered = str(message or "").lower()
+        return any(
+            marker in lowered
+            for marker in (
+                "timeout",
+                "timed out",
+                "connection",
+                "disconnected",
+                "proxy",
+                "temporarily",
+                "try again",
+            )
+        )
+
     if raw.lstrip().lower().startswith("error:"):
+        retryable = legacy_failure_retryable(raw)
+        failure_code = "legacy_tool_timeout" if "timeout" in raw.lower() or "timed out" in raw.lower() else (
+            "legacy_tool_transport_error" if retryable else "external_command_failed"
+        )
         return ToolResultV1(
             tool_run_id=tool_run_id or f"run_{uuid.uuid4().hex}",
             tool_name=tool_name,
@@ -741,9 +843,9 @@ def result_from_legacy(tool_name: str, target: str, output: Any, tool_run_id: st
             summary=redact(raw)[:4000],
             observations=[],
             errors=[ToolErrorV1(
-                code="external_command_failed",
+                code=failure_code,
                 message=redact(raw)[:2000],
-                retryable=False,
+                retryable=retryable,
             )],
             legacy_source=True,
         )
@@ -757,90 +859,570 @@ def result_from_legacy(tool_name: str, target: str, output: Any, tool_run_id: st
     # caught an exception and returned JSON with ``status=ERROR`` must not be
     # converted into a successful observation merely because the payload is
     # valid JSON.
-    if isinstance(parsed, dict) and str(parsed.get("status", "")).upper() in {
-        "ERROR", "FAILED", "FAILURE",
-    }:
-        message = redact(str(parsed.get("error") or parsed.get("reason") or raw))[:2000]
+    parsed_status = str(parsed.get("status", "")).upper() if isinstance(parsed, dict) else ""
+    parsed_error = parsed.get("error") if isinstance(parsed, dict) else None
+    parsed_errors = parsed.get("errors") if isinstance(parsed, dict) else None
+    parsed_ok = parsed.get("ok") if isinstance(parsed, dict) else None
+    parsed_success = parsed.get("success") if isinstance(parsed, dict) else None
+    if parsed_status in {"SKIPPED", "CANCELLED", "CANCELED"}:
+        parsed_reason = str(
+            parsed.get("skip_reason")
+            or parsed.get("reason")
+            or parsed.get("error")
+            or ""
+        ).strip()
+        if parsed_status == "SKIPPED":
+            if not parsed_reason:
+                return ToolResultV1(
+                    tool_run_id=tool_run_id or f"run_{uuid.uuid4().hex}",
+                    tool_name=tool_name,
+                    category="legacy",
+                    target=target,
+                    inputs_redacted={},
+                    status="partial",
+                    summary=redact(raw)[:4000],
+                    observations=[],
+                    errors=[ToolErrorV1(
+                        code="legacy_skip_reason_missing",
+                        message="Legacy tool reported SKIPPED without a reason.",
+                        retryable=False,
+                    )],
+                    metrics={
+                        "status_normalized_from": "skipped",
+                        "skip_class": "legacy",
+                    },
+                    legacy_source=True,
+                )
+            return ToolResultV1(
+                tool_run_id=tool_run_id or f"run_{uuid.uuid4().hex}",
+                tool_name=tool_name,
+                category="legacy",
+                target=target,
+                inputs_redacted={},
+                status="skipped",
+                summary=redact(raw)[:4000],
+                observations=[],
+                metrics={
+                    "skip_reason": redact(parsed_reason)[:1000],
+                    "skip_class": str(parsed.get("skip_class") or "legacy"),
+                },
+                legacy_source=True,
+            )
         return ToolResultV1(
             tool_run_id=tool_run_id or f"run_{uuid.uuid4().hex}",
             tool_name=tool_name,
             category="legacy",
             target=target,
             inputs_redacted={},
-            status="failed",
+            status="cancelled",
             summary=redact(raw)[:4000],
             observations=[],
             errors=[ToolErrorV1(
-                code="legacy_tool_failed",
-                message=message,
+                code="legacy_cancelled",
+                message=redact(parsed_reason or "Legacy tool reported cancellation.")[:2000],
                 retryable=False,
             )],
             legacy_source=True,
         )
+    if raw.strip().upper() == "SKIPPED":
+        return ToolResultV1(
+            tool_run_id=tool_run_id or f"run_{uuid.uuid4().hex}",
+            tool_name=tool_name,
+            category="legacy",
+            target=target,
+            inputs_redacted={},
+            status="partial",
+            summary=raw,
+            observations=[],
+            errors=[ToolErrorV1(
+                code="legacy_skip_reason_missing",
+                message="Legacy tool reported SKIPPED without a reason.",
+                retryable=False,
+            )],
+            metrics={"status_normalized_from": "skipped", "skip_class": "legacy"},
+            legacy_source=True,
+        )
+    if raw.strip().upper() in {"CANCELLED", "CANCELED"}:
+        return ToolResultV1(
+            tool_run_id=tool_run_id or f"run_{uuid.uuid4().hex}",
+            tool_name=tool_name,
+            category="legacy",
+            target=target,
+            inputs_redacted={},
+            status="cancelled",
+            summary=raw,
+            observations=[],
+            errors=[ToolErrorV1(
+                code="legacy_cancelled",
+                message="Legacy tool reported cancellation.",
+                retryable=False,
+            )],
+            legacy_source=True,
+        )
+    explicit_failure = (
+        isinstance(parsed, dict)
+        and (
+            parsed_status in {"ERROR", "FAILED", "FAILURE"}
+            or bool(parsed_error)
+            or bool(parsed_errors)
+            or parsed_ok is False
+            or parsed_success is False
+        )
+    )
+    if explicit_failure:
+        partial = parsed_status == "PARTIAL"
+        message = redact(str(
+            parsed.get("error")
+            or parsed.get("reason")
+            or parsed_errors
+            or "Legacy tool reported an explicit failure."
+        ))[:2000]
+        retryable = partial or legacy_failure_retryable(message)
+        return ToolResultV1(
+            tool_run_id=tool_run_id or f"run_{uuid.uuid4().hex}",
+            tool_name=tool_name,
+            category="legacy",
+            target=target,
+            inputs_redacted={},
+            status="partial" if partial else "failed",
+            summary=redact(raw)[:4000],
+            observations=[],
+            errors=[ToolErrorV1(
+                code="legacy_tool_partial" if partial else "legacy_tool_failed",
+                message=message,
+                retryable=retryable,
+            )],
+            legacy_source=True,
+        )
 
-    observations = [ObservationV1(
+    output_observation = ObservationV1(
         role="external" if isinstance(parsed, dict) and parsed.get("external_tool") else "test",
         kind="legacy_output",
         summary=redact(raw)[:2000],
         target_url=target,
         response_excerpt=redact(raw)[:8000],
-        metadata={"legacy": True},
-    )]
+        metadata={"legacy": True, "legacy_source_tool": tool_name},
+    )
+    observations = [output_observation]
     candidates: List[CandidateFindingV1] = []
     access_control_legacy = {
-        "scan_idor", "idor_uuid_scanner", "access_control_scanner",
-        "IDOR Scanner", "IDOR UUID Scanner", "Access Control Scanner",
+        "scan_idor", "idor_uuid_scanner",
+        "IDOR Scanner", "IDOR UUID Scanner",
     }
     # The old ID mutation scanners do not possess identity/ownership/control
-    # evidence. In strict mode their output remains historical observation
-    # only; the authorization replay engine is the sole finding producer.
-    legacy_candidate_allowed = not (
-        tool_name in access_control_legacy
-        and str(get_setting("structured_evidence_mode", "strict")).lower() == "strict"
-    )
-    items: List[Any] = []
-    if isinstance(parsed, dict):
-        for key in ("findings", "vulnerabilities", "candidates"):
-            value = parsed.get(key)
-            if isinstance(value, list):
-                items.extend(value)
-        if parsed.get("finding") and isinstance(parsed["finding"], dict):
-            items.append(parsed["finding"])
-    elif isinstance(parsed, list):
-        items = parsed
+    # evidence. Their output remains historical observation only; the
+    # authorization replay engine is the sole finding producer. The broader
+    # access-control scanner still emits useful forced-browsing and method
+    # observations, so those remain candidates that require validation.
+    legacy_candidate_allowed = tool_name not in access_control_legacy
 
-    for item in items:
+    finding_buckets = {
+        "forced_browsing", "http_method_bypass", "mass_assignment",
+        "path_traversal_advanced", "parameter_tampering", "cookie_issues",
+        "session_entropy", "active_mixed_content", "passive_mixed_content",
+        "vulnerable_endpoints", "unkeyed_headers", "summary",
+    }
+
+    def bucket_has_signal(value: Dict[str, Any]) -> bool:
+        return any(
+            value.get(key) not in (None, "", [], {})
+            for key in (
+                "url", "endpoint", "status", "size", "content_type", "severity",
+                "detail", "issue", "recommendation", "method", "parameter",
+                "cookie_name", "origin_sent", "acao_header", "test", "engine",
+                "expected", "injected_params",
+            )
+        )
+
+    def collect_candidate_items(value: Any, bucket: str = "") -> List[tuple[Dict[str, Any], str]]:
+        """Extract only explicit finding-shaped records from legacy schemas.
+
+        Older tools do not share one response envelope.  For example,
+        misconfiguration scanners group explicit records under severity
+        buckets, while client-side scanners nest them below
+        ``findings.vulnerabilities``.  Preserve those records as candidates,
+        but never promote free-form warnings or low-level issue details.
+        """
+        collected: List[tuple[Dict[str, Any], str]] = []
+        if isinstance(value, list):
+            for entry in value:
+                if isinstance(entry, dict):
+                    # A record is candidate-shaped only when it has a
+                    # vulnerability identity.  ``issue`` alone is often a
+                    # diagnostic detail (for example one cookie flag).
+                    if any(entry.get(key) for key in ("title", "name", "type", "vuln_type")):
+                        collected.append((entry, bucket))
+                    else:
+                        collected.extend(collect_candidate_items(entry, bucket))
+            return collected
+        if not isinstance(value, dict):
+            return collected
+
+        for key in ("findings", "vulnerabilities", "candidates", "summary"):
+            if key in value:
+                collected.extend(collect_candidate_items(value.get(key), key))
+        if isinstance(value.get("finding"), dict):
+            collected.extend(collect_candidate_items([value["finding"]], "finding"))
+        # Misconfiguration scanners use severity buckets rather than a
+        # ``findings`` array.  Their entries are explicit typed records and
+        # therefore safe to retain as unvalidated candidates.
+        for key in ("critical", "high", "medium", "low", "info"):
+            if isinstance(value.get(key), list):
+                collected.extend(collect_candidate_items(value[key], key))
+        # A few legacy tools expose a flat ``issues`` list.  Only records with
+        # an explicit type/name/title are admitted; prose remains observation
+        # only and cannot create a finding.
+        if isinstance(value.get("issues"), list):
+            collected.extend(collect_candidate_items(value["issues"], "issues"))
+        # Several older detectors use a tool-specific list name instead of the
+        # shared ``vulnerabilities`` envelope (for example
+        # ``xss_vulnerabilities`` and ``lfi_vulnerabilities``).  These are
+        # still explicit candidate records when the list entries carry a
+        # vulnerability identity.  Do not admit similarly named scalars or
+        # arbitrary diagnostic dictionaries.
+        for key, nested in value.items():
+            normalized_key = str(key).lower()
+            if not isinstance(nested, list):
+                continue
+            if not (
+                normalized_key.endswith("_vulnerabilities")
+                or normalized_key.endswith("_findings")
+                or normalized_key in finding_buckets
+            ):
+                continue
+            if normalized_key in {"vulnerabilities", "findings", "candidates", "summary"}:
+                continue
+            for entry in nested:
+                if isinstance(entry, dict) and not any(
+                    entry.get(identity) for identity in ("title", "name", "type", "vuln_type")
+                ) and normalized_key in finding_buckets and bucket_has_signal(entry):
+                    # Some scanners use a typed bucket but omit the repeated
+                    # vulnerability name from each record. Preserve the
+                    # observation and synthesize the type below; do not infer
+                    # validation from the bucket or severity label.
+                    collected.append(({**entry, "_legacy_bucket_record": True}, str(key)))
+                elif isinstance(entry, dict):
+                    collected.extend(collect_candidate_items([entry], str(key)))
+        return collected
+
+    def text_signal_items(raw_text: str) -> List[tuple[Dict[str, Any], str]]:
+        """Adapt explicit scanner count blocks, never arbitrary prose.
+
+        Older scanners print blocks such as ``[MEDIUM] 6 finding(s)`` and
+        bullets but do not return JSON. This is structured enough to preserve
+        as unvalidated candidates; a sentence like ``SQL Injection suspected``
+        intentionally remains observation-only.
+        """
+        header_pattern = re.compile(
+            r"\[(?:[^\]]*?\s)?(?P<severity>CRITICAL|HIGH|MEDIUM|LOW|INFO)\]"
+            r"\s*(?P<count>\d+)\s*(?P<label>[A-Za-z][A-Za-z0-9 /&_:-]*?)?\s*finding\(s\)",
+            re.IGNORECASE,
+        )
+        matches = list(header_pattern.finditer(raw_text))
+        if not matches:
+            return []
+        inferred_type = "Legacy scanner signal"
+        tool_lower = tool_name.lower()
+        if "cors" in tool_lower or "cors" in raw_text.lower():
+            inferred_type = "CORS Misconfiguration"
+        elif "ssti" in tool_lower or "template" in raw_text.lower():
+            inferred_type = "Server-Side Template Injection"
+        elif "xxe" in tool_lower:
+            inferred_type = "XML External Entity"
+        elif "oauth" in tool_lower:
+            inferred_type = "OAuth Flow Weakness"
+        elif "nuclei" in tool_lower:
+            inferred_type = "Nuclei Detection Signal"
+
+        items: List[tuple[Dict[str, Any], str]] = []
+        for index, match in enumerate(matches):
+            severity = match.group("severity").upper()
+            count = max(0, int(match.group("count")))
+            label = str(match.group("label") or "").strip(" :-")
+            block_end = matches[index + 1].start() if index + 1 < len(matches) else len(raw_text)
+            block = raw_text[match.end():block_end]
+            bullets = list(re.finditer(r"^\s*(?:▸|•|[-*])\s*(.+)$", block, re.MULTILINE))
+            if not bullets:
+                bullets = [None] * min(count, 1)
+            for item_index, bullet in enumerate(bullets[:count] or [None]):
+                title = bullet.group(1).strip() if bullet else f"{label or inferred_type} signal {item_index + 1}"
+                detail = ""
+                if bullet:
+                    next_start = bullets[item_index + 1].start() if item_index + 1 < len(bullets) else len(block)
+                    detail_lines = [line.strip() for line in block[bullet.end():next_start].splitlines() if line.strip()]
+                    detail = " ".join(detail_lines[:4])[:1800]
+                items.append(({
+                    "title": title,
+                    "type": label or inferred_type,
+                    "severity": severity,
+                    "parameter": title,
+                    "detail": detail or f"{count} explicit scanner signal(s) in a legacy text block.",
+                    "_legacy_text_heuristic": True,
+                    "_legacy_signal_count": count,
+                }, f"text:{severity.lower()}"))
+        return items
+
+    if isinstance(parsed, dict):
+        items = collect_candidate_items(parsed)
+    elif isinstance(parsed, list):
+        items = collect_candidate_items(parsed)
+    else:
+        items = []
+    items.extend(text_signal_items(raw))
+
+    def bucket_title(bucket: str, item: Dict[str, Any]) -> str:
+        labels = {
+            "forced_browsing": "Forced browsing candidate",
+            "http_method_bypass": "HTTP method authorization candidate",
+            "mass_assignment": "Mass assignment candidate",
+            "path_traversal_advanced": "Path traversal candidate",
+            "parameter_tampering": "Parameter tampering candidate",
+            "cookie_issues": "Session cookie security candidate",
+            "session_entropy": "Weak session entropy candidate",
+            "active_mixed_content": "Active mixed content candidate",
+            "passive_mixed_content": "Passive mixed content candidate",
+            "vulnerable_endpoints": "Vulnerable endpoint candidate",
+            "unkeyed_headers": "Web cache poisoning candidate",
+        }
+        return labels.get(bucket.lower(), "Legacy scanner candidate")
+
+    def bucket_type(bucket: str, item: Dict[str, Any]) -> str:
+        labels = {
+            "forced_browsing": "Broken Access Control",
+            "http_method_bypass": "Broken Function Level Authorization",
+            "mass_assignment": "Mass Assignment",
+            "path_traversal_advanced": "Path Traversal",
+            "parameter_tampering": "Parameter Tampering",
+            "cookie_issues": "Insecure Cookie",
+            "session_entropy": "Weak Session Management",
+            "active_mixed_content": "Active Mixed Content",
+            "passive_mixed_content": "Passive Mixed Content",
+            "vulnerable_endpoints": "Potential Deserialization",
+            "unkeyed_headers": "Web Cache Poisoning",
+        }
+        return labels.get(bucket.lower(), "Legacy Scanner Signal")
+
+    def legacy_subtype(vuln_type: str) -> str:
+        """Map common legacy labels to a typed, validator-facing subtype."""
+        value = str(vuln_type or "").lower().replace("-", "_")
+        mappings = (
+            (("missing security header",), "missing_security_header"),
+            (("weak security header",), "weak_security_header"),
+            (("server version disclosure",), "server_version_disclosure"),
+            (("sensitive file", ".env file", ".git folder"), "sensitive_file_exposure"),
+            (("backup file",), "backup_file_exposure"),
+            (("exposed admin", "admin panel"), "admin_panel_exposure"),
+            (("debug mode", "verbose error", "stack trace"), "debug_disclosure"),
+            (("clickjacking",), "clickjacking"),
+            (("insecure cookie", "cookie flag"), "insecure_cookie"),
+            (("cors",), "cors"),
+            (("open redirect", "redirect"), "open_redirect"),
+            (("blind sqli", "sql injection", "sqli"), "sqli"),
+            (("xss", "cross-site scripting"), "xss"),
+            (("lfi", "path traversal", "file inclusion"), "lfi"),
+            (("ssrf", "xxe", "oob"), "ssrf"),
+            (("ssti", "template injection"), "ssti"),
+        )
+        for needles, subtype in mappings:
+            if any(needle in value for needle in needles):
+                return subtype
+        return "legacy_unknown"
+
+    def safe_legacy_metadata(item: Dict[str, Any], title: str, vuln_type: str, legacy_bucket: str) -> Dict[str, Any]:
+        """Preserve bounded typed evidence without copying secrets/payloads."""
+        metadata: Dict[str, Any] = {
+            "legacy_item": True,
+            "legacy_bucket": legacy_bucket,
+            "legacy_source_tool": tool_name,
+            "finding_type": vuln_type,
+            "subtype": str(item.get("subtype") or legacy_subtype(vuln_type)),
+        }
+        blocked = {
+            "authorization", "cookie", "cookies", "password", "token", "secret",
+            "payload", "true_payload", "false_payload", "poc_html",
+        }
+        # These fields are useful for deterministic validation and are bounded
+        # before they enter the model/session contract. Raw bodies remain in
+        # the redacted observation excerpt, never in candidate metadata.
+        allowed = {
+            "detail", "evidence", "confidence", "confidence_score", "sqlmap_confirmed",
+            "semantic_test", "confirmed", "score", "note",
+            "db_type", "injection_details", "test_url", "url", "target_url",
+            "status_code", "response_status", "found_status", "baseline_status",
+            "response_length", "baseline_length", "content_length", "location",
+            "redirect_url", "reflection_context", "marker_executed", "script_executed",
+            "header", "header_name", "header_value", "expected", "server_header",
+            "x_powered_by", "x_frame_options", "csp_frame_ancestors", "vulnerable",
+            "retrieved", "content_verified", "content_type", "correlation_id",
+            "oob_correlation_id", "target_attributed", "stale_callback", "parameter",
+            "param", "field_class", "server_state_changed", "privileged_field_changed",
+            "reproduced", "arithmetic_result_match", "marker_seen", "timing_samples",
+            "stored", "cleanup_verified", "stored_retrieval_clean_session", "escaped_control",
+            "header_weak", "accessible", "verbose_error", "insecure", "cookie_insecure",
+            "attacker_origin_accepted", "credentialed_request_allowed", "sensitive_response_readable",
+            "origin_control_rejected",
+        }
+        for key, value in item.items():
+            normalized = str(key).strip().lower()
+            if normalized in blocked or normalized not in allowed:
+                continue
+            if isinstance(value, (str, int, float, bool)):
+                rendered = str(value)
+                if len(rendered) <= 1200:
+                    metadata[normalized] = redact(value)
+            elif normalized in {"injection_details", "timing_samples"}:
+                # Keep only bounded numeric/typed structures needed by a
+                # validator; arbitrary nested target data is not promoted.
+                encoded = json.dumps(value, default=str)
+                if len(encoded) <= 3000:
+                    metadata[normalized] = redact(value)
+
+        # Older misconfiguration records encode the header state in prose.
+        # Turn that explicit scanner assertion into typed evidence so the
+        # policy can validate the observation without guessing from severity.
+        detail = str(item.get("detail") or "")
+        header_match = re.search(r"Header ['\"]([^'\"]+)['\"]", detail, re.I)
+        if header_match:
+            metadata.setdefault("header_name", header_match.group(1))
+        if "not present" in detail.lower() or "missing" in detail.lower():
+            metadata.setdefault("header_present", False)
+        elif "present but not properly configured" in detail.lower():
+            metadata.setdefault("header_present", True)
+            metadata.setdefault("header_weak", True)
+        if "server:" in detail.lower() and "server_header" not in metadata:
+            metadata["server_header"] = detail[:1000]
+        if "access-control-allow-origin" in detail.lower():
+            metadata.setdefault("attacker_origin_accepted", True)
+        return redact(metadata)
+
+    seen_fingerprints: set[str] = set()
+    for item, legacy_bucket in items:
         if not isinstance(item, dict):
             continue
-        title = item.get("title") or item.get("name") or item.get("type")
-        vuln_type = item.get("vuln_type") or item.get("type") or item.get("category")
+        legacy_bucket_name = str(legacy_bucket or "")
+        title = (
+            item.get("title") or item.get("name") or item.get("type")
+            or bucket_title(legacy_bucket_name, item)
+        )
+        vuln_type = (
+            item.get("vuln_type") or item.get("type") or item.get("category")
+            or bucket_type(legacy_bucket_name, item)
+        )
         if not title or not vuln_type:
             continue
+        item_metadata = safe_legacy_metadata(item, str(title), str(vuln_type), legacy_bucket)
+        if item.get("_legacy_text_heuristic"):
+            item_metadata.update({
+                "legacy_text_heuristic": True,
+                "validation_required": True,
+                "signal_count": int(item.get("_legacy_signal_count") or 0),
+            })
+        if item.get("_legacy_bucket_record"):
+            item_metadata.update({
+                "synthetic_finding_type": True,
+                "validation_required": True,
+            })
+        item_target = str(
+            item.get("url") or item.get("target_url") or item.get("endpoint")
+            or item.get("test_url") or target
+        )
+        if item_target.startswith("/") and target:
+            item_target = target.rstrip("/") + item_target
+        detail = str(
+            item.get("detail") or item.get("evidence") or item.get("issue")
+            or item.get("response_preview") or item.get("note") or title
+        )
+        severity_fallback = {
+            "critical": "CRITICAL", "high": "HIGH", "medium": "MEDIUM",
+            "low": "LOW", "info": "INFO",
+        }.get(legacy_bucket_name.lower().replace("text:", ""), "MEDIUM")
+        confidence_value = item.get("confidence_score")
+        if confidence_value in (None, ""):
+            confidence_value = 0.35 if item.get("_legacy_text_heuristic") else 0.45
+        finding_observation = ObservationV1(
+            role="test",
+            kind="legacy_finding",
+            summary=f"{tool_name}: {title}",
+            target_url=item_target,
+            status_code=(
+                item.get("status_code")
+                or item.get("response_status")
+                or item.get("found_status")
+            ),
+            response_excerpt=redact(detail)[:3000],
+            metadata=item_metadata,
+        )
+        observations.append(finding_observation)
+        validation_observation_ids = []
+        validation_rows = item.get("validation_evidence") or item.get("evidence_observations") or []
+        if isinstance(validation_rows, list):
+            for row in validation_rows:
+                if not isinstance(row, dict):
+                    continue
+                allowed_roles = {"baseline", "test", "negative_control", "positive_control", "reproduction", "oob", "browser", "external"}
+                role = str(row.get("role") or "test")
+                if role not in allowed_roles:
+                    continue
+                row_target = str(row.get("target_url") or item_target)
+                row_metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+                row_metadata = redact({"legacy_validation_evidence": True, "legacy_source_tool": tool_name, **row_metadata})
+                validation_observation = ObservationV1(
+                    role=role,
+                    kind=str(row.get("kind") or "http_exchange"),
+                    summary=redact(str(row.get("summary") or detail))[:2000],
+                    target_url=row_target,
+                    method=str(row.get("method") or item.get("method") or "GET"),
+                    request_excerpt=redact(str(row.get("request_excerpt") or ""))[:2000],
+                    response_excerpt=redact(str(row.get("response_excerpt") or row.get("body") or detail))[:6000],
+                    status_code=(row.get("status_code") or row.get("response_status")),
+                    response_time_ms=row.get("response_time_ms"),
+                    payload_hash=str(row.get("payload_hash") or ""),
+                    metadata=row_metadata,
+                )
+                observations.append(validation_observation)
+                validation_observation_ids.append(validation_observation.observation_id)
         candidate = CandidateFindingV1(
             title=str(title),
             vuln_type=str(vuln_type),
-            severity=str(item.get("severity", "INFO")).upper(),
-            target_url=str(item.get("url") or item.get("target_url") or target),
+            severity=str(item.get("severity") or severity_fallback).upper(),
+            target_url=item_target,
             method=str(item.get("method", "GET")),
             parameter=str(item.get("parameter") or item.get("param") or ""),
             injection_point=str(item.get("injection_point") or ""),
-            confidence_score=float(item.get("confidence_score", 0.5) or 0.5),
-            confidence_reasons=["Legacy scanner output; deterministic validation required."],
-            observation_ids=[observations[0].observation_id],
+            confidence_score=float(confidence_value or 0.45),
+            confidence_reasons=[
+                "Legacy scanner signal preserved as an unvalidated candidate.",
+                "Deterministic validation and reproducible evidence are required.",
+            ],
+            observation_ids=[finding_observation.observation_id, *validation_observation_ids],
             remediation=str(item.get("remediation") or item.get("recommendation") or ""),
-            metadata={"legacy_item": True},
+            metadata=item_metadata,
         )
         if legacy_candidate_allowed:
-            candidates.append(candidate.ensure_fingerprint())
+            candidate.ensure_fingerprint()
+            if candidate.fingerprint in seen_fingerprints:
+                continue
+            seen_fingerprints.add(candidate.fingerprint)
+            candidates.append(candidate)
 
+    result_status = "partial" if parsed_status == "PARTIAL" else "succeeded"
+    errors = []
+    if result_status == "partial":
+        errors.append(ToolErrorV1(
+            code="legacy_tool_partial",
+            message=redact(str(parsed_error or parsed.get("reason") or "Legacy tool returned a partial result."))[:2000],
+            retryable=True,
+        ))
     return ToolResultV1(
         tool_run_id=tool_run_id or f"run_{uuid.uuid4().hex}",
         tool_name=tool_name,
         category="legacy",
         target=target,
         inputs_redacted={},
+        status=result_status,
         summary=redact(raw)[:4000],
         observations=observations,
         candidate_findings=candidates,
+        errors=errors,
         legacy_source=True,
     )

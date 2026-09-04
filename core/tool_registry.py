@@ -24,6 +24,116 @@ from core.redact import redact
 EXPECTED_PUBLIC_TOOL_COUNT = 103
 
 
+# The planner speaks in stable Python-like capability names, while a handful
+# of legacy tools still expose human-facing public names through @tool("...").
+# Keep the public registry unchanged and resolve those names at the execution
+# boundary instead of making every planner/consumer know both vocabularies.
+TOOL_NAME_ALIASES = {
+    "recon_target": "Active Recon Target",
+    "scan_sql_injection": "SQL Injection Scanner",
+    "detect_xss_csrf": "XSS & CSRF Detector",
+    "scan_lfi_rfi": "LFI/RFI Scanner",
+    "test_header_injection": "Header Injection Tester",
+    "enumerate_subdomains": "DNS & Subdomain Enumerator",
+    "analyze_ssl_tls": "SSL/TLS Analyzer",
+    "test_api_security": "API Security Tester",
+}
+
+
+# This is an explicit execution policy, not a guess based on a tool/module
+# name.  The entries below were audited against the tool implementations: each
+# tool calls ``require_approval`` before it sends a probe, submits a form, or
+# performs a potentially expensive/credentialed operation.  Keeping this list
+# at the registry boundary prevents an autonomous caller from accidentally
+# treating a legacy raw-string tool as safe merely because its name looks like
+# a scanner.
+APPROVAL_REQUIRED_TOOL_POLICY: Dict[str, Dict[str, Any]] = {
+    name: {
+        "requires_approval": True,
+        "risk": "medium",
+        "side_effect_class": "approval_controlled",
+        "policy_version": "2.0",
+    }
+    for name in (
+        "csrf_exploit_scanner",
+        "mass_assignment_scanner",
+        "http_method_tampering_scanner",
+        "race_condition_scanner",
+        "file_upload_scanner",
+        "test_auth_rate_limiting",
+        "command_injection_scanner",
+        "cors_tester",
+        "credential_reuse_scanner",
+        "SQL Injection Scanner",
+        "XSS & CSRF Detector",
+        "LFI/RFI Scanner",
+        "Header Injection Tester",
+        "Tembak Request HTTP",
+        "insecure_deserialization_scanner",
+        "ssrf_advanced_scanner",
+        "dir_bruteforce_scanner",
+        "graphql_tester",
+        "hpp_scanner",
+        "html_injection_scanner",
+        "blind_sqli_scanner",
+        "nosql_injection_scanner",
+        "oauth_flow_tester",
+        "open_redirect_scanner",
+        "param_discovery_post",
+        "password_storage_analyzer",
+        "login_automator",
+        "browser_simulate_form",
+        "ssi_injection_scanner",
+        "ssl_scanner",
+        "scan_ssrf",
+        "scan_idor",
+        "ssti_tester",
+        "wp_scanner",
+        "stored_xss_scanner",
+        "xxe_tester",
+    )
+}
+
+# These tools retain an in-tool checkpoint so a non-autonomous run can pause
+# for operator review, but they are strictly GET-only.  In auto-pilot they are
+# therefore admitted as read-only capabilities; the checkpoint helper itself
+# still records the action and blocks when no execution context is present.
+APPROVAL_REQUIRED_TOOL_POLICY.update({
+    name: {
+        "requires_approval": False,
+        "risk": "read_only",
+        "side_effect_class": "none",
+        "policy_version": "2.1",
+    }
+    for name in (
+        "param_discovery_get",
+        "param_discovery_headers",
+        "web_crawler",
+    )
+})
+
+
+# Inference remains useful for legacy metadata, but these tools have a
+# contract-level identity requirement.  The explicit values also correct
+# false positives from the old substring heuristic (for example an ASN mapper
+# living in auth_recon_tools).
+IDENTITY_REQUIRED_TOOL_POLICY = {
+    "access_control_scanner": True,
+    "twofa_bypass_scanner": True,
+    "idor_uuid_scanner": True,
+    "session_management_scanner": True,
+    "test_jwt_weakness": True,
+    "jwt_tool_analysis": True,
+    "authorization_differential_replay": True,
+    "oauth_flow_tester": True,
+    "inject_session": True,
+    "scan_idor": True,
+    "mixed_content_scanner": False,
+    "postmessage_vulnerability_scanner": False,
+    "asn_ip_mapper": False,
+}
+
+
 class ToolCapabilityV1(BaseModel):
     schema_version: str = "1.0"
     tool_id: str
@@ -150,6 +260,9 @@ def discover_tool_registry(source_root: Optional[Path] = None) -> List[ToolCapab
                 if not public_name:
                     continue
                 inferred = _infer(public_name, module)
+                inferred.update(APPROVAL_REQUIRED_TOOL_POLICY.get(public_name, {}))
+                if public_name in IDENTITY_REQUIRED_TOOL_POLICY:
+                    inferred["requires_identity"] = IDENTITY_REQUIRED_TOOL_POLICY[public_name]
                 entries.append(ToolCapabilityV1(
                     tool_id=f"tool.{public_name}",
                     public_name=public_name,
@@ -161,7 +274,42 @@ def discover_tool_registry(source_root: Optional[Path] = None) -> List[ToolCapab
     return entries
 
 
-def validate_tool_registry(entries: Optional[Iterable[ToolCapabilityV1]] = None) -> List[RegistryIssue]:
+def _checkpoint_tool_names(source_root: Path) -> set[str]:
+    """Find tool declarations that call the approval checkpoint.
+
+    This is a validation aid only. Runtime policy comes from the explicit
+    ``APPROVAL_REQUIRED_TOOL_POLICY`` map above; AST inspection makes a future
+    tool addition fail CI/strict startup instead of silently becoming an
+    unreviewed autonomous capability.
+    """
+    names: set[str] = set()
+    for path in sorted(source_root.glob("*.py")):
+        if path.name.startswith("_"):
+            continue
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        except (OSError, SyntaxError):
+            continue
+        for node in tree.body:
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if not any(isinstance(item, ast.Name) and item.id == "require_approval" for item in ast.walk(node)):
+                continue
+            public_name = node.name
+            for decorator in node.decorator_list:
+                declared = _tool_name(decorator)
+                if declared:
+                    public_name = declared
+                    break
+            names.add(public_name)
+    return names
+
+
+def validate_tool_registry(
+    entries: Optional[Iterable[ToolCapabilityV1]] = None,
+    source_root: Optional[Path] = None,
+) -> List[RegistryIssue]:
+    validate_source_policy = entries is None or source_root is not None
     entries = list(entries if entries is not None else discover_tool_registry())
     issues: List[RegistryIssue] = []
     seen_ids: set[str] = set()
@@ -179,28 +327,35 @@ def validate_tool_registry(entries: Optional[Iterable[ToolCapabilityV1]] = None)
             issues.append(RegistryIssue(tool_id=entry.tool_id, public_name=entry.public_name, kind="risk_policy", detail="approval-required tool cannot be read_only"))
     if len(entries) != EXPECTED_PUBLIC_TOOL_COUNT:
         issues.append(RegistryIssue(kind="registry_count", detail=f"expected {EXPECTED_PUBLIC_TOOL_COUNT} public tools, found {len(entries)}"))
+    if validate_source_policy:
+        source_root = source_root or (Path(__file__).resolve().parent.parent / "tools")
+        declared_checkpoint_tools = _checkpoint_tool_names(source_root)
+        registry_names = {entry.public_name for entry in entries}
+        for public_name in sorted(declared_checkpoint_tools - registry_names):
+            issues.append(RegistryIssue(public_name=public_name, kind="checkpoint_unregistered", detail="approval-checkpoint tool is missing from the public registry"))
+        for public_name in sorted(declared_checkpoint_tools & registry_names):
+            if public_name not in APPROVAL_REQUIRED_TOOL_POLICY:
+                issues.append(RegistryIssue(public_name=public_name, kind="checkpoint_policy_missing", detail="tool calls require_approval but has no explicit registry policy"))
     return issues
 
 
 @functools.lru_cache(maxsize=1)
 def get_tool_registry() -> tuple[ToolCapabilityV1, ...]:
     entries = discover_tool_registry()
-    issues = validate_tool_registry(entries)
-    if issues and _strict_registry_mode():
+    issues = validate_tool_registry(entries, source_root=Path(__file__).resolve().parent.parent / "tools")
+    if issues:
         raise RuntimeError("Tool registry invalid: " + "; ".join(issue.detail for issue in issues))
     return tuple(entries)
 
 
-def _strict_registry_mode() -> bool:
-    try:
-        from core.config_loader import get_setting
-        return str(get_setting("tool_boundary_mode", "shadow")).lower() == "strict"
-    except Exception:
-        return False
+def canonical_tool_name(public_name: str) -> str:
+    """Return the registry-facing name for a planner/tool alias."""
+    return TOOL_NAME_ALIASES.get(str(public_name or ""), str(public_name or ""))
 
 
 def get_tool_capability(public_name: str) -> Optional[ToolCapabilityV1]:
-    return next((entry for entry in get_tool_registry() if entry.public_name == public_name), None)
+    canonical = canonical_tool_name(public_name)
+    return next((entry for entry in get_tool_registry() if entry.public_name == canonical), None)
 
 
 def resolve_tool(capability: ToolCapabilityV1) -> Any:

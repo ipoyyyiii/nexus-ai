@@ -47,14 +47,13 @@ class ImpactService:
         YAML policy and the action risk class.
         """
         exploration_mode = str(get_setting("exploration_mode", "assisted"))
-        chain_mode = str(get_setting("exploit_chain_mode", "shadow"))
         exploration = get_config().get("exploration", {})
         known_modes = {"assisted", "autonomous"}
         if exploration_mode not in known_modes:
             return {
                 "allowed": False, "requires_approval": True,
                 "reason": "Unknown exploration mode; fail closed.",
-                "exploration_mode": exploration_mode, "exploit_chain_mode": chain_mode,
+                "exploration_mode": exploration_mode,
             }
         mutation = side_effect in {"mutation", "credential", "upload", "raw_network"} or risk in {"high", "high_risk", "mutation"}
         requires_approval = mutation or bool(exploration.get("mutation_requires_approval", True)) and side_effect != "read"
@@ -62,12 +61,11 @@ class ImpactService:
         return {
             "allowed": bool(read_only_auto or not mutation),
             "requires_approval": requires_approval,
-            "dispatch_allowed": bool(chain_mode == "strict" and (not mutation or (requires_approval and approved))),
+            "dispatch_allowed": bool(not mutation or (requires_approval and approved)),
             "approval_present": bool(approved),
-            "shadow": chain_mode != "strict",
             "reason": "Read-only exploration is eligible for automatic planning." if read_only_auto else "Mutation/high-risk action requires exact approval and cleanup.",
             "exploration_mode": exploration_mode,
-            "exploit_chain_mode": chain_mode,
+            "assessment_mode": "autonomous",
         }
 
     def build_payload_proposal(self, session_id: str, *, target_url: str, input_ref: str, family: str,
@@ -96,8 +94,8 @@ class ImpactService:
             requires_approval=False, cleanup_ref=cleanup_ref,
             parser_context=parser_context, parameter_location=parameter_location,
             mutation_operator=mutation_operator, schema_digest=schema_digest,
-            metadata=redact({**(metadata or {}), "exploration_mode": get_setting("exploration_mode", "assisted"),
-                             "exploit_chain_mode": get_setting("exploit_chain_mode", "shadow")}),
+            metadata=redact({**(metadata or {}), "exploration_mode": get_setting("exploration_mode", "autonomous"),
+                             "assessment_mode": "autonomous"}),
         )
         requires_approval = proposal.requires_exact_approval()
         if requires_approval and not cleanup_ref.strip():

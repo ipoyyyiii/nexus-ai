@@ -60,7 +60,10 @@ def misconfiguration_scanner(url: str) -> str:
                 "type": ".git Folder Exposed",
                 "url": f"{base}/.git/HEAD",
                 "detail": "Source code repository accessible — full source code dump possible",
-                "severity": "Critical"
+                "severity": "Critical",
+                "status_code": r.status_code,
+                "content_length": len(r.content),
+                "content_verified": True,
             })
             logger.add_log(tool_name, "WARNING", ".git folder exposed!")
     except Exception:
@@ -77,7 +80,10 @@ def misconfiguration_scanner(url: str) -> str:
                     "type": ".env File Exposed",
                     "url": f"{base}{env_path}",
                     "detail": "Environment file with credentials accessible",
-                    "severity": "Critical"
+                    "severity": "Critical",
+                    "status_code": r.status_code,
+                    "content_length": len(r.content),
+                    "content_verified": True,
                 })
                 logger.add_log(tool_name, "WARNING", f".env exposed: {env_path}")
                 break
@@ -101,7 +107,10 @@ def misconfiguration_scanner(url: str) -> str:
                     "type": "Backup File Exposed",
                     "url": f"{base}{bf}",
                     "detail": f"Backup file accessible: {bf}",
-                    "severity": "High"
+                    "severity": "High",
+                    "status_code": r.status_code,
+                    "content_length": len(r.content),
+                    "content_verified": True,
                 })
                 logger.add_log(tool_name, "WARNING", f"Backup file exposed: {bf}")
         except Exception:
@@ -142,7 +151,10 @@ def misconfiguration_scanner(url: str) -> str:
                     "type": "Exposed Admin Panel",
                     "url": f"{base}{ap}",
                     "detail": f"Admin panel accessible without pre-auth at: {ap}",
-                    "severity": "High"
+                    "severity": "High",
+                    "status_code": r.status_code,
+                    "content_length": len(r.content),
+                    "accessible": True,
                 })
                 logger.add_log(tool_name, "WARNING", f"Admin panel exposed: {ap}")
         except Exception:
@@ -170,7 +182,10 @@ def misconfiguration_scanner(url: str) -> str:
                     "type": "Debug Mode / Verbose Error",
                     "url": dt,
                     "detail": "Application exposes stack trace or debug information",
-                    "severity": "High"
+                    "severity": "High",
+                    "status_code": r.status_code,
+                    "content_length": len(r.content),
+                    "verbose_error": True,
                 })
                 logger.add_log(tool_name, "WARNING", "Debug mode / verbose error detected")
                 break
@@ -189,7 +204,10 @@ def misconfiguration_scanner(url: str) -> str:
             findings["info"].append({
                 "type": "Server Version Disclosure",
                 "detail": f"Server: {server_header} | X-Powered-By: {xpowered}",
-                "severity": "Info"
+                "severity": "Info",
+                "status_code": r.status_code,
+                "server_header": server_header,
+                "x_powered_by": xpowered,
             })
             logger.add_log(tool_name, "WARNING", f"Version disclosed: {server_header} {xpowered}")
     except Exception:
@@ -539,7 +557,12 @@ def misconfiguration_scanner(url: str) -> str:
             findings["high"].append({
                 "type": "CORS Misconfiguration",
                 "detail": f"Access-Control-Allow-Origin: {acao} — allows arbitrary origin",
-                "severity": "High"
+                "severity": "High",
+                "status_code": r.status_code,
+                "attacker_origin_accepted": True,
+                "credentialed_request_allowed": bool(r.headers.get("Access-Control-Allow-Credentials", "").lower() == "true"),
+                "sensitive_response_readable": False,
+                "origin_control_rejected": False,
             })
             logger.add_log(tool_name, "WARNING", f"CORS misconfig: {acao}")
     except Exception:
@@ -564,16 +587,25 @@ def misconfiguration_scanner(url: str) -> str:
         for header, (expected, severity) in security_headers.items():
             header_value = r.headers.get(header, "")
             if not header_value:
-                findings["medium" if severity in ["Medium", "Low"] else "high"].append({
-                    "type": f"Missing Security Header: {header}",
-                    "detail": f"Header '{header}' not present — {severity} security risk",
-                    "severity": severity
-                })
+                    findings["medium" if severity in ["Medium", "Low"] else "high"].append({
+                        "type": f"Missing Security Header: {header}",
+                        "detail": f"Header '{header}' not present — {severity} security risk",
+                        "severity": severity,
+                        "status_code": r.status_code,
+                        "header_name": header,
+                        "header_present": False,
+                        "header_value": "",
+                    })
             elif expected and expected not in header_value:
                 findings["medium"].append({
                     "type": f"Weak Security Header: {header}",
                     "detail": f"Header '{header}' present but not properly configured: {header_value[:100]}",
-                    "severity": "Medium"
+                    "severity": "Medium",
+                    "status_code": r.status_code,
+                    "header_name": header,
+                    "header_present": True,
+                    "header_weak": True,
+                    "header_value": header_value[:100],
                 })
     except Exception:
         pass

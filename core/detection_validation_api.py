@@ -13,7 +13,7 @@ from core.structured_contract import CandidateFindingV1, ObservationV1, ToolResu
 
 
 class ValidationV2Request(BaseModel):
-    mode: str = Field(default="shadow", pattern="^(shadow|strict)$")
+    mode: str = Field(default="autonomous", pattern="^autonomous$")
     policy_id: str = Field(default="", max_length=200)
 
 
@@ -39,7 +39,7 @@ def register_detection_validation_routes(
         candidate.observation_ids = [item.observation_id for item in observations]
         return candidate, observations
 
-    def _evaluate(session_id: str, candidate_id: str, mode: str, policy_id: str = "", *, persist: bool = False, apply_status: bool = False) -> Dict[str, Any]:
+    def _evaluate(session_id: str, candidate_id: str, mode: str = "autonomous", policy_id: str = "", *, persist: bool = True, apply_status: bool = True) -> Dict[str, Any]:
         try:
             candidate, observations = _load(session_id, candidate_id)
         except ValueError as exc:
@@ -52,8 +52,8 @@ def register_detection_validation_routes(
             if not policy or requested.policy_id != policy.policy_id:
                 raise HTTPException(status_code=409, detail="Requested policy does not match candidate family.")
         result = ToolResultV1(tool_name="validation_v2", category="validation", target=candidate.target_url, observations=observations, candidate_findings=[candidate])
-        selected = ValidationEngineV2(mode=mode, registry=validation_policy_registry_v2)
-        decision = selected.validate(result, mode=mode, apply_status=apply_status)[0]
+        selected = ValidationEngineV2(registry=validation_policy_registry_v2)
+        decision = selected.validate(result, mode="autonomous", apply_status=apply_status)[0]
         trace = selected.last_traces[0]
         if persist:
             try:
@@ -64,7 +64,7 @@ def register_detection_validation_routes(
                 raise HTTPException(status_code=503, detail=f"Validation trace persistence unavailable: {type(exc).__name__}") from exc
         else:
             memory["traces"].setdefault(candidate_id, []).append(trace.model_dump(mode="json"))
-        return {"candidate": candidate.model_dump(mode="json"), "decision": decision.model_dump(mode="json"), "trace": trace.model_dump(mode="json"), "mode": mode, "persisted": persist}
+        return {"candidate": candidate.model_dump(mode="json"), "decision": decision.model_dump(mode="json"), "trace": trace.model_dump(mode="json"), "mode": "autonomous", "persisted": persist}
 
     @app.get("/validation/v2/policies")
     async def list_validation_v2_policies(active_only: bool = True, _: bool = Depends(require_api_key)):
@@ -87,14 +87,13 @@ def register_detection_validation_routes(
     @app.post("/sessions/{session_id}/candidates/{candidate_id}/validation-v2")
     async def validate_candidate_v2(session_id: str, candidate_id: str, req: ValidationV2Request, _: bool = Depends(require_api_key)):
         session_store.require(session_id)
-        return _evaluate(session_id, candidate_id, req.mode, req.policy_id, persist=req.mode == "strict", apply_status=req.mode == "strict")
+        return _evaluate(session_id, candidate_id, "autonomous", req.policy_id, persist=True, apply_status=True)
 
     @app.post("/sessions/{session_id}/candidates/{candidate_id}/validation-v2/compare")
     async def compare_candidate_v2(session_id: str, candidate_id: str, _: bool = Depends(require_api_key)):
         session_store.require(session_id)
-        shadow = _evaluate(session_id, candidate_id, "shadow", persist=False, apply_status=False)
-        strict_preview = _evaluate(session_id, candidate_id, "strict", persist=False, apply_status=False)
-        return {"candidate_id": candidate_id, "shadow": shadow, "strict_preview": strict_preview, "status_changed": False}
+        authoritative = _evaluate(session_id, candidate_id, "autonomous", persist=True, apply_status=True)
+        return {"candidate_id": candidate_id, "authoritative": authoritative, "status_changed": True}
 
     @app.get("/sessions/{session_id}/candidates/{candidate_id}/validation-v2/traces")
     async def list_candidate_v2_traces(session_id: str, candidate_id: str, limit: int = 100, _: bool = Depends(require_api_key)):
@@ -111,4 +110,3 @@ def register_detection_validation_routes(
         return {"validator_version": ValidationEngineV2.VERSION, "registry_fingerprint": validation_policy_registry_v2.fingerprint(), "gaps": [{"policy_id": item.policy_id, "family": item.vulnerability_family, "status": "supported" if item.active else "inactive"} for item in validation_policy_registry_v2.list(False)]}
 
     return memory
-

@@ -28,7 +28,7 @@ from core.authorization_contract import (
 )
 from core.identity_context import ToolExecutionContext, use_execution_context, get_execution_context
 from core.redact import redact
-from core.structured_contract import CandidateFindingV1, ObservationV1, ToolResultV1
+from core.structured_contract import CandidateFindingV1, ObservationV1, ToolErrorV1, ToolResultV1
 
 
 _LOGIN_RE = re.compile(r"(?:/login|/signin|/sign-in|/auth(?:enticate)?)(?:[/?#]|$)", re.I)
@@ -155,12 +155,21 @@ class AuthorizationReplayEngine:
             approval_ref=inherited.approval_ref if inherited else "",
             approval_digest=inherited.approval_digest if inherited else "",
             approval_granted=bool(approved or (inherited and inherited.approval_granted)),
+            authorized_lab_mode=inherited.authorized_lab_mode if inherited else False,
+            authorized_lab_origin=inherited.authorized_lab_origin if inherited else "",
+            suite_preapproval_id=inherited.suite_preapproval_id if inherited else "",
         )):
             # TLS verification is a safety invariant.  A target-specific
             # exception must be represented by the safety kernel, never by a
             # replay helper silently disabling verification.
             request_kwargs: Dict[str, Any] = {"headers": headers, "timeout": self.timeout, "verify": True, "allow_redirects": False}
-            request_kwargs = auth_store.inject_into_kwargs(template.origin.split("//", 1)[-1].split("/", 1)[0], request_kwargs, session_id=session_id, identity_id=identity_id)
+            request_kwargs = auth_store.inject_into_kwargs(
+                template.origin.split("//", 1)[-1].split("/", 1)[0],
+                request_kwargs,
+                session_id=session_id,
+                identity_id=identity_id,
+                auth_context_id=auth_context_id,
+            )
             if body is not None:
                 if template.protocol == "graphql" or isinstance(body, (dict, list)):
                     request_kwargs["json"] = body
@@ -185,24 +194,77 @@ class AuthorizationReplayEngine:
         bindings: Optional[Dict[str, Any]] = None,
         approved: bool = False,
         replay_run: Optional[AuthorizationReplayRunV1] = None,
+        auth_contexts: Optional[Dict[str, str]] = None,
+        negative_control_identity_id: str = "",
     ) -> ToolResultV1:
         bindings = dict(bindings or {})
         expectations = list(expectations)
+        test_identity_ids = [str(item) for item in test_identity_ids if str(item)]
+        auth_contexts = {
+            str(identity_id): str(auth_context_id)
+            for identity_id, auth_context_id in (auth_contexts or {}).items()
+            if identity_id and auth_context_id
+        }
+        selected_identity_ids = [str(owner_identity_id), *test_identity_ids]
+        missing_contexts = sorted({
+            identity_id for identity_id in selected_identity_ids
+            if not auth_contexts.get(identity_id)
+        })
+        if not test_identity_ids:
+            return ToolResultV1(
+                tool_name="authorization_replay", category="access_control", target=self._url(template),
+                status="failed", summary="Authorization replay requires an owner and at least one non-owner identity.",
+                errors=[ToolErrorV1(code="missing_test_identity", message="No non-owner identity was supplied.")],
+            )
+        if negative_control_identity_id and negative_control_identity_id not in test_identity_ids:
+            return ToolResultV1(
+                tool_name="authorization_replay", category="access_control", target=self._url(template),
+                status="failed", summary="The negative control must be one of the selected non-owner identities.",
+                errors=[ToolErrorV1(code="invalid_negative_control", message="Negative control identity is outside the selected test identities.")],
+            )
+        if missing_contexts:
+            return ToolResultV1(
+                tool_name="authorization_replay", category="access_control", target=self._url(template),
+                status="failed", summary="Authorization replay requires explicit isolated auth contexts.",
+                errors=[ToolErrorV1(code="missing_auth_context", message="Missing auth context for: " + ", ".join(missing_contexts))],
+            )
         resource_value = resource.metadata.get("runtime_locator", resource.locator_redacted)
         if resource_value is not None:
             bindings.setdefault("resource_id", resource_value)
         marker = str(resource.metadata.get("unique_marker", ""))
+        expectation_map = {(item.subject_identity_id, item.action, item.resource_fingerprint): item for item in expectations}
+        control_expectation = expectation_map.get(
+            (negative_control_identity_id, template.method.upper(), resource.fingerprint)
+        ) if negative_control_identity_id else None
+        if negative_control_identity_id and not resource.private_canary and not (
+            control_expectation and control_expectation.expected == "deny"
+        ):
+            return ToolResultV1(
+                tool_name="authorization_replay", category="access_control", target=self._url(template),
+                status="failed", summary="The negative control has no explicit deny expectation for this resource.",
+                errors=[ToolErrorV1(code="missing_negative_control_expectation", message="Provide an observed deny expectation or mark the observed resource as a private canary.")],
+            )
         run = replay_run or AuthorizationReplayRunV1(
             session_id=session_id, template_id=template.template_id,
             resource_fingerprint=resource.fingerprint, owner_identity_id=owner_identity_id,
-            test_identity_ids=list(test_identity_ids), mutation_approved=approved,
+            test_identity_ids=list(test_identity_ids),
+            negative_control_identity_id=negative_control_identity_id,
+            mutation_approved=approved,
         )
+        if negative_control_identity_id:
+            run.negative_control_identity_id = negative_control_identity_id
         self.last_run = run
         observations: List[ObservationV1] = []
         attempts: List[ReplayAttemptV1] = []
         try:
-            baseline = self._request(template, owner_identity_id, session_id, bindings, approved)
-            observations.append(self._observation("baseline", template, owner_identity_id, baseline, run.replay_run_id, resource.fingerprint))
+            baseline = self._request(
+                template, owner_identity_id, session_id, bindings, approved,
+                auth_context_id=auth_contexts.get(owner_identity_id, ""),
+            )
+            observations.append(self._observation(
+                "baseline", template, owner_identity_id, baseline, run.replay_run_id,
+                resource.fingerprint, auth_context_id=auth_contexts.get(owner_identity_id, ""),
+            ))
         except Exception as exc:
             run.status = "failed"
             return ToolResultV1(
@@ -211,16 +273,19 @@ class AuthorizationReplayEngine:
                 errors=[{"code": "baseline_failed", "message": str(exc)}],
             )
 
-        expectation_map = {(item.subject_identity_id, item.action, item.resource_fingerprint): item for item in expectations}
         unexpected: List[str] = []
         for identity_id in run.test_identity_ids:
             attempt = ReplayAttemptV1(
                 replay_run_id=run.replay_run_id, identity_id=identity_id,
                 template_id=template.template_id, resource_fingerprint=resource.fingerprint,
+                auth_context_id=auth_contexts.get(identity_id, ""),
                 status="running",
             )
             try:
-                tested = self._request(template, identity_id, session_id, bindings, approved)
+                tested = self._request(
+                    template, identity_id, session_id, bindings, approved,
+                    auth_context_id=auth_contexts.get(identity_id, ""),
+                )
                 comparison = compare_responses(baseline, tested, marker)
                 expected = expectation_map.get((identity_id, template.method.upper(), resource.fingerprint))
                 semantic = "allow" if comparison["test_login_wall"] or not comparison["resource_semantically_present"] else "unexpected_allow"
@@ -230,7 +295,13 @@ class AuthorizationReplayEngine:
                 attempt.response_status = tested.status_code
                 attempt.semantic_result = semantic
                 attempt.comparison = comparison
-                test_observation = self._observation("test", template, identity_id, tested, run.replay_run_id, resource.fingerprint, comparison)
+                observation_role = "negative_control" if identity_id == negative_control_identity_id else "test"
+                test_observation = self._observation(
+                    observation_role, template, identity_id, tested, run.replay_run_id,
+                    resource.fingerprint, comparison,
+                    auth_context_id=auth_contexts.get(identity_id, ""),
+                )
+                test_observation.metadata["semantic_result"] = semantic
                 attempt.observation_id = test_observation.observation_id
                 observations.append(test_observation)
                 expected_deny = expected and expected.expected == "deny"
@@ -241,12 +312,17 @@ class AuthorizationReplayEngine:
                     # finding. Mutations stay inconclusive unless a human
                     # supplies a separate reproduction plan.
                     if template.side_effect_class == "read":
-                        reproduced = self._request(template, identity_id, session_id, bindings, approved)
+                        reproduced = self._request(
+                            template, identity_id, session_id, bindings, approved,
+                            auth_context_id=auth_contexts.get(identity_id, ""),
+                        )
                         reproduction_comparison = compare_responses(baseline, reproduced, marker)
                         observations.append(self._observation(
                             "reproduction", template, identity_id, reproduced,
                             run.replay_run_id, resource.fingerprint, reproduction_comparison,
+                            auth_context_id=auth_contexts.get(identity_id, ""),
                         ))
+                        observations[-1].metadata["semantic_result"] = semantic
             except Exception as exc:
                 attempt.status = "failed"
                 attempt.comparison = {"error": str(exc)}
@@ -270,6 +346,22 @@ class AuthorizationReplayEngine:
                     "private_canary": resource.private_canary,
                     "owner_identity_id": owner_identity_id,
                     "unexpected_identity_ids": unexpected,
+                    "unexpected_allow": bool(unexpected),
+                    "negative_control_identity_id": negative_control_identity_id,
+                    "deny_expectation": any(
+                        item.expected == "deny" and item.subject_identity_id in unexpected
+                        for item in expectations
+                    ),
+                    "expectation_id": next(
+                        (
+                            item.expectation_id for item in expectations
+                            if item.subject_identity_id in unexpected
+                            and item.action == template.method.upper()
+                            and item.resource_fingerprint == resource.fingerprint
+                            and item.expected == "deny"
+                        ),
+                        "",
+                    ),
                     "expectation_ids": [item.expectation_id for item in expectations],
                     "expected_deny_required": True,
                 },
@@ -286,17 +378,34 @@ class AuthorizationReplayEngine:
         )
 
     @staticmethod
-    def _observation(role: str, template: RequestTemplateV1, identity_id: str, response: ResponseSnapshot, replay_run_id: str, resource_fingerprint: str = "", comparison: Optional[Dict[str, Any]] = None) -> ObservationV1:
+    def _observation(
+        role: str,
+        template: RequestTemplateV1,
+        identity_id: str,
+        response: ResponseSnapshot,
+        replay_run_id: str,
+        resource_fingerprint: str = "",
+        comparison: Optional[Dict[str, Any]] = None,
+        auth_context_id: str = "",
+    ) -> ObservationV1:
         return ObservationV1(
             role=role, kind="authorization_replay", target_url=response.url,
             method=template.method.upper(), response_excerpt=redact(response.body)[:8000],
             status_code=response.status_code, response_time_ms=response.elapsed_ms,
             metadata={
                 "identity_id": identity_id,
+                "auth_context_id": auth_context_id,
                 "template_id": template.template_id,
                 "replay_run_id": replay_run_id,
                 "resource_fingerprint": resource_fingerprint,
                 "comparison": comparison or {},
+                # Keep the deterministic semantic flags at the observation
+                # boundary as well as inside the raw comparison object. V2
+                # validation must not need to infer them from transport data.
+                **{
+                    key: value for key, value in (comparison or {}).items()
+                    if key in {"resource_semantically_present", "same_json", "same_body_hash", "status_changed"}
+                },
             },
         )
 

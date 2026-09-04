@@ -45,6 +45,10 @@ class HumanReconEngine:
         max_pages: int = 60,
         max_depth: int = 3,
         max_clicks_per_page: int = 12,
+        invocation_timeout_seconds: float = 240.0,
+        navigation_timeout_ms: int = 10000,
+        dom_settle_ms: int = 1000,
+        llm_timeout_seconds: float = 30.0,
     ):
         self.session_id = session_id
         self.target = target
@@ -53,13 +57,17 @@ class HumanReconEngine:
         self.max_pages = max_pages
         self.max_depth = max_depth
         self.max_clicks_per_page = max_clicks_per_page
+        self.invocation_timeout_seconds = max(15.0, float(invocation_timeout_seconds))
+        self.navigation_timeout_ms = max(1000, int(navigation_timeout_ms))
+        self.dom_settle_ms = max(0, int(dom_settle_ms))
+        self.llm_timeout_seconds = max(1.0, float(llm_timeout_seconds))
         self.visited: Set[str] = set()
         self.pages_visited: List[Dict[str, Any]] = []
         self.interaction_log: List[Dict[str, Any]] = []
         self.frontier: List[Dict[str, Any]] = [{"url": target, "depth": 0, "reason": "seed"}]
 
     def run(self) -> Dict[str, Any]:
-        from tools.playwright_tools import _get_browser, _new_page, _run_async
+        from tools.playwright_tools import _get_browser, _new_page, _run_async, PWTimeout
         from core.cancellation import check_cancelled
         from core.rate_limiter import rate_limiter
         import asyncio
@@ -73,9 +81,44 @@ class HumanReconEngine:
         history: List[str] = []
 
         async def _crawl():
+            from tools.playwright_tools import _goto_browser_page
+
             browser = await _get_browser()
             page, ctx = await _new_page(browser, origin=self.target)
             captured: List[Dict[str, Any]] = []
+            llm_timeouts = 0
+            llm_fallbacks = 0
+            llm_error_codes: Dict[str, int] = {}
+            navigation_timeouts = 0
+            navigation_failures = 0
+            clicks_by_page: Dict[str, int] = {}
+            cancelled = False
+            termination_reason = "frontier_exhausted"
+
+            # Build one provider client for the entire crawl. Recreating a
+            # ChatOpenAI client per page adds latency and made the previous
+            # implementation especially sensitive to a slow remote tunnel.
+            planner_llm = None
+            try:
+                from core.model_registry import build_chat_llm
+                import os as _model_os
+
+                preferred = None
+                if _model_os.environ.get("NEXUS_LOCAL_LLM_ENABLED", "").lower() in ("1", "true", "yes", "on"):
+                    from core.model_registry import _local_registry
+
+                    local_models = _local_registry()
+                    if local_models:
+                        preferred = local_models[0]["id"]
+                planner_llm = build_chat_llm(
+                    preferred,
+                    timeout_seconds=self.llm_timeout_seconds,
+                )
+            except Exception as exc:
+                self.interaction_log.append({
+                    "type": "llm_provider_unavailable",
+                    "error": f"{type(exc).__name__}: {exc}"[:200],
+                })
 
             def on_req(req):
                 captured.append({"url": req.url, "method": req.method, "type": req.resource_type})
@@ -94,9 +137,12 @@ class HumanReconEngine:
                     self.interaction_log.append({"type": "skip", "url": url, "reason": "out-of-scope"})
                     continue
                 if check_cancelled(None):
+                    cancelled = True
+                    termination_reason = "cancelled_before_page"
                     break
 
                 # Captcha check + per-domain OPSEC & rate limit + mitmproxy route
+                capture_start = len(captured)
                 try:
                     from engines.stealth_engine import stealth
                     headers = stealth.get_browser_headers(url, is_api=False)
@@ -124,18 +170,94 @@ class HumanReconEngine:
                     except Exception:
                         pass
                 try:
-                    # Modern SPAs often expose their actual routes, controls,
-                    # and API calls only after the bootstrap bundle settles.
-                    # Prefer network-idle, but keep a bounded fallback for
-                    # targets with long-polling or analytics requests.
-                    await page.goto(url, wait_until="networkidle", timeout=20000)
-                except Exception:
-                    try:
-                        await page.wait_for_load_state("domcontentloaded", timeout=5000)
-                    except Exception:
-                        pass
+                    # DOMContentLoaded plus a short bounded settle window is
+                    # intentional. ``networkidle`` is not a reliable ready
+                    # signal for SPAs with polling, analytics, or websockets.
+                    await _goto_browser_page(
+                        page,
+                        url,
+                        timeout_ms=self.navigation_timeout_ms,
+                    )
+                    navigation_status = "succeeded"
+                except (PWTimeout, TimeoutError) as exc:
+                    navigation_status = "timeout"
+                    navigation_timeouts += 1
+                    self.interaction_log.append({
+                        "type": "navigation_timeout",
+                        "url": redact(url),
+                        "error": str(exc)[:200],
+                    })
+                except Exception as exc:
+                    navigation_status = "failed"
+                    navigation_failures += 1
+                    self.interaction_log.append({
+                        "type": "navigation_fail",
+                        "url": redact(url),
+                        "error": f"{type(exc).__name__}: {exc}"[:240],
+                    })
+                if check_cancelled(None):
+                    cancelled = True
+                    termination_reason = "cancelled_after_navigation"
+                    break
+                # ``page.content()`` serializes the whole document and can
+                # block on a busy SPA even when its DOM is already usable.
+                # Probe small DOM facts instead of making full serialization
+                # a prerequisite for observing the page.
+                dom_state = {}
                 try:
-                    await page.wait_for_timeout(1000)
+                    dom_state = await asyncio.wait_for(
+                        page.evaluate(
+                            """() => ({
+                                ready_state: document.readyState,
+                                has_document_element: Boolean(document.documentElement),
+                                has_body: Boolean(document.body),
+                                body_text_length: (document.body?.innerText || '').length,
+                                link_count: document.querySelectorAll('a[href]').length
+                            })"""
+                        ),
+                        timeout=2,
+                    )
+                except Exception:
+                    dom_state = {}
+                if not isinstance(dom_state, dict):
+                    dom_state = {}
+                try:
+                    page_title = await asyncio.wait_for(page.title(), timeout=2)
+                except Exception:
+                    page_title = ""
+                dom_available = bool(
+                    dom_state.get("has_document_element")
+                    or dom_state.get("has_body")
+                    or page_title
+                )
+                if not dom_available:
+                    self.interaction_log.append({
+                        "type": "dom_unavailable",
+                        "url": redact(url),
+                        "navigation_status": navigation_status,
+                    })
+                    # Preserve a network-only page instead of returning an
+                    # apparently successful crawl with pages=[].
+                    page_xhr = [
+                        c for c in captured[capture_start:]
+                        if c.get("type") in ("xhr", "fetch")
+                    ][-20:]
+                    self.pages_visited.append({
+                        "url": redact(url),
+                        "depth": depth,
+                        "forms": 0,
+                        "forms_detail": [],
+                        "inputs": [],
+                        "buttons": [],
+                        "xhr_detail": redact(page_xhr),
+                        "xhr": len(page_xhr),
+                        "navigation_status": navigation_status,
+                        "capture_status": "network_only",
+                    })
+                    pages_done += 1
+                    continue
+                try:
+                    await page.wait_for_timeout(min(self.dom_settle_ms, 5000))
                     if await page.locator('[data-captcha], #captcha, [id*="captcha" i]').count() > 0:
                         self.interaction_log.append({"type": "pause", "url": url, "reason": "captcha detected"})
                         break
@@ -147,11 +269,55 @@ class HumanReconEngine:
                 self.visited.add(norm)
 
                 # Observe
-                snapshot = await _observe(page, url, depth, captured)
-                self.pages_visited.append({"url": redact(url), "depth": depth, "forms": len(snapshot.forms), "forms_detail": redact(snapshot.forms), "inputs": redact(snapshot.inputs), "buttons": redact(snapshot.buttons), "xhr_detail": redact(snapshot.xhr), "xhr": len(snapshot.xhr)})
+                snapshot = await _observe(page, url, depth, captured[capture_start:])
+                self.pages_visited.append({"url": redact(url), "depth": depth, "forms": len(snapshot.forms), "forms_detail": redact(snapshot.forms), "inputs": redact(snapshot.inputs), "buttons": redact(snapshot.buttons), "xhr_detail": redact(snapshot.xhr), "xhr": len(snapshot.xhr), "navigation_status": navigation_status, "capture_status": "dom_observed"})
 
                 # Decide
-                decision = llm_next(snapshot, self.target, self.goal, history)
+                try:
+                    # ``llm_next`` is synchronous because the provider client
+                    # is synchronous. Run it off the browser event loop and
+                    # enforce a per-decision deadline so one slow Kaggle/ngrok
+                    # inference cannot consume the entire crawl budget.
+                    decision = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            llm_next,
+                            snapshot,
+                            self.target,
+                            self.goal,
+                            history,
+                            timeout_seconds=self.llm_timeout_seconds,
+                            llm=planner_llm,
+                        ),
+                        timeout=self.llm_timeout_seconds,
+                    )
+                except asyncio.TimeoutError:
+                    llm_timeouts += 1
+                    self.interaction_log.append({
+                        "type": "llm_timeout",
+                        "url": redact(url),
+                        "timeout_seconds": self.llm_timeout_seconds,
+                    })
+                    decision = heuristic_next(snapshot)
+                except Exception as exc:
+                    self.interaction_log.append({
+                        "type": "llm_fallback",
+                        "url": redact(url),
+                        "error": f"{type(exc).__name__}: {exc}"[:200],
+                    })
+                    decision = heuristic_next(snapshot)
+                decision_source = str(decision.get("_decision_source") or "heuristic")
+                llm_error_code = str(decision.get("_llm_error_code") or "")
+                self.pages_visited[-1]["decision_source"] = decision_source
+                if decision_source != "llm":
+                    llm_fallbacks += 1
+                if llm_error_code:
+                    llm_error_codes[llm_error_code] = llm_error_codes.get(llm_error_code, 0) + 1
+                    if llm_error_code == "llm_timeout":
+                        llm_timeouts += 1
+                if check_cancelled(None):
+                    cancelled = True
+                    termination_reason = "cancelled_after_decision"
+                    break
                 nxt = decision.get("next_action", {})
                 history.append(f"{nxt.get('type')}@{url}: {nxt.get('reason','')}"[:200])
 
@@ -168,12 +334,24 @@ class HumanReconEngine:
                 # Act
                 t = nxt.get("type")
                 if t == "done":
+                    termination_reason = "planner_done"
                     break
                 elif t == "follow_link" and nxt.get("url"):
                     nxt_url = urljoin(url, nxt["url"])
                     if _normalize(nxt_url) not in self.visited:
                         self.frontier.append({"url": nxt_url, "depth": depth + 1, "reason": nxt.get("reason","")})
                 elif t == "click" and nxt.get("selector"):
+                    page_key = _normalize(url)
+                    clicks_by_page.setdefault(page_key, 0)
+                    if clicks_by_page[page_key] >= self.max_clicks_per_page:
+                        self.interaction_log.append({
+                            "type": "click_budget_exhausted",
+                            "url": redact(url),
+                            "limit": self.max_clicks_per_page,
+                        })
+                        t = "done"
+                    else:
+                        clicks_by_page[page_key] += 1
                     click_text = " ".join(str(nxt.get(key, "")) for key in ("reason", "text", "label")).lower()
                     mutation_words = (
                         "submit", "delete", "remove", "logout", "checkout", "purchase",
@@ -187,15 +365,15 @@ class HumanReconEngine:
                             "reason": "state-changing browser action requires approval",
                             "action": "click",
                         })
-                        continue
-                    try:
-                        await page.click(nxt["selector"], timeout=4000)
-                        await page.wait_for_timeout(2000)
-                        new_url = page.url
-                        if _normalize(new_url) not in self.visited:
-                            self.frontier.append({"url": new_url, "depth": depth + 1, "reason": "after click"})
-                    except Exception as e:
-                        self.interaction_log.append({"type": "click_fail", "selector": nxt["selector"], "error": str(e)[:150]})
+                    elif t == "click":
+                        try:
+                            await page.click(nxt["selector"], timeout=4000)
+                            await page.wait_for_timeout(2000)
+                            new_url = page.url
+                            if _normalize(new_url) not in self.visited:
+                                self.frontier.append({"url": new_url, "depth": depth + 1, "reason": "after click"})
+                        except Exception as e:
+                            self.interaction_log.append({"type": "click_fail", "selector": nxt["selector"], "error": str(e)[:150]})
                 elif t == "fill_form" and nxt.get("form_data"):
                     # Recon-only is observation-only.  Form filling and
                     # pressing Enter can submit mutations, even when the
@@ -236,18 +414,35 @@ class HumanReconEngine:
 
                 pages_done += 1
                 if check_cancelled(None):
+                    cancelled = True
+                    termination_reason = "cancelled_after_page"
                     break
 
-            await ctx.close()
+            try:
+                await asyncio.wait_for(ctx.close(), timeout=5)
+            except Exception:
+                pass
             return {
+                "status": "cancelled" if cancelled else "succeeded",
                 "pages_visited": len(self.pages_visited),
                 "visited_urls": list(self.visited)[:80],
                 "pages_detail": self.pages_visited,
                 "interaction_log": self.interaction_log[-50:],
                 "xhr_captured": len(captured),
+                "metrics": {
+                    "llm_timeouts": llm_timeouts,
+                    "llm_fallbacks": llm_fallbacks,
+                    "llm_error_codes": llm_error_codes,
+                    "navigation_timeouts": navigation_timeouts,
+                    "navigation_failures": navigation_failures,
+                    "termination_reason": termination_reason,
+                    "max_pages": self.max_pages,
+                    "max_depth": self.max_depth,
+                    "max_clicks_per_page": self.max_clicks_per_page,
+                },
             }
 
-        return _run_async(_crawl())
+        return _run_async(_crawl(), timeout_seconds=self.invocation_timeout_seconds)
 
 
 async def _observe(page, url: str, depth: int, captured: List[Dict]) -> PageSnapshot:

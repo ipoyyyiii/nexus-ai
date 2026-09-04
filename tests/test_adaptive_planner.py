@@ -2,7 +2,7 @@
 
 import unittest
 
-from core.adaptive_planner import AdaptiveHypothesisPlanner, PlanningSnapshot
+from core.adaptive_planner import AdaptiveHypothesisPlanner, PlanningSnapshot, _safe_endpoint_url
 from core.chain_planner import ChainPlanner
 from core.execution_guard import ExecutionGuard
 from core.workflow_dispatch import WorkflowDispatcher
@@ -29,6 +29,50 @@ class AdaptivePlannerTests(unittest.TestCase):
         self.assertEqual(result.proposals[0].action, "attack_surface_mapping")
         audited = self.planner.plan(self.context, self.state(), PlanningSnapshot(errors=["candidate table unavailable"]), "map")
         self.assertIn("Evidence source unavailable: candidate table unavailable", audited.decision.knowledge_gaps)
+
+    def test_malformed_redirect_artifact_is_not_reused_as_detector_target(self):
+        self.assertEqual(_safe_endpoint_url("https://app.example.test/login\\\\"), "")
+        self.assertEqual(_safe_endpoint_url("https://app.example.test/login"), "https://app.example.test/login")
+
+    def test_mapped_surface_seeds_baseline_detector_matrix(self):
+        state = self.state()
+        state.endpoints = [EndpointInfo(url="https://app.example.test/login", method="GET")]
+        result = self.planner.plan(
+            self.context,
+            state,
+            PlanningSnapshot(tool_runs=[{"category": "recon", "status": "succeeded"}]),
+            "full vulnerability assessment",
+        )
+        categories = {item.category for item in result.hypotheses}
+        self.assertTrue({"cors", "sql_injection", "xss", "path_traversal", "ssti"}.issubset(categories))
+        by_id = {item.hypothesis_id: item.category for item in result.hypotheses}
+        self.assertEqual(
+            len({by_id[item.hypothesis_id] for item in result.proposals}),
+            len(result.proposals),
+        )
+
+    def test_uncovered_baseline_families_outscore_repeated_surface_family(self):
+        state = self.state()
+        target = "https://app.example.test/login"
+        state.endpoints = [EndpointInfo(url=target, method="GET")]
+        previous = self.planner.plan(
+            self.context,
+            state,
+            PlanningSnapshot(tool_runs=[{"category": "recon", "status": "succeeded"}]),
+            "full vulnerability assessment",
+        )
+        for hypothesis in state.workflow.hypotheses:
+            if hypothesis.category == "session_security":
+                hypothesis.test_attempts = 1
+        next_plan = self.planner.plan(
+            self.context,
+            state,
+            PlanningSnapshot(tool_runs=[{"category": "recon", "status": "succeeded"}]),
+            "full vulnerability assessment",
+        )
+        self.assertTrue(previous.proposals)
+        self.assertTrue(next_plan.proposals)
+        self.assertNotEqual(next_plan.proposals[0].recommended_tool, "session_management_scanner")
 
 
     def test_authorization_requires_two_isolated_identities(self):
