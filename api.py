@@ -1400,11 +1400,28 @@ def _execution_integrity_failure(
     """
     phase_errors: List[str] = []
     for phase, result in (all_results or {}).items():
-        if isinstance(result, str) and result.lstrip().lower().startswith("error:"):
-            phase_errors.append(str(phase))
-        elif isinstance(result, dict) and str(result.get("status", "")).lower() in {
-            "error", "failed", "failure",
-        }:
+        status_values: List[str] = []
+        if isinstance(result, str):
+            if result.lstrip().lower().startswith("error:"):
+                phase_errors.append(str(phase))
+                continue
+            try:
+                parsed = json.loads(result)
+            except Exception:
+                parsed = None
+            if isinstance(parsed, dict):
+                status_values.extend([
+                    str(parsed.get("status") or "").lower(),
+                    str((parsed.get("execution") or {}).get("status") or "").lower(),
+                    str((parsed.get("reasoning") or {}).get("status") or "").lower(),
+                ])
+        elif isinstance(result, dict):
+            status_values.extend([
+                str(result.get("status") or "").lower(),
+                str((result.get("execution") or {}).get("status") or "").lower(),
+                str((result.get("reasoning") or {}).get("status") or "").lower(),
+            ])
+        if any(status in {"error", "failed", "failure", "partial", "cancelled", "blocked"} for status in status_values):
             phase_errors.append(str(phase))
 
     if phase_errors:
@@ -2085,15 +2102,37 @@ def run_pentest_job(job_id: str, target: str, goal: str, session_id: str, agent_
                 ).get("fallback_model_ids", []),
             )
             if isinstance(assessment_result, dict) and assessment_result.get("status") != "succeeded":
+                error_code = str(
+                    assessment_result.get("error_code")
+                    or assessment_result.get("persistence_error")
+                    or "provider_failure"
+                )[:200]
+                persistence_detail = assessment_result.get("persistence_error_detail")
+                detail_suffix = ""
+                if isinstance(persistence_detail, dict):
+                    table = str(persistence_detail.get("table") or "")[:128]
+                    cause_type = str(persistence_detail.get("cause_type") or "")[:128]
+                    if table or cause_type:
+                        detail_suffix = f" [{table or 'unknown'}:{cause_type or 'unknown'}]"
+                error_detail_message = ""
+                if isinstance(persistence_detail, dict):
+                    error_detail_message = str(persistence_detail.get("message") or "")
+                if not error_detail_message:
+                    error_detail_message = str(
+                        assessment_result.get("failure")
+                        or f"canonical assessment failed: {error_code}"
+                    )
                 message = (
                     "Execution integrity failure: canonical assessment did not complete: "
-                    f"{assessment_result.get('error_code') or assessment_result.get('persistence_error') or 'provider_failure'}."
+                    f"{error_code}{detail_suffix}."
                 )
                 save_message(session_id, "agent", f"JOB FAILED: {message}")
                 update_job(
                     job_id,
                     status="error",
                     message=message,
+                    error_code=error_code,
+                    error_message=error_detail_message[:2000],
                     report=None,
                     logs=get_execution_logs().get("logs", []),
                     summary=get_execution_logs().get("summary", {}),

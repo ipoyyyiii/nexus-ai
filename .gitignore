@@ -1,5 +1,14 @@
 .env
+.DS_Store
 __pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+build/
+dist/
+*.egg-info/
 venv_pentest/
 node_modules/
 .next/

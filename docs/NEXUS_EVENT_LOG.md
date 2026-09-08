@@ -361,3 +361,206 @@ outside this checkpoint.
 - Remaining work: Start the local provider and run the fresh authorized 1F
   acceptance gate. Only that run can prove durable AI participation, retry
   recovery, complete report/export behavior, and whether the score changes.
+
+## EVENT-2026-09-04-001 — AI-only live 1F acceptance attempt
+
+- Date/time: 2026-09-04
+- Type: live test | failure diagnosis
+- Phase/sub-phase: Phase 1 — AI-native architecture — Execution Foundation 1F
+- Environment/target: macOS Docker Compose; local OWASP Benchmark
+  `http://host.docker.internal:8446/benchmark/`; local Dolphin3-Cyber via
+  Google Colab.
+- Configuration: `reasoning.deterministic_fallback=false`; no deterministic
+  fallback cycles; `scan_preset=full`; `auto_pilot=true`.
+- Job/session: `1acebf36-718c-448b-b58a-9b48f63a52e2` /
+  `f0454ba4-bdb5-4b37-a549-bb7399720e25`.
+- Result: failed at execution-integrity gate; 0 tool runs, 0 candidates, 0
+  validated findings.
+- Provider evidence: one durable local model call succeeded (~30.3s). The
+  model returned a `hypothesize` action without canonical `tool_name`; a
+  scanner name appeared only in metadata, so no admissible recon action was
+  executable.
+- Secondary finding: recon failure did not stop the phase loop; analysis wrote
+  a phase narrative with no authoritative action before the gate rejected it.
+- Verification: focused **27 passed**; compile and `git diff --check` passed;
+  API/worker healthy and readiness checks `ok`.
+- Score decision: unchanged; 1F not passed.
+- Next work: phase-aware model contract, evidence-reference validation, and
+  fail-fast phase sequencing.
+
+## EVENT-2026-09-04-002 — Execution Foundation contract hardening (live paused)
+
+- Date/time: 2026-09-04
+- Type: architecture fix | regression verification
+- Phase/sub-phase: Phase 1 — AI-native architecture — Execution Foundation 1C–1F
+- Environment/target: local repository only; no provider inference and no live
+  target workflow because the operator will start the local model manually.
+- Changes: phase-aware executable-action contract; AI-only semantic correction
+  retry; invented-evidence and metadata-only tool rejection; durable recon
+  cycle/call/action telemetry with dispatch outcomes; fail-fast phase ordering;
+  isolated offline benchmark fallback configuration.
+- Verification: focused **21 passed**; full **400 passed, 9 warnings** with
+  process-only dummy OOB variables; compile, YAML, Compose config, and diff
+  checks passed.
+- Result: implementation/regression verified; live 1F pending.
+- Score decision: unchanged.
+- Next action: operator starts local Dolphin3-Cyber provider, then run fresh
+  authorized 1F acceptance and inspect durable preflight/cycle/tool lineage.
+
+## EVENT-2026-09-08-001 — Live 1F acceptance: AI participation proven, gate failed
+
+- Date/time: 2026-09-08
+- Type: live acceptance / gate failure
+- Phase/sub-phase: Phase 1 — AI-native architecture — Execution Foundation 1F
+- Environment/target: macOS Docker Compose; authorized local OWASP Benchmark at
+  `http://host.docker.internal:8446/benchmark/`; local Dolphin3-Cyber provider
+  reached through the configured remote tunnel.
+- Job/session: `78342d12-1e7d-404f-a23e-b1412e25b6aa` /
+  `4c33f21f-dfa6-4302-a1a3-d3df113e6266`.
+- Preflight: API/worker healthy; readiness 200 with durable schema checks ok;
+  provider `/health` and `/models` both 200; live config had
+  `deterministic_fallback=false`, `reasoning.control_mode=ai_first`, and an
+  explicit authorized scope context.
+- AI evidence: durable recon model call succeeded using `dolphin3-cyber`;
+  latency about 49.5s; canonical `run_read_only` action selected
+  `waf_behavior_profile` with hypothesis `h1`; authoritative tool dispatch
+  succeeded. A later AI reasoning call also persisted as succeeded and stopped
+  with `Model recommended stop.` No deterministic fallback cycle occurred.
+- Tool evidence: 3 durable tool-run rows; one authoritative recon tool run
+  succeeded; phase narrative rows also persisted.
+- Findings: 0 candidates and 0 validated findings. This run is not a
+  vulnerability-coverage score.
+- Gate result: **failed closed**. The canonical assessment cycle ended with
+  `ReasoningPersistenceError`; its cycle row exists but its child hypotheses,
+  actions, decisions, model calls, and model traces were not persisted. The
+  job therefore ended with `Execution integrity failure` and no report/export
+  acceptance.
+- Provider diagnosis: after the run, a direct contract inference request
+  received no bytes and timed out at 120s while `/health` remained 200. This
+  means health is not an inference-readiness signal; the provider needs a clean
+  restart and a real completion probe before another acceptance run.
+- First attempt note: an earlier job without an explicit session was rejected
+  before recon with `Session scope context not found`; it is excluded from the
+  acceptance metrics. The fresh run above used an explicit authorized session.
+- Score decision: unchanged; 1F not passed.
+- Next work: restart the Colab provider, verify one real completion (not only
+  health/models), then isolate and fix the assessment child-persistence error
+  before rerunning the same acceptance protocol.
+
+## EVENT-2026-09-08-002 — Assessment persistence diagnostics and provider timeout propagation
+
+- Date/time: 2026-09-08
+- Type: code fix / regression verification; no live provider or target
+- Phase/sub-phase: Phase 1 — AI-native architecture — Execution Foundation 1C–1F
+- Changes: assessment persistence failures now preserve a bounded error code,
+  failing table, cause type, and cause message; terminal job state receives the
+  structured error; production ChatOpenAI clients receive the gateway timeout
+  so a watchdog timeout does not leave an unbounded HTTP request behind; added
+  focused regression coverage for both behaviors.
+- Verification: focused **36 passed**; full **402 passed, 9 warnings**;
+  Python compile, YAML parse, Compose config, and `git diff --check` passed.
+- Live status: provider and target were not contacted; Docker images were not
+  rebuilt or recreated.
+- Decision: implementation/regression verified; live 1F remains pending and
+  rating remains unchanged.
+- Next action: operator rebuilds/recreates the backend and worker, starts the
+  same Dolphin3-Cyber provider, and reruns the authorized 1F acceptance. The
+  next failure, if any, should identify the exact persistence table/cause.
+
+## EVENT-2026-09-08-003 — Current live 1F failed at AI recon contract
+
+- Date/time: 2026-09-08
+- Type: live acceptance / failed gate
+- Phase/sub-phase: Phase 1 — AI-native architecture — Execution Foundation 1F
+- Environment/target: macOS Docker Compose; authorized local OWASP Benchmark at
+  `http://host.docker.internal:8446/benchmark`; configured local-model tunnel
+- Job/session: `f87c3033-e0f1-4ed1-b669-dd6d22721dc3` /
+  `949b5b63-f75b-4106-9b8f-7e9b48876804`
+- Preflight: API/worker readiness passed; provider models HTTP 200; direct
+  completion preflight HTTP 200 with valid Nexus JSON; live config was
+  `ai_first` and `deterministic_fallback=false`.
+- Failure: recon failed closed before the first authoritative tool run. Two
+  model attempts were durably recorded as `_GatewayProtocolError`.
+- Reproduction: under a realistic recon request, the provider returned empty
+  hypotheses/actions with `stop.triggered=false`; this is valid JSON but not an
+  admissible executable phase decision.
+- Durable result: 1 failed reasoning cycle, 2 failed model calls, 0 tool runs,
+  0 candidates, 0 validated findings. Export returned `409 report_not_ready`.
+- Decision: **1F failed; rating unchanged.** Zero findings are inconclusive.
+  The blocker is model contract adherence under the recon prompt, not API
+  readiness or target reachability.
+- Next action: correct provider prompt/template/model behavior so at least one
+exact registered read-only recon action is emitted, then repeat the identical
+live protocol.
+
+## EVENT-2026-09-08-004 — Executable provider contract hardening
+
+- Date/time: 2026-09-08
+- Type: backend code fix / regression verification
+- Phase/sub-phase: Phase 1 — AI-native architecture — Execution Foundation 1F
+- Changes: executable response schema now advertises non-empty linked actions;
+  system and semantic-retry prompts include a concrete action template and
+  actual allowed tools; local reasoning temperature is `0.0`; deterministic
+  fallback remains disabled.
+- Verification: focused **26 passed**; full **403 passed, 9 warnings**;
+  Python compilation passed.
+- Live status: provider notebook was not modified or restarted in this step;
+  live 1F remains unproven.
+- Decision: backend fix verified, rating unchanged. The external provider must
+  enforce the executable schema/grammar for requests with
+  `require_executable_action=true` before the next live run.
+
+## EVENT-2026-09-08-005 — Qwen provider live 1F run
+
+- Type: live acceptance / failed gate with partial progress.
+- Phase/sub-phase: Phase 1 — AI-native architecture — Execution Foundation 1F.
+- Target: authorized local OWASP Benchmark at
+  `http://host.docker.internal:8446/benchmark/`.
+- Job/session: `8e517836-d585-46bb-95a4-2fc4af14f1e0` /
+  `c1535270-b3cf-490f-a14c-2840ec980e2b`.
+- Provider preflight: health, models, and executable JSON smoke test passed.
+- AI recon: succeeded through the Qwen tunnel; model selected
+  `httpx_probe` and `browser_screenshot`, both dispatched successfully.
+- Durable result: 3 reasoning cycles, 4 model calls, 2 model-call timeouts,
+  2 authoritative tool runs, 0 candidates, 0 validated findings.
+- Failure: the later `ai_reason` cycle timed out twice at 180 seconds and
+  failed closed with `all_ai_providers_failed`.
+- Report: blocked/review-required, quality score `0.3333`; zero findings are
+  inconclusive because analysis did not complete.
+- Decision: **1F failed; rating unchanged.** Recon contract adherence is now
+  live-proven; provider latency/reliability under the larger analysis prompt
+  is the next blocker.
+
+## EVENT-2026-09-08-006 — Execution Foundation lifecycle hardening
+
+- Type: backend code fix / regression verification; no live provider or target
+- Phase/sub-phase: Phase 1 — AI-native architecture — Execution Foundation 1C–1F
+- Changes: phase-aware adaptive reasoning leases; stream progress and explicit
+  stream-to-sync negotiation; active-provider serialization and timeout
+  cooldown; no blind same-provider retry after unconfirmed watchdog timeout;
+  SDK retry suppression; evidence-preserving prompt compaction with a loss
+  manifest; durable request/phase/progress/termination telemetry; and
+  fail-closed parsing of JSON-encoded partial/failed phase results.
+- Verification: focused **86 passed**; full **409 passed, 9 warnings**;
+  Python compile, YAML parse, Compose config, and `git diff --check` passed.
+- Live status: provider, target, Docker rebuild, and container recreation were
+  not run in this checkpoint.
+- Decision: implementation/regression gate passed; **Phase 1F remains
+  unproven and rating unchanged**. Next action is operator recreate/restart,
+  a real completion preflight, and the authorized OWASP Benchmark acceptance.
+
+## EVENT-2026-09-08-007 — Repository organization and documentation cleanup
+
+- Type: repository maintenance / documentation
+- Scope: project layout and developer handoff; no runtime behavior change
+- Changes: moved canonical project records into `docs/`; grouped generated
+  stage outputs under `results/stages/` and reviewed snapshots under
+  `results/final/`; moved the maintenance utility into `scripts/`; added
+  folder READMEs; extended the existing root README with the current
+  AI-native architecture and honest evaluation status; updated benchmark
+  output paths and ignore rules; removed tracked `.DS_Store` junk.
+- Verification: stale path scan clean; old root result/docs/script paths absent;
+  Python compilation passed; YAML parsing passed; Compose config passed;
+  `git diff --check` passed; full regression **409 passed, 9 warnings**.
+- Live status: no provider or target run was performed.
+- Decision: repository is easier to navigate and review; **rating unchanged**.

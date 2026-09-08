@@ -209,6 +209,11 @@ def _run_case(case: ControlCase) -> Dict[str, Any]:
             snapshot_loader=lambda _: snapshot,
             tool_resolver=lambda capability: _FakeTool(capability.public_name),
             reasoning_gateway=_OfflineReasoningGateway(),
+            # This hermetic control benchmark intentionally exercises the
+            # diagnostic planner after an explicitly disabled offline model.
+            # Production/live runs inherit config/pentest_config.yaml, where
+            # deterministic fallback remains disabled.
+            reasoning_config={"deterministic_fallback": True},
             config={"max_cycles": 1, "max_actions_per_cycle": 2, "max_actions_total": 2, "read_only_auto_run": True},
         )
         return loop.execute(

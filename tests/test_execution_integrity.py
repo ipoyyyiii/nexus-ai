@@ -37,6 +37,18 @@ def test_phase_error_fails_closed_before_tool_check():
     assert reason == "phase execution failed: recon"
 
 
+def test_json_encoded_partial_phase_fails_closed_before_reporting():
+    reason = _execution_integrity_failure(
+        {
+            "analis": '{"status":"partial","reasoning_failure":true,"actions":[]}',
+        },
+        {"summary": {"tools_executed": ["httpx_probe"]}},
+        [{"tool_run_id": "run-1", "tool_name": "httpx_probe", "category": "recon", "status": "succeeded"}],
+    )
+
+    assert reason == "phase execution failed: analis"
+
+
 def test_tool_execution_is_required_but_sufficient_for_integrity_check():
     assert _execution_integrity_failure(
         {"recon": "Structured observation"},

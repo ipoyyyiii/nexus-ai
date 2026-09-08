@@ -11,6 +11,7 @@ from core.detection_validation_repository import (
     ValidationStatusIntegrityError,
 )
 from core.detection_validation_v2 import validation_engine_v2
+from core.redact import redact
 from core.structured_contract import CandidateFindingV1, ModelCallTraceV1, ObservationV1, ReportClaimV1, ReportNarrativeV1, SemanticComparisonV1, ToolResultV1
 from core.validation_engine import validation_engine
 
@@ -21,9 +22,22 @@ class ReasoningPersistenceError(RuntimeError):
     code = "reasoning_persistence_error"
 
     def __init__(self, table: str, cause: Exception):
-        self.table = table
+        self.table = str(table or "unknown")[:128]
         self.cause_type = type(cause).__name__
-        super().__init__(f"reasoning persistence failed at {table}: {self.cause_type}: {cause}")
+        self.cause_message = redact(str(cause or ""))[:1000]
+        super().__init__(
+            f"reasoning persistence failed at {self.table}: "
+            f"{self.cause_type}: {self.cause_message}"
+        )
+
+    def diagnostic(self) -> Dict[str, str]:
+        """Return a bounded, non-secret diagnostic for durable error reporting."""
+        return {
+            "table": self.table,
+            "cause_type": self.cause_type,
+            "cause_message": self.cause_message,
+            "message": redact(str(self))[:1200],
+        }
 
 
 class ToolRunReconciliationError(RuntimeError):

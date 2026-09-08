@@ -286,6 +286,168 @@ def build_phase3_agent(target: str, all_results: dict, target_state: TargetState
     return agent, task, "Risk Assessment"
 
 
+def _persist_ai_recon_reasoning(
+    *,
+    response: Any,
+    traces: List[Any],
+    mission_result: Optional[Dict[str, Any]],
+    target: str,
+    goal: str,
+    session_id: str,
+    job_id: str,
+    reasoning_meta: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Persist the AI recon decision and its dispatch outcome atomically.
+
+    Recon is the first canonical phase, so its model call cannot remain only
+    in an in-memory ``reasoning`` field.  The same reasoning-cycle builder used
+    by the autonomous vulnerability loop is reused here to keep the database
+    contract identical across phases.
+    """
+    try:
+        from api import session_store, structured_repository
+    except Exception as exc:
+        return {"ok": False, "code": "reasoning_runtime_unavailable", "message": str(exc)[:500]}
+
+    if not structured_repository or not hasattr(structured_repository, "save_reasoning_result"):
+        return {
+            "ok": False,
+            "code": "reasoning_repository_unavailable",
+            "message": "Durable reasoning repository is not configured.",
+        }
+
+    from core.adaptive_planner import PlanningSnapshot
+    from core.autonomous_web_pentest import AutonomousWebPentestLoop
+
+    raw = response.model_dump(mode="json") if hasattr(response, "model_dump") else dict(response or {})
+    cycle_id = str(raw.get("cycle_id") or reasoning_meta.get("cycle_id") or f"ai_recon_{job_id or session_id}")
+    model_id = str(raw.get("model_id") or reasoning_meta.get("model_id") or "")
+    provider = str(raw.get("provider") or reasoning_meta.get("provider") or "")
+    raw_hypotheses = list(raw.get("hypotheses") or [])
+
+    model_traces: List[Dict[str, Any]] = []
+    actions: List[Dict[str, Any]] = []
+    for trace in traces or []:
+        payload = trace.model_dump(mode="json") if hasattr(trace, "model_dump") else dict(trace or {})
+        payload["provider"] = provider
+        action = payload.get("action")
+        if isinstance(action, dict):
+            action = dict(action)
+            actions.append(action)
+            payload["action"] = action
+        model_traces.append(payload)
+
+    executed_by_tool: Dict[str, List[Dict[str, Any]]] = {}
+    for item in list((mission_result or {}).get("trace") or []):
+        if not isinstance(item, dict):
+            continue
+        tool_name = str(item.get("tool_name") or "")
+        if tool_name:
+            executed_by_tool.setdefault(tool_name, []).append(item)
+
+    dispatchable = {"observe", "run_read_only", "propose_payload", "request_approval"}
+    for action in actions:
+        action_type = str(action.get("action_type") or "")
+        tool_name = str(action.get("tool_name") or "")
+        outcome: Dict[str, Any]
+        if action_type in dispatchable:
+            match = (executed_by_tool.get(tool_name) or [None]).pop(0)
+            if isinstance(match, dict):
+                outcome = {
+                    "outcome_status": str(match.get("status") or "failed"),
+                    "tool_name": tool_name,
+                    "tool_run_id": str(match.get("tool_run_id") or ""),
+                    "reason": str(match.get("reason") or "")[:500],
+                }
+            else:
+                outcome = {
+                    "outcome_status": "not_dispatched",
+                    "tool_name": tool_name,
+                    "tool_run_id": "",
+                    "reason": "AI action was admitted but no authoritative recon trace matched it.",
+                }
+        else:
+            trace_match = next(
+                (item for item in model_traces if item.get("action") is action),
+                None,
+            )
+            outcome = {
+                "outcome_status": "rejected" if trace_match and not trace_match.get("valid", False) else "not_dispatchable",
+                "tool_name": tool_name,
+                "tool_run_id": "",
+                "reason": str((trace_match or {}).get("rejection_reason") or "Action is not executable in recon.")[:500],
+            }
+        action["metadata"] = {
+            **dict(action.get("metadata") or {}),
+            "dispatch_outcome": outcome,
+        }
+
+    for trace in model_traces:
+        action = trace.get("action")
+        if isinstance(action, dict):
+            trace["action"] = action
+
+    try:
+        planner_loop = AutonomousWebPentestLoop(
+            session_store=session_store,
+            repository=structured_repository,
+        )
+        snapshot = planner_loop._snapshot(session_id)
+    except Exception:
+        snapshot = PlanningSnapshot(candidates=[], observations=[], tool_runs=[], errors=["recon snapshot unavailable"])
+
+    stop_value = raw.get("stop") or {}
+    stop_requested = bool(
+        stop_value.get("triggered") if isinstance(stop_value, dict) else stop_value
+    )
+    mission_status = str((mission_result or {}).get("status") or "")
+    cycle_status = "failed" if not bool(raw.get("success", True)) else (
+        "partial" if mission_status not in {"", "succeeded"} else None
+    )
+    reasoning_result = AutonomousWebPentestLoop._build_model_reasoning_result(
+        context={"session_id": session_id, "attack_goal": goal, "target": target},
+        job_id=job_id,
+        goal=goal,
+        snapshot=snapshot,
+        cycle_id=cycle_id,
+        cycle_number=1,
+        model_id=model_id,
+        hypotheses=raw_hypotheses,
+        traces=model_traces,
+        actions=actions,
+        model_calls=AutonomousWebPentestLoop._gateway_model_calls(
+            response,
+            cycle_id=cycle_id,
+            session_id=session_id,
+            job_id=job_id,
+        ),
+        stop_requested=stop_requested,
+        stop_reason=str(
+            (stop_value.get("reason") if isinstance(stop_value, dict) else "")
+            or reasoning_meta.get("reason")
+            or "AI recon decision persisted."
+        )[:2000],
+        cycle_status=cycle_status,
+    )
+    try:
+        persisted = structured_repository.save_reasoning_result(session_id, reasoning_result)
+        return {
+            "ok": True,
+            "cycle_id": cycle_id,
+            "model_calls": len(reasoning_result.get("model_calls") or []),
+            "model_traces": len(reasoning_result.get("model_traces") or []),
+            "persisted": persisted if isinstance(persisted, dict) else {},
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "code": "reasoning_persistence_error",
+            "cycle_id": cycle_id,
+            "error_type": type(exc).__name__,
+            "message": str(exc)[:1000],
+        }
+
+
 def _run_approved_recon_action(
     *,
     action_tools: Optional[List[str]],
@@ -295,6 +457,8 @@ def _run_approved_recon_action(
     job_id: str,
     reasoning_model_id: str = "",
     reasoning_fallback_models: Optional[List[str]] = None,
+    cancellation_check: Optional[Any] = None,
+    progress_callback: Optional[Any] = None,
 ) -> Optional[str]:
     """Execute the canonical recon mission through the typed boundary.
 
@@ -308,25 +472,32 @@ def _run_approved_recon_action(
 
     from core.recon_orchestrator import RECON_MISSION_SENTINEL, ReconOrchestrator, recon_tool_names
     from api import session_store, structured_repository
+    from core.config_loader import get_config
 
     requested = list(action_tools)
     selected_tools = None if requested == [RECON_MISSION_SENTINEL] else requested
     if selected_tools is not None and not set(selected_tools).issubset(set(recon_tool_names())):
         return None
 
+    reasoning_config = get_config().get("reasoning", {}) or {}
+    deterministic_fallback_enabled = bool(
+        reasoning_config.get("deterministic_fallback", False)
+    )
+
     reasoning_meta: Dict[str, Any] = {
         "mode": "autonomous",
-        "planner_source": "deterministic_recon_fallback",
+        "planner_source": "ai_required" if selected_tools is None and not deterministic_fallback_enabled else "deterministic_recon_fallback",
         "selected_tools": list(selected_tools or []),
+        "deterministic_fallback_enabled": deterministic_fallback_enabled,
     }
+    reasoning_response: Any = None
+    reasoning_traces: List[Any] = []
     # The AI may choose the recon lanes in the single autonomous execution
     # path. The typed recon boundary still validates every selected tool.
     if selected_tools is None:
-        from core.config_loader import get_config
         from core.adaptive_planner import AdaptiveHypothesisPlanner
         from core.reasoning_gateway import ReasoningGateway
 
-        reasoning_config = get_config().get("reasoning", {}) or {}
         primary = str(
             reasoning_model_id
             or reasoning_config.get("primary_model_id")
@@ -371,7 +542,13 @@ def _run_approved_recon_action(
                     ],
                     session_id=session_id,
                     cycle_id=f"ai_recon_{job_id or session_id}",
+                    mission_phase="recon",
+                    required_action_types=("observe", "run_read_only"),
+                    require_executable_action=True,
+                    progress_callback=progress_callback,
+                    cancellation_check=cancellation_check,
                 )
+                reasoning_response = response
                 raw = response.model_dump(mode="json") if hasattr(response, "model_dump") else dict(response or {})
                 traces = AdaptiveHypothesisPlanner.validate_model_actions(
                     str(raw.get("cycle_id") or f"ai_recon_{job_id or session_id}"),
@@ -381,6 +558,7 @@ def _run_approved_recon_action(
                     known_tools=set(recon_names),
                     model_id=str(raw.get("model_id") or primary),
                 )
+                reasoning_traces = list(traces)
                 selected_from_model: List[str] = []
                 for trace in traces:
                     action = trace.action
@@ -394,13 +572,16 @@ def _run_approved_recon_action(
                 stop_requested = bool(stop_value if isinstance(stop_value, bool) else stop_value.get("triggered", False) if isinstance(stop_value, dict) else False)
                 reasoning_meta = {
                     "mode": "autonomous",
-                    "planner_source": "model" if selected_from_model else "deterministic_recon_fallback",
+                    "planner_source": "model" if selected_from_model else "ai_no_admissible_tool",
                     "model_id": str(raw.get("model_id") or primary),
                     "provider": str(raw.get("provider") or ""),
                     "cycle_id": str(raw.get("cycle_id") or ""),
                     "selected_tools": selected_from_model,
                     "action_traces": [item.model_dump(mode="json") for item in traces],
                     "model_stop": stop_value,
+                    "provider_success": bool(raw.get("success", True)),
+                    "provider_failure": raw.get("failure") if isinstance(raw.get("failure"), dict) else {},
+                    "deterministic_fallback_enabled": deterministic_fallback_enabled,
                 }
                 if selected_from_model:
                     selected_tools = selected_from_model
@@ -409,6 +590,24 @@ def _run_approved_recon_action(
                     "model_error": type(exc).__name__,
                     "reason": "AI recon selection failed; canonical recon mission selected explicitly",
                 })
+
+        if selected_tools is None and not deterministic_fallback_enabled:
+            if reasoning_response is not None:
+                persistence = _persist_ai_recon_reasoning(
+                    response=reasoning_response,
+                    traces=reasoning_traces,
+                    mission_result=None,
+                    target=target,
+                    goal=goal,
+                    session_id=session_id,
+                    job_id=job_id,
+                    reasoning_meta=reasoning_meta,
+                )
+                reasoning_meta["persistence"] = persistence
+            raise RuntimeError(
+                "AI recon selection failed or returned no admissible tool; "
+                "deterministic fallback is disabled"
+            )
 
     mission = ReconOrchestrator(
         session_store=session_store,
@@ -422,6 +621,23 @@ def _run_approved_recon_action(
         selected_tools=selected_tools,
         adaptive_selection=bool(selected_tools is not None and reasoning_meta.get("planner_source") == "model"),
     )
+    if reasoning_response is not None:
+        persistence = _persist_ai_recon_reasoning(
+            response=reasoning_response,
+            traces=reasoning_traces,
+            mission_result=result,
+            target=target,
+            goal=goal,
+            session_id=session_id,
+            job_id=job_id,
+            reasoning_meta=reasoning_meta,
+        )
+        reasoning_meta["persistence"] = persistence
+        if not persistence.get("ok") and persistence.get("code") != "reasoning_repository_unavailable":
+            raise RuntimeError(
+                "AI recon reasoning persistence failed: "
+                f"{persistence.get('code', 'unknown')}"
+            )
     result["reasoning"] = reasoning_meta
     return json.dumps(result, ensure_ascii=False, sort_keys=True, default=str)
 
@@ -561,6 +777,16 @@ def run_phase1(job_id: str, session_id: str, target: str, goal: str,
                     job_id=job_id,
                     reasoning_model_id=reasoning_model_id,
                     reasoning_fallback_models=reasoning_fallback_models,
+                    cancellation_check=lambda: cancellation_store.is_cancelled(job_id),
+                    progress_callback=(
+                        lambda event: update_job(
+                            job_id,
+                            message=(
+                                "Phase 1 - AI recon: "
+                                f"{event.get('status', 'unknown')}"
+                            ),
+                        )
+                    ),
                 )
             elif phase_name == "analis" and scan_preset == "full" and autonomous_enabled:
                 autonomous_config = get_setting("autonomous_web_pentest", {}) or {}
@@ -595,6 +821,21 @@ def run_phase1(job_id: str, session_id: str, target: str, goal: str,
                 raise RuntimeError(
                     f"canonical phase {phase_name} returned no structured execution result"
                 )
+            if canonical_phase1:
+                try:
+                    structured_result = json.loads(str(result_str))
+                except Exception:
+                    structured_result = {}
+                nested_statuses = [
+                    str(structured_result.get("status") or "").lower(),
+                    str((structured_result.get("execution") or {}).get("status") or "").lower(),
+                ]
+                failed_statuses = {"failed", "failure", "error", "partial", "cancelled", "blocked"}
+                if any(status in failed_statuses for status in nested_statuses):
+                    raise RuntimeError(
+                        f"canonical phase {phase_name} returned non-success status: "
+                        f"{next(status for status in nested_statuses if status in failed_statuses)}"
+                    )
             # A cancellation can arrive while the structured tool is in
             # flight. Re-check immediately after it returns so recon-only
             # cannot be finalized as done after the operator stopped the job.
@@ -649,6 +890,28 @@ def run_phase1(job_id: str, session_id: str, target: str, goal: str,
         except Exception as phase_err:
             update_job(job_id, message=f"Error in phase {phase_name}: {phase_err}")
             all_results[phase_name] = f"Error: {phase_err}"
+            # A canonical phase failure is not a successful phase result.  In
+            # particular, never let analysis run after recon transport or AI
+            # contract failure; doing so creates a misleading later-phase
+            # narrative with no authoritative recon evidence.
+            try:
+                target_state.workflow.record_event(
+                    "phase_failed",
+                    phase=phase_name,
+                    job_id=job_id,
+                    error_type=type(phase_err).__name__,
+                )
+                from api import session_store
+                session_store.save_state(session_id, target_state, phase="FAILED")
+            except Exception as persist_err:
+                update_job(
+                    job_id,
+                    message=(
+                        f"Error in phase {phase_name}: {phase_err}; "
+                        f"failure telemetry persistence warning: {persist_err}"
+                    ),
+                )
+            break
         
         # Pause between sub-phases
         if phase_idx < len(phases) - 1 and not cancellation_store.is_cancelled(job_id):
@@ -751,6 +1014,16 @@ def run_phase3(job_id: str, session_id: str, target: str,
         repository=structured_repository,
         reasoning_model_id=reasoning_model_id,
         fallback_model_ids=reasoning_fallback_models,
+        progress_callback=(
+            lambda event: update_job(
+                job_id,
+                message=(
+                    "Phase 3 - AI assessment: "
+                    f"{event.get('status', 'unknown')}"
+                ),
+            )
+        ),
+        cancellation_check=lambda: cancellation_store.is_cancelled(job_id),
     )
     result_str = json.dumps(assessment, ensure_ascii=False, sort_keys=True, default=str)
     all_results["assessor"] = result_str

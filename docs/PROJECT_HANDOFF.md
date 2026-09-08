@@ -344,14 +344,14 @@ Evaluation CLI berada di `core.evaluation_cli`.
 
 ```bash
 source .venv/bin/activate
-python -m core.evaluation_cli run --suite stage6-core --mode deterministic --trials 3 > stage6-result.json
-python -m core.evaluation_cli run --suite stage9-detection-depth --mode deterministic --trials 3 > stage9-result.json
-python -m core.evaluation_cli run --suite stage14-mission-attack-path --mode deterministic --trials 3 > stage14-result.json
-python -m core.evaluation_cli run --suite stage17-modern-detection --mode deterministic --trials 3 > stage17-result.json
-python -m core.evaluation_cli run --suite stage18-identity-business-impact --mode deterministic --trials 3 > stage18-result.json
-python -m core.evaluation_cli run --suite stage19-production-autonomy --mode deterministic --trials 3 > stage19-result.json
-python -m core.evaluation_cli run --suite stage22-perimeter-asset-waf --mode deterministic --trials 3 > stage22-result.json
-python -m core.evaluation_cli run --suite stage27-recon-closure --mode deterministic --trials 3 > stage27-result.json
+python -m core.evaluation_cli run --suite stage6-core --mode deterministic --trials 3 > results/stages/stage6-result.json
+python -m core.evaluation_cli run --suite stage9-detection-depth --mode deterministic --trials 3 > results/stages/stage9-result.json
+python -m core.evaluation_cli run --suite stage14-mission-attack-path --mode deterministic --trials 3 > results/stages/stage14-result.json
+python -m core.evaluation_cli run --suite stage17-modern-detection --mode deterministic --trials 3 > results/stages/stage17-result.json
+python -m core.evaluation_cli run --suite stage18-identity-business-impact --mode deterministic --trials 3 > results/stages/stage18-result.json
+python -m core.evaluation_cli run --suite stage19-production-autonomy --mode deterministic --trials 3 > results/stages/stage19-result.json
+python -m core.evaluation_cli run --suite stage22-perimeter-asset-waf --mode deterministic --trials 3 > results/stages/stage22-result.json
+python -m core.evaluation_cli run --suite stage27-recon-closure --mode deterministic --trials 3 > results/stages/stage27-result.json
 python -m pytest -q
 deactivate
 ```
@@ -471,7 +471,10 @@ Supabase, dan telemetry menunjukkan `model_calls` succeeded.
 
 File ini memindahkan konteks engineering dan keputusan utama, bukan transcript ChatGPT lengkap. Project memiliki `.aider.chat.history.md` untuk history Aider lama, tetapi itu bukan pengganti chat ini.
 
-Untuk melanjutkan di VS Code, mulai dari file ini, `README.md`, `AGENTS.md`, dan test yang relevan. Verifikasi source dan test aktual; jangan menganggap angka benchmark lama sebagai hasil terbaru setelah code/config berubah.
+Untuk melanjutkan di VS Code, mulai dari file ini, `../README.md`, dan test
+yang relevan. Jika mengubah frontend, baca `../frontend-pentest/AGENTS.md` juga.
+Verifikasi source dan test aktual; jangan menganggap angka benchmark lama
+sebagai hasil terbaru setelah code/config berubah.
 
 ## Evaluation governance dan upgrade context (2026-08-31)
 
@@ -479,9 +482,9 @@ Mulai Phase 0, tiga file berikut adalah sumber kebenaran yang harus dipelihara
 bersama setiap upgrade:
 
 ```text
-PROJECT_HANDOFF.md       arsitektur, scope, keputusan, dan status operasional
-NEXUS_UPGRADE_LEDGER.md  perubahan, alasan, test, hasil, dan hal yang belum terbukti
-NEXUS_SCORECARD.yaml     baseline, run record, metrics, score, dan known limitations
+docs/PROJECT_HANDOFF.md       arsitektur, scope, keputusan, dan status operasional
+docs/NEXUS_UPGRADE_LEDGER.md  perubahan, alasan, test, hasil, dan hal yang belum terbukti
+docs/NEXUS_SCORECARD.yaml     baseline, run record, metrics, score, dan known limitations
 ```
 
 Aturan evaluasi yang mengikat:
@@ -1404,3 +1407,249 @@ Current verdict: **1C–1E implementation/regression verified; 1F live pending**
 The rating remains unchanged. This does not prove vulnerability coverage,
 recall/precision, durable AI participation under a real run, or target
 cleanliness. Start the provider before the next authorized live 1F run.
+
+## AI-only live acceptance attempt — 2026-09-04
+
+The runtime was rebuilt with `reasoning.deterministic_fallback: false` and
+the recon path was changed to fail closed when the AI does not return an
+admissible recon tool. A live authorized OWASP Benchmark run was started with
+`local-dolphin3-cyber`, `scan_preset=full`, and `auto_pilot=true`.
+
+Result: **1F failed; no score change**. The provider was reachable and one
+durable model call succeeded (~30.3 seconds), but the model returned a
+`hypothesize` action with no canonical `tool_name`; it placed
+`command_injection_scanner` only in action metadata. No admissible
+`observe`/`run_read_only` recon action was selected, so AI-only fail-closed
+behavior stopped the run. Deterministic fallback cycles: **0**.
+
+The job nevertheless proceeded to the analysis phase and persisted a phase
+narrative without a tool run before the execution-integrity gate rejected the
+job. That is a separate workflow bug: a failed recon phase must not advance to
+analysis. The durable cycle also contained an unsupported placeholder
+`evidence_1234` in model hypothesis metadata; it was not promoted to a finding.
+
+Verification after the change: API/worker healthy, readiness all `ok`, focused
+regression **27 passed**, syntax compilation and `git diff --check` passed.
+Next fix: strengthen phase-aware provider instructions and semantic validation
+for concrete recon actions, stop the phase pipeline on a phase failure, and
+reject invented evidence references before another AI-only 1F run.
+
+## Execution Foundation gap closure — implementation only, live paused — 2026-09-04
+
+The operator requested that the remaining 1C–1F gaps be fixed before another
+live run, then paused live testing so the local AI provider can be started
+manually later. No provider inference, target request, Docker recreation, or
+live pentest was run in this checkpoint.
+
+Implemented:
+
+- phase-aware AI reasoning contracts for recon and vulnerability analysis;
+- semantic AI retry for malformed/non-executable phase decisions, without
+  deterministic fallback;
+- strict rejection of invented evidence references, non-boolean stop values,
+  missing action types, and metadata-only tool names;
+- durable recon reasoning cycles, model-call attempts, action traces, and
+  model-action-to-tool dispatch outcomes;
+- fail-fast Phase 1 sequencing so analysis cannot run after recon failure;
+- per-instance reasoning configuration so hermetic offline benchmarks can
+  explicitly request their diagnostic fallback without changing live policy.
+
+Verification:
+
+- focused reasoning/interactive tests: **21 passed**;
+- full repository regression with process-only dummy OOB test variables:
+  **400 passed, 9 warnings**;
+- Python compile, Docker Compose config validation, YAML parse, and
+  `git diff --check`: passed.
+
+Current verdict: implementation and regression are verified; **1F live remains
+pending and the rating is unchanged**. The next action is a fresh provider-backed
+1F run only after the operator starts the local Dolphin3-Cyber provider.
+
+## Live 1F acceptance result — 2026-09-08
+
+The fresh run used an explicit authorized session for the local OWASP Benchmark
+and the live configuration had `deterministic_fallback=false`. API/worker
+readiness and provider preflight (`/health`, `/models`) were successful.
+
+The run proves that AI is participating in the canonical path: a durable
+`dolphin3-cyber` recon call succeeded, the model selected the registered
+`waf_behavior_profile` tool, the hypothesis/action linkage was present, and the
+authoritative tool dispatch succeeded. No deterministic fallback cycle was
+recorded.
+
+The run still failed the 1F acceptance gate. The canonical assessment cycle
+ended with `ReasoningPersistenceError`: the cycle row was present, but its
+child hypotheses, actions, decisions, model calls, and model traces were not.
+The job ended with `Execution integrity failure`, so report/export acceptance
+was not reached. A direct post-run completion request also timed out after 120s
+with no response bytes while `/health` remained 200; the provider is therefore
+healthy at HTTP level but not proven inference-ready.
+
+Result: **1F not passed; rating unchanged.** There were 0 candidates and 0
+validated findings, which is inconclusive because the canonical assessment and
+report pipeline did not complete.
+
+Required next steps:
+
+1. Restart the Colab provider/runtime to clear any stuck inference state.
+2. Require a real completion contract probe before starting a job; health and
+   model-list checks alone are insufficient.
+3. Trace and fix the exact assessment child-persistence failure, then rerun the
+   same authorized 1F protocol.
+
+## Code-side fix completed; live testing intentionally paused — 2026-09-08
+
+The backend-side fixes for the latest 1F failure are complete. No provider,
+target, Docker rebuild, or container recreation was run in this checkpoint.
+
+Fixed:
+
+- `ReasoningPersistenceError` now carries a bounded diagnostic with the exact
+  table, cause type, and cause message.
+- Assessment gateway results now expose a stable `error_code`, failure stage,
+  and persistence detail; they are marked failed rather than ambiguously
+  partial when canonical assessment persistence fails.
+- Terminal job state receives the structured assessment error so the next live
+  run will identify the failing persistence boundary directly.
+- The production ChatOpenAI path now receives the gateway invocation timeout,
+  preventing an unbounded provider request from surviving the backend
+  watchdog and queueing behind the local provider lock.
+
+Verification completed against the current source tree:
+
+- focused tests: **36 passed**;
+- full regression: **402 passed, 9 warnings**;
+- compile, YAML, Compose config, and `git diff --check`: passed.
+
+This is not a live 1F pass. The next operator step is to rebuild/recreate the
+API and worker, restart the same Dolphin3-Cyber provider, and rerun the
+authorized OWASP Benchmark job. If it fails, the durable error should now name
+the exact assessment persistence table/cause instead of only reporting a generic
+`ReasoningPersistenceError`.
+
+## Live 1F acceptance — 2026-09-08 (current run)
+
+The operator updated the local-model URL, recreated the API and worker, and a
+fresh authorized OWASP Benchmark run was executed:
+
+- session: `949b5b63-f75b-4106-9b8f-7e9b48876804`;
+- job: `f87c3033-e0f1-4ed1-b669-dd6d22721dc3`;
+- target: `http://host.docker.internal:8446/benchmark`;
+- mode: `autonomous`, `ai_first`, `deterministic_fallback=false`;
+- API/worker readiness: passed;
+- provider `/models`: HTTP 200;
+- direct provider completion preflight: HTTP 200 with valid Nexus JSON.
+
+The job failed closed in recon before any authoritative tool run. Durable
+reasoning data shows two provider attempts for `dolphin3-cyber`; both were
+rejected as `_GatewayProtocolError`. A direct reproduction using a realistic
+recon request produced:
+
+```json
+{"hypotheses":[],"actions":[],"stop":{"triggered":false,"kind":"operator","reason":"","evidence_ids":[]}}
+```
+
+That response is JSON-valid but semantically non-executable: with
+`stop.triggered=false`, Phase 1F requires at least one exact registered
+`observe`/`run_read_only` action linked to a hypothesis. The provider then
+returned no admissible tool, so the backend correctly did not invent a plan or
+use deterministic fallback. The result was `Execution integrity failure:
+phase execution failed: recon.`
+
+Observed durable result: 1 failed reasoning cycle, 2 failed model-call
+attempts, 0 authoritative tool runs, 0 candidates, 0 validated findings. The
+zero findings are inconclusive because recon never started. Report export was
+correctly blocked (`409 report_not_ready`); this is not a report-pipeline pass.
+
+Conclusion: **Phase 1F remains failed and the score is unchanged.** The
+current blocker is provider behavior/contract adherence under a real recon
+prompt, not provider reachability, container health, or Supabase readiness.
+Next work is to make the provider reliably emit an admissible recon action (or
+diagnose model-template/quantization behavior), then rerun the identical live
+protocol. Do not count this run as vulnerability coverage.
+
+## Provider-contract hardening — 2026-09-08
+
+After the failed live run, the backend reasoning boundary was hardened rather
+than enabling deterministic fallback:
+
+- executable-phase response schemas now advertise non-empty hypotheses and
+  actions plus required `hypothesis_id`, `tool_name`, and `action_type`;
+- the initial AI system instruction now includes a concrete minimal executable
+  response shape and explicitly rejects `stop=false` with empty arrays;
+- semantic retry repeats the actual allowed tool list and the same concrete
+  action contract;
+- local ChatOpenAI routing now uses temperature `0.0` for deterministic
+  structured reasoning;
+- regression coverage verifies the executable prompt contract.
+
+Verification: focused gateway/model tests **26 passed**; full regression
+**403 passed, 9 warnings**; Python compilation passed. This is a backend/code
+verification only. The Kaggle/Colab provider cell must also select an
+executable grammar/schema when the incoming Nexus request has
+`require_executable_action=true`; until that provider-side change is deployed,
+live 1F remains unproven and the rating remains unchanged.
+
+## Live 1F acceptance — 2026-09-08 current Qwen run
+
+The corrected Qwen3.8 HauhauCS provider passed its executable-contract smoke
+test. A fresh authorized OWASP Benchmark run completed with job
+`8e517836-d585-46bb-95a4-2fc4af14f1e0` and session
+`c1535270-b3cf-490f-a14c-2840ec980e2b`.
+
+Preflight passed: API/worker readiness, Phase 1 schema, target reachability
+from the API container, provider health/models, and direct executable provider
+completion. Runtime was `autonomous`, `ai_first`, with
+`deterministic_fallback=false`.
+
+The recon contract blocker is live-proven fixed. The real recon model call
+succeeded and selected `httpx_probe` and `browser_screenshot`; both
+authoritative tool runs succeeded with durable dispatch outcomes.
+
+Phase 1F nevertheless failed later. The canonical `ai_reason` cycle made two
+provider attempts and both hit the 180-second reasoning watchdog. The advisory
+assessment stopped after the analysis failure because no capabilities were
+available. Durable result: 3 reasoning cycles, 4 model calls including 2
+timeouts, 2 authoritative tool runs, 0 candidates, 0 validated findings, and
+a blocked report with quality score `0.3333`.
+
+The zero findings are inconclusive because analysis did not complete. Verdict:
+**Phase 1 Execution Foundation 1F remains failed; rating unchanged.** The next
+blocker is Qwen inference latency/reliability for the larger analysis prompt,
+not provider reachability or the previous empty-recon-action contract.
+
+## Execution Foundation lifecycle hardening — 2026-09-08
+
+The code-side fix for the latest 1F blocker is complete. No live provider,
+target, Docker rebuild, or container recreation was run in this checkpoint.
+
+Implemented:
+
+- phase-aware adaptive reasoning leases: campaign duration, model-invocation
+  deadline, and tool timeout are separate controls;
+- streaming progress support with automatic stream-to-sync negotiation for the
+  current notebook provider, plus optional stall detection after real progress;
+- active-provider serialization, timeout cooldown, cancellation signaling, and
+  no blind retry on a watchdog timeout whose remote termination is unconfirmed;
+- provider retry disabled by default and SDK `max_retries=0`, leaving one
+  explicit retry authority in the Nexus gateway;
+- evidence-preserving prompt compaction with a digest/count manifest instead of
+  replacing the model context with a digest-only prompt;
+- durable request/phase/transport/progress/termination telemetry for reasoning
+  and assessment calls;
+- JSON-encoded partial/failed phase results now fail the execution-integrity
+  gate before reporting, and assessment persistence diagnostics remain durable.
+
+Verification:
+
+- focused lifecycle/AI/execution suite: **86 passed**;
+- full regression: **409 passed, 9 warnings**;
+- Python compile, YAML parse, Compose config, and `git diff --check`: passed.
+
+Interpretation: the backend implementation and regression gate are clean, but
+this is not a live 1F pass. The provider notebook must be restarted and the
+API/worker recreated with the current source before rerunning the authorized
+OWASP Benchmark acceptance. Rating remains unchanged until that live gate
+proves inference progress/recovery, canonical assessment persistence, and
+report/export completion.

@@ -1167,3 +1167,290 @@ workflow executed.
 Implementation/regression verified; **live 1F remains unproven** because the
 provider was offline. Rating unchanged. No vulnerability recall, precision,
 target cleanliness, or full autonomous attack-chain capability is credited.
+
+## AI-only live acceptance attempt — 2026-09-04
+
+- Scope: Phase 1 — AI-native architecture; Execution Foundation 1F.
+- Change: disabled `reasoning.deterministic_fallback` in the deployed config
+  and made canonical recon fail closed when AI produces no admissible tool.
+- Environment: macOS Docker Compose; local OWASP Benchmark at
+  `http://host.docker.internal:8446/benchmark/`; provider was local
+  Dolphin3-Cyber through the operator's Google Colab endpoint.
+- Result: **failed; rating unchanged**.
+- Evidence: job `1acebf36-718c-448b-b58a-9b48f63a52e2`, session
+  `f0454ba4-bdb5-4b37-a549-bb7399720e25`; one durable model call succeeded,
+  zero deterministic fallback cycles, zero tool runs, zero candidates, zero
+  validated findings.
+- Root cause: model emitted a valid-but-non-executable `hypothesize` action
+  and put a tool name only in metadata, so recon had no admissible action.
+- Secondary bug: phase execution continued to analysis after recon failed,
+  creating a phase narrative with no authoritative tool run before the
+  integrity gate failed the job.
+- Verification: focused **27 passed**; compile and diff checks passed.
+- Next work: phase-aware action contract/prompt, invented-evidence rejection,
+  and fail-fast phase sequencing before rerunning AI-only 1F.
+
+## PHASE1-EXECUTION-FOUNDATION-AI-CONTRACT-2026-09-04
+
+**Type:** architecture hardening / regression verification
+**Scope:** Phase 1 — AI-native architecture; Execution Foundation 1C–1F
+**Live status:** intentionally paused; local AI provider must be started by
+the operator before 1F acceptance.
+
+### Changes
+
+- Added phase-aware reasoning requirements: recon must return an exact listed
+  `observe`/`run_read_only` tool and an in-response `hypothesis_id`; analysis
+  must return an admissible executable decision or an explicit stop.
+- Added one same-model semantic correction attempt. This retries AI protocol
+  mistakes only; it never creates a deterministic plan.
+- Rejected invented evidence IDs, metadata-only tool selection, missing
+  `action_type`, invalid stop booleans, and unlinked executable actions.
+- Persisted recon reasoning cycles, provider attempts, model action traces, and
+  dispatch outcomes through the same durable contract as analysis cycles.
+- Made Phase 1 fail fast after a canonical phase exception.
+- Isolated offline benchmark fallback configuration from the live config.
+
+### Verification
+
+- Focused reasoning/interactive: **21 passed**.
+- Full regression: **400 passed, 9 warnings** using process-only dummy OOB
+  variables; no live target/provider was contacted.
+- Compile, Compose config, YAML, and diff checks: passed.
+
+### Decision
+
+Implementation/regression verified. **1F is not proven and rating remains
+unchanged.** A real provider-backed authorized run is still required.
+
+## PHASE1-EXECUTION-FOUNDATION-LIVE-ACCEPTANCE-2026-09-08
+
+**Type:** live acceptance / failed gate
+**Scope:** Phase 1 — AI-native architecture; Execution Foundation 1F
+**Target:** authorized local OWASP Benchmark
+**Provider:** Dolphin3-Cyber through the configured local-model tunnel
+**Job/session:** `78342d12-1e7d-404f-a23e-b1412e25b6aa` /
+`4c33f21f-dfa6-4302-a1a3-d3df113e6266`
+
+### What this run proved
+
+- Provider `/health` and `/models` were reachable and returned 200.
+- Live runtime used AI-first reasoning with `deterministic_fallback=false`.
+- Recon model call, latency, action trace, hypothesis linkage, and dispatch
+  outcome were persisted durably.
+- The model selected the registered canonical `waf_behavior_profile` tool and
+  the tool run succeeded.
+- No deterministic fallback cycle was recorded.
+
+### What failed
+
+- The canonical assessment cycle failed with `ReasoningPersistenceError`.
+- The assessment cycle row existed, but its child hypotheses/actions/decisions/
+  model-call/model-trace rows were absent, so the durable assessment lineage is
+  incomplete.
+- The job ended with `Execution integrity failure`; final report/export was not
+  accepted.
+- A post-run real inference request timed out after 120 seconds with zero
+  response bytes even though `/health` stayed 200. Provider health therefore
+  does not prove inference readiness.
+- Candidates: **0**. Validated findings: **0**. These values are inconclusive,
+  not evidence that the benchmark is clean.
+
+### Decision
+
+AI participation and canonical dispatch are live-proven, but **1F is not
+passed** and the rating is unchanged. Next fix is provider restart plus a real
+completion preflight, followed by isolating the exact assessment child-row
+persistence failure before another live run.
+
+## PHASE1-EXECUTION-FOUNDATION-CODE-FIX-2026-09-08
+
+**Type:** backend fix / regression verification
+**Scope:** Phase 1 — AI-native architecture; Execution Foundation 1C–1F
+**Live status:** paused by operator; no provider or target contacted
+
+### Changes
+
+- Assessment persistence now returns a stable `error_code` and bounded
+  `persistence_error_detail` containing the failing table, cause type, and
+  message instead of only `ReasoningPersistenceError`.
+- Terminal job application state now records the structured assessment error
+  code/message, making the next live failure diagnosable from the durable job
+  record.
+- The built-in production LLM factory now passes the reasoning watchdog timeout
+  into `ChatOpenAI`. This prevents the backend watchdog from timing out while
+  the underlying HTTP request remains unbounded and occupies the local model
+  provider.
+- Added focused tests for assessment persistence diagnostics and timeout
+  propagation.
+
+### Verification
+
+- Focused suite: **36 passed**.
+- Full regression: **402 passed, 9 warnings** using process-only dummy OOB
+  variables.
+- Python compile, YAML parse, Compose config, and `git diff --check`: passed.
+
+### Decision
+
+Code and regression checks pass. **Live 1F is still pending; rating unchanged.**
+The operator must rebuild/recreate the backend and worker, restart the same
+Dolphin3-Cyber provider, and run the live acceptance before this fix receives
+any capability credit.
+
+## PHASE1-EXECUTION-FOUNDATION-LIVE-ACCEPTANCE-2026-09-08-CURRENT
+
+**Type:** live acceptance / failed gate
+**Scope:** Phase 1 — AI-native architecture; Execution Foundation 1F
+**Target:** authorized local OWASP Benchmark
+**Provider:** `dolphin3-cyber` through the current configured tunnel
+**Job/session:** `f87c3033-e0f1-4ed1-b669-dd6d22721dc3` /
+`949b5b63-f75b-4106-9b8f-7e9b48876804`
+
+### Verified
+
+- API and worker readiness passed, including `phase1_acceptance_schema`.
+- Provider model listing returned HTTP 200.
+- A direct completion preflight returned HTTP 200 and valid Nexus JSON.
+- Runtime configuration was `ai_first` with `deterministic_fallback=false`.
+
+### Failed
+
+- Recon stopped before the first authoritative tool run.
+- Two durable provider attempts failed with `_GatewayProtocolError`.
+- Reproduced provider behavior for a realistic recon request: empty
+  hypotheses/actions with `stop.triggered=false`.
+- This violates the phase contract requiring an exact registered read-only
+  action linked to an in-response hypothesis when the model does not stop.
+- Durable result: 1 failed cycle, 2 failed model calls, 0 tool runs, 0
+  candidates, 0 validated findings.
+- Export correctly returned `409 report_not_ready` because the job was not done.
+
+### Decision
+
+**1F failed; rating unchanged.** This is not evidence that the benchmark is
+clean. The remaining blocker is model contract adherence during a real recon
+prompt; the HTTP/provider plumbing itself is reachable. Next action is to fix
+the provider prompt/template/model behavior so it emits an admissible recon
+action, then repeat the same live run.
+
+## PHASE1-EXECUTION-FOUNDATION-PROVIDER-CONTRACT-HARDENING-2026-09-08
+
+**Type:** backend contract fix / regression verification
+**Scope:** Phase 1 — AI-native architecture; Execution Foundation 1F
+
+### Changes
+
+- Executable-phase response schema now requires non-empty hypotheses/actions
+  and the fields needed to link an action to a hypothesis.
+- Initial and semantic-retry prompts now include an explicit minimal action
+  template and the actual registered tool names.
+- Local reasoning clients use temperature `0.0`.
+- Deterministic fallback remains disabled.
+
+### Verification
+
+- Focused gateway/model tests: **26 passed**.
+- Full regression with process-only OOB variables: **403 passed, 9 warnings**.
+- Python compilation: passed.
+
+### Decision
+
+Backend fix verified; live 1F remains pending. The external Kaggle/Colab
+provider must apply the same executable schema/grammar when
+`require_executable_action=true`; otherwise the model can still emit the
+empty-but-JSON-valid response observed in the failed run. Rating unchanged.
+
+## PHASE1-EXECUTION-FOUNDATION-LIVE-QWEN-2026-09-08
+
+**Type:** live acceptance / failed gate with partial progress
+**Scope:** Phase 1 — AI-native architecture; Execution Foundation 1F
+**Target:** authorized local OWASP Benchmark
+**Provider:** Qwen3.8 HauhauCS Q4 through configured Kaggle tunnel
+**Job/session:** `8e517836-d585-46bb-95a4-2fc4af14f1e0` /
+`c1535270-b3cf-490f-a14c-2840ec980e2b`
+
+### Proven
+
+- API/worker readiness, target reachability, provider health/models, and
+  executable contract smoke test passed.
+- Real recon AI call succeeded.
+- AI selected and dispatched `httpx_probe` and `browser_screenshot`.
+- Both authoritative tool runs succeeded with durable dispatch outcomes.
+
+### Failed
+
+- The later `ai_reason` cycle timed out twice at the 180-second watchdog.
+- Durable result: 3 reasoning cycles, 4 model calls, 2 model-call timeouts,
+  2 authoritative tool runs, 0 candidates, 0 validated findings.
+- Report remained `blocked` / `review_required` with quality score `0.3333`.
+
+### Decision
+
+**1F remains failed; rating unchanged.** Recon action adherence is live-proven,
+but full execution foundation is not. The next blocker is provider inference
+latency/reliability under the larger analysis prompt. Zero findings are
+inconclusive.
+
+## PHASE1-EXECUTION-FOUNDATION-LIFECYCLE-HARDENING-2026-09-08
+
+**Type:** backend code fix / regression verification
+**Scope:** Phase 1 — AI-native architecture; Execution Foundation 1C–1F
+**Provider/target:** not run by operator request
+
+### Changes
+
+- Phase-aware adaptive reasoning leases separate campaign duration, model
+  invocation deadlines, and tool timeouts.
+- Streaming progress and explicit stream-to-sync negotiation are supported;
+  active-provider serialization and timeout cooldown prevent overlapping local
+  inference after an unconfirmed watchdog timeout.
+- Same-provider watchdog timeouts are not blindly retried, and SDK-level
+  retries are disabled so Nexus remains the single retry authority.
+- Oversized prompts preserve recent evidence rows plus a digest/count loss
+  manifest instead of becoming digest-only context.
+- Reasoning and assessment model calls persist request, phase, transport,
+  progress, timeout, and termination telemetry.
+- JSON-encoded partial/failed phase results now fail the execution-integrity
+  gate before reporting.
+
+### Verification
+
+- Focused lifecycle/AI/execution suite: **86 passed**.
+- Full regression: **409 passed, 9 warnings**.
+- Python compile, YAML parse, Compose config, and `git diff --check`: passed.
+
+### Decision
+
+Backend implementation and regression gates pass. **Live 1F remains
+unproven; rating unchanged.** The operator must recreate API/worker, restart
+the provider, run a real completion preflight, and repeat the authorized
+OWASP Benchmark acceptance.
+
+## REPOSITORY-ORGANIZATION-2026-09-08
+
+**Type:** repository maintenance / documentation cleanup
+**Scope:** source layout, generated artifacts, and project handoff
+
+### Changes
+
+- Canonical context, handoff, scorecard, upgrade ledger, and event log now live
+  under `docs/`.
+- Generated stage outputs are grouped under `results/stages/`; reviewed final
+  artifacts are grouped under `results/final/`.
+- The translation utility now lives under `scripts/`, with a documented
+  repository-root invocation.
+- Added navigation READMEs for `docs/`, `results/`, and `scripts/`.
+- Preserved the existing root README product overview and appended the current
+  service topology, AI-native execution model, scope, evaluation workflow,
+  safety posture, and honest Phase 1F status.
+- Updated benchmark output paths, scorecard document paths, and local junk
+  ignores. Removed tracked `.DS_Store`.
+
+### Verification and decision
+
+- Stale-path scan and old-directory checks passed.
+- Python compile, YAML parse, Compose config, and `git diff --check` passed.
+- Full regression: **409 passed, 9 warnings**.
+- No provider or target was run. **Rating unchanged**; this maintenance work
+  improves reviewability and does not claim a capability increase.

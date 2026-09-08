@@ -4,7 +4,7 @@ TRANSLATE SCRIPT — Indonesian → English Bulk Translation
 Translate Indonesian strings dalam Python files ke English.
 
 Usage:
-    python translate_to_english.py
+    python scripts/translate_to_english.py
 """
 
 import re

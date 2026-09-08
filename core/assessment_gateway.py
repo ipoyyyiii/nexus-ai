@@ -13,11 +13,13 @@ import hashlib
 import json
 import os
 import uuid
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from core.config_loader import get_config
 from core.reasoning_gateway import ReasoningGateway, reasoning_gateway_limits
 from core.structured_contract import ModelCallTraceV1, ReasoningCycleV1
+from core.structured_repository import ReasoningPersistenceError
+from core.redact import redact
 
 
 def _model_id(preferred: str = "") -> str:
@@ -71,6 +73,15 @@ def _attempt_calls(
             metadata={
                 "output_bytes": int(value.get("output_bytes") or 0),
                 "retry_index": max(0, int(value.get("retry_index") or 0)),
+                "request_id": str(value.get("request_id") or ""),
+                "mission_phase": str(value.get("mission_phase") or "assessment"),
+                "timeout_seconds": value.get("timeout_seconds"),
+                "timeout_kind": str(value.get("timeout_kind") or ""),
+                "transport_mode": str(value.get("transport_mode") or "unknown"),
+                "progress_events": int(value.get("progress_events") or 0),
+                "first_progress_ms": value.get("first_progress_ms"),
+                "last_progress_ms": value.get("last_progress_ms"),
+                "termination_confirmed": bool(value.get("termination_confirmed", True)),
                 "purpose": "assessment",
             },
         ).model_dump(mode="json"))
@@ -171,6 +182,8 @@ def run_gateway_assessment(
     repository: Any,
     reasoning_model_id: str = "",
     fallback_model_ids: Optional[Sequence[str]] = None,
+    progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
+    cancellation_check: Optional[Callable[[], bool]] = None,
 ) -> Dict[str, Any]:
     """Run one evidence-grounded assessment through the canonical gateway."""
     primary = _model_id(reasoning_model_id)
@@ -206,6 +219,9 @@ def run_gateway_assessment(
         available_capabilities=[],
         session_id=session_id,
         cycle_id=cycle_id,
+        mission_phase="assessment",
+        progress_callback=progress_callback,
+        cancellation_check=cancellation_check,
     )
     calls = _attempt_calls(response, cycle_id=cycle_id, session_id=session_id, job_id=job_id)
     result: Dict[str, Any] = {
@@ -233,9 +249,27 @@ def run_gateway_assessment(
             model_calls=calls,
         )
     except Exception as exc:
-        result["status"] = "partial"
+        # Assessment persistence is acceptance-critical. Returning only the
+        # exception class made every live failure look identical and forced the
+        # operator to guess whether the cycle, child row, or read-back failed.
+        # Keep a bounded diagnostic so the next run identifies the exact table
+        # and operation without exposing raw prompts or credentials.
+        result["status"] = "failed"
         result["success"] = False
+        result["error_code"] = (
+            getattr(exc, "code", "")
+            or "assessment_persistence_error"
+        )
         result["persistence_error"] = type(exc).__name__
+        if isinstance(exc, ReasoningPersistenceError):
+            result["persistence_error_detail"] = exc.diagnostic()
+        else:
+            result["persistence_error_detail"] = {
+                "cause_type": type(exc).__name__,
+                "cause_message": redact(str(exc))[:1000],
+                "message": redact(str(exc))[:1200],
+            }
+        result["failure_stage"] = "assessment_persistence"
     return result
 
 

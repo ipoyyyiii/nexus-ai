@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 from core import assessment_gateway
+from core.structured_repository import ReasoningPersistenceError
 
 
 class _Dump:
@@ -18,6 +19,14 @@ class _Repository:
     def save_reasoning_result(self, session_id, result):
         self.saved.append((session_id, result))
         return {"reasoning_cycles": 1, "reasoning_model_calls": len(result["model_calls"])}
+
+
+class _FailingRepository(_Repository):
+    def save_reasoning_result(self, session_id, result):
+        raise ReasoningPersistenceError(
+            "reasoning_model_calls",
+            RuntimeError("migration 023 is unavailable"),
+        )
 
 
 def test_assessment_uses_gateway_and_persists_model_call(monkeypatch):
@@ -91,3 +100,66 @@ def test_assessment_fails_explicitly_without_model_configuration(monkeypatch):
 
     assert result["status"] == "failed"
     assert result["error_code"] == "assessment_model_not_configured"
+
+
+def test_assessment_persistence_failure_exposes_bounded_diagnostic(monkeypatch):
+    monkeypatch.setattr(
+        assessment_gateway,
+        "get_config",
+        lambda: {"reasoning": {"primary_model_id": "local-dolphin3-cyber", "fallback_model_ids": []}},
+    )
+
+    response = SimpleNamespace(
+        success=True,
+        status="succeeded",
+        model_id="local-dolphin3-cyber",
+        provider="local",
+        request_digest="request-digest",
+        output_digest="output-digest",
+        hypotheses=[],
+        actions=[],
+        stop=_Dump({
+            "stop_condition_id": "stop-assessment-1",
+            "cycle_id": "assessment-1",
+            "kind": "operator",
+            "triggered": True,
+            "reason": "assessment complete",
+            "evidence_ids": [],
+        }),
+        failure=None,
+        attempts=[_Dump({
+            "attempt": 1,
+            "model_id": "local-dolphin3-cyber",
+            "provider": "local",
+            "status": "succeeded",
+            "latency_ms": 25,
+            "output_bytes": 100,
+            "output_digest": "output-digest",
+            "error_type": "",
+        })],
+    )
+
+    class _Gateway:
+        def __init__(self, **_kwargs):
+            pass
+
+        def reason(self, **_kwargs):
+            return response
+
+    monkeypatch.setattr(assessment_gateway, "ReasoningGateway", _Gateway)
+
+    result = assessment_gateway.run_gateway_assessment(
+        session_id="s-1",
+        job_id="j-1",
+        target="http://fixture.local",
+        goal="assess evidence",
+        phase_results={},
+        repository=_FailingRepository(),
+    )
+
+    assert result["status"] == "failed"
+    assert result["error_code"] == "reasoning_persistence_error"
+    assert result["failure_stage"] == "assessment_persistence"
+    assert result["persistence_error_detail"]["table"] == "reasoning_model_calls"
+    assert result["persistence_error_detail"]["cause_type"] == "RuntimeError"
+    assert "migration 023 is unavailable" in result["persistence_error_detail"]["cause_message"]

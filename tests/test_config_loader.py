@@ -49,7 +49,7 @@ def test_autonomous_web_loop_uses_timeout_budget_without_fixed_action_cap():
 
     reasoning = DEFAULTS["reasoning"]
     assert reasoning["max_model_actions"] == "auto"
-    assert reasoning["provider_retry_attempts"] == 1
+    assert reasoning["provider_retry_attempts"] == 0
     assert reasoning["provider_retry_backoff_seconds"] == 0.5
     assert reasoning["max_actions_per_cycle"] == "auto"
 

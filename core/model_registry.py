@@ -17,6 +17,7 @@ def _or(model_slug: str, temperature: float = 0.2) -> ChatOpenAI:
         api_key=os.environ.get("OPENROUTER_API_KEY"),
         base_url=OPENROUTER_BASE,
         temperature=temperature,
+        max_retries=0,
         default_headers=OPENROUTER_HEADERS,
     )
 
@@ -461,7 +462,11 @@ def build_chat_llm(
             model=slug,
             api_key=_local_api_key(),
             base_url=base_url,
-            temperature=0.3,
+            # Canonical reasoning uses a strict JSON/action contract. A
+            # non-zero temperature makes small local models much more likely
+            # to emit an empty or semantically incomplete plan.
+            temperature=0.0,
+            max_retries=0,
             default_headers={"ngrok-skip-browser-warning": "true"},
             **timeout_kwargs,
         )
@@ -472,7 +477,8 @@ def build_chat_llm(
             model=default_local["slug"],
             api_key=_local_api_key(),
             base_url=_local_base_url(),
-            temperature=0.3,
+            temperature=0.0,
+            max_retries=0,
             default_headers={"ngrok-skip-browser-warning": "true"},
             **timeout_kwargs,
         )
@@ -488,7 +494,8 @@ def build_chat_llm(
             model=model["slug"],
             api_key=_local_api_key(),
             base_url=base_url,
-            temperature=0.3,
+            temperature=0.0,
+            max_retries=0,
             default_headers={"ngrok-skip-browser-warning": "true"},
             **timeout_kwargs,
         )
@@ -499,6 +506,7 @@ def build_chat_llm(
             api_key=os.environ.get("TOKENHUB_API_KEY"),
             base_url=os.environ.get("TOKENHUB_API_BASE"),
             temperature=0.3,
+            max_retries=0,
             **timeout_kwargs,
         )
 
@@ -512,7 +520,8 @@ def build_chat_llm(
                     model=m["slug"],
                     api_key=_local_api_key(),
                     base_url=_local_base_url(),
-                    temperature=0.3,
+                    temperature=0.0,
+                    max_retries=0,
                     default_headers={"ngrok-skip-browser-warning": "true"},
                     **timeout_kwargs,
                 )
@@ -523,6 +532,7 @@ def build_chat_llm(
         api_key=os.environ.get("OPENROUTER_API_KEY"),
         base_url=OPENROUTER_BASE,
         temperature=0.3,
+        max_retries=0,
         default_headers=OPENROUTER_HEADERS,
         **timeout_kwargs,
     )

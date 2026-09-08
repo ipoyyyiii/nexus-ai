@@ -254,3 +254,109 @@ Reports available in 3 formats:
 - **Markdown** (GFM) — Default, with severity badges and collapsible sections
 - **PDF** — Via fpdf2 library
 - **DOCX** — Via python-docx library
+
+## Current Implementation and Evaluation Status
+
+The sections above describe the original product vision, configured coverage,
+and tool catalog. The current implementation has evolved into an AI-native
+execution architecture:
+
+```text
+Next.js UI
+    │
+    ▼
+FastAPI API ───────────────► Supabase/PostgreSQL
+    │                         durable sessions, jobs,
+    │                         evidence, validation, telemetry
+    ▼
+Durable execution worker
+    │
+    ├── AI Reasoning Gateway
+    │      hypotheses, next actions, adaptation, retest proposals
+    ├── Scope / authorization / lifecycle controls
+    ├── Structured HTTP, browser, recon, auth, API, and OOB tools
+    └── Evidence → validation → report pipeline
+```
+
+The AI model is the reasoning and planning layer. It proposes hypotheses and
+actions, while scope enforcement, action accounting, evidence integrity,
+validation, cancellation, cleanup, and durable audit records remain outside
+the model. A successful provider health check is not the same as a validated
+finding.
+
+Current Docker services:
+
+| Service | Role | Default port |
+|---|---|---:|
+| `pentest-ai-backend` | FastAPI control plane and API | `8000` |
+| `nexus-worker` | Durable background execution | internal |
+| `nexus-frontend` | Next.js operator UI | `3000` |
+
+The local provider is OpenAI-compatible and can run on an authorized Kaggle or
+Colab GPU runtime through `NEXUS_LOCAL_LLM_BASE_URL`. Provider availability is
+separate from backend readiness.
+
+Use Nexus only against targets you own or are explicitly authorized to test.
+The platform records scope and lifecycle state, supports cancellation and
+cleanup, redacts sensitive material, and fails closed when authorization or
+evidence is insufficient.
+
+### Repository layout
+
+```text
+core/                   orchestration, reasoning, validation, persistence
+tools/                  security-tool adapters and structured runners
+engines/                reusable analysis engines
+benchmarks/             benchmark fixtures and evaluators
+tests/                  regression and acceptance tests
+config/                 runtime and toolchain configuration
+migrations/             additive database migrations
+frontend-pentest/       Next.js operator interface
+docs/                   handoff, memory, ledger, event log, and scorecard
+results/                reviewed benchmark and stage artifacts
+scripts/                repository maintenance utilities
+stored_reports/         local runtime reports; ignored by Git
+```
+
+### Evaluation commands
+
+Repeatable stage results are kept under `results/stages/`:
+
+```bash
+python -m core.evaluation_cli run \
+  --suite stage27-recon-closure \
+  --mode deterministic \
+  --trials 3 \
+  > results/stages/stage27-result.json
+```
+
+For an explicitly authorized local-lab matrix:
+
+```bash
+python -m core.live_lab_matrix --confirm
+```
+
+This matrix proves reachability and surface only; it is not a substitute for
+full vulnerability detection, authenticated workflows, or hidden-label
+benchmark evaluation.
+
+### Project records
+
+- [`docs/PROJECT_HANDOFF.md`](docs/PROJECT_HANDOFF.md) — architecture, scope,
+  decisions, and current handoff.
+- [`docs/NEXUS_CONTEXT_MEMORY.md`](docs/NEXUS_CONTEXT_MEMORY.md) — persistent
+  Phase 0–6 roadmap and resume context.
+- [`docs/NEXUS_UPGRADE_LEDGER.md`](docs/NEXUS_UPGRADE_LEDGER.md) — upgrade
+  history, evidence, and limitations.
+- [`docs/NEXUS_EVENT_LOG.md`](docs/NEXUS_EVENT_LOG.md) — append-only project
+  event log.
+- [`docs/NEXUS_SCORECARD.yaml`](docs/NEXUS_SCORECARD.yaml) — evaluation
+  criteria and rating decisions.
+- [`results/README.md`](results/README.md) — generated-artifact policy.
+
+The current scorecard keeps unproven areas—such as authenticated identity
+matrices, deep business-logic chains, impact proof, and full live-lab recall—
+separate from code-only test results. Phase 1F live acceptance remains an
+explicit evidence gate and is not marked passed until a live provider run
+proves durable reasoning, dispatch, tool outcomes, and validation integrity
+together.

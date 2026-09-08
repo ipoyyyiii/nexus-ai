@@ -1,6 +1,6 @@
 schema_version: "1.0"
 scorecard_id: nexus-world-class-web-pentest
-last_updated: "2026-09-03"
+last_updated: "2026-09-08"
 purpose: >-
   Evidence-backed scorecard for Nexus. It measures capability changes; it does
   not treat code volume, job completion, tool invocation, or candidate count as
@@ -890,7 +890,7 @@ live_acceptance_records:
     score_decision: unchanged
 
 context_memory:
-  file: NEXUS_CONTEXT_MEMORY.md
+  file: docs/NEXUS_CONTEXT_MEMORY.md
   status: canonical
   purpose: >-
     Preserve the official Phase 0–6 roadmap, Phase 1 sub-phase structure,
@@ -899,7 +899,7 @@ context_memory:
   rating_effect: unchanged
 
 event_log:
-  file: NEXUS_EVENT_LOG.md
+  file: docs/NEXUS_EVENT_LOG.md
   status: append_only
   required_for:
     - run_or_test
@@ -1451,3 +1451,312 @@ live_acceptance_records:
       - Provider-backed authorized live testing is still required.
       - This record does not measure hidden-label recall/precision or target cleanliness.
       - Phase 2–5 capability measurements remain outside this checkpoint.
+
+  - id: PHASE1-EXECUTION-FOUNDATION-AI-ONLY-LIVE-2026-09-04
+    date: "2026-09-04"
+    phase: "Phase 1"
+    sub_phase: "Execution Foundation"
+    status: failed
+    comparable_to_baseline: false
+    provider_and_target:
+      provider: local-dolphin3-cyber-via-google-colab
+      target: http://host.docker.internal:8446/benchmark/
+      job_id: 1acebf36-718c-448b-b58a-9b48f63a52e2
+      session_id: f0454ba4-bdb5-4b37-a549-bb7399720e25
+      deterministic_fallback: false
+    live_acceptance:
+      provider_reachable: true
+      durable_model_calls: 1
+      deterministic_fallback_cycles: 0
+      tool_runs: 0
+      candidates: 0
+      validated_findings: 0
+      terminal_status: error
+      failure_stage: recon
+      failure_reason: model_returned_hypothesize_without_canonical_tool_name
+    verification:
+      focused_tests: 27
+      focused_tests_status: passed
+      syntax_compile: passed
+      git_diff_check: passed
+      runtime_health: healthy
+    gate:
+      implementation: not_scored
+      regression: pass
+      live_1f: fail
+    score_decision: unchanged
+    limitations:
+      - This was not a full vulnerability coverage result because recon produced no authoritative tool run.
+      - Model output was schema-valid but semantically non-executable for the recon phase.
+      - The phase pipeline must stop immediately after a recon failure before the next live run.
+
+  - id: PHASE1-EXECUTION-FOUNDATION-CONTRACT-HARDENING-2026-09-04
+    date: "2026-09-04"
+    phase: "Phase 1"
+    sub_phase: "Execution Foundation"
+    status: implementation_verified_live_pending
+    comparable_to_baseline: false
+    provider_and_target:
+      provider: offline_by_operator_request
+      target_workflow: not_run
+    changes:
+      - phase_aware_recon_and_analysis_action_contract
+      - ai_only_semantic_correction_retry
+      - invented_evidence_and_metadata_only_tool_rejection
+      - durable_recon_cycle_call_trace_and_dispatch_outcome
+      - fail_fast_phase_sequencing
+      - isolated_offline_benchmark_fallback_configuration
+    verification:
+      focused_tests: 21
+      full_regression_tests: 400
+      full_regression_warnings: 9
+      syntax_compile: passed
+      compose_config: passed
+      yaml_parse: passed
+      git_diff_check: passed
+      provider_inference: not_run
+      live_target_workflow: not_run
+    gate:
+      implementation: pass
+      regression: pass
+      live_1f: not_proven
+    score_decision: unchanged
+    limitations:
+      - A fresh provider-backed authorized 1F run is still required.
+      - This checkpoint does not measure recall, precision, validated findings, or target cleanliness.
+      - Phase 2–5 capability measurements remain outside this checkpoint.
+  - id: PHASE1-EXECUTION-FOUNDATION-LIVE-ACCEPTANCE-2026-09-08
+    date: "2026-09-08"
+    phase: "Phase 1"
+    sub_phase: "Execution Foundation"
+    status: failed_gate
+    comparable_to_baseline: false
+    provider_and_target:
+      provider: dolphin3-cyber_via_configured_local_tunnel
+      target_workflow: authorized_local_owasp_benchmark
+      job_id: "78342d12-1e7d-404f-a23e-b1412e25b6aa"
+      session_id: "4c33f21f-dfa6-4302-a1a3-d3df113e6266"
+    configuration:
+      deterministic_fallback: false
+      reasoning_control_mode: ai_first
+      explicit_scope_session: true
+    live_evidence:
+      api_worker_readiness: passed
+      provider_health: passed
+      provider_models: passed
+      durable_ai_recon_call: passed
+      canonical_ai_action: passed
+      canonical_tool_dispatch: passed
+      deterministic_fallback_cycles: 0
+      durable_tool_runs: 3
+      authoritative_recon_tool_runs: 1
+      candidates: 0
+      validated_findings: 0
+    gate:
+      ai_participation: pass
+      canonical_dispatch: pass
+      assessment_persistence: fail
+      report_export: not_reached
+      live_1f: fail
+    failure_reasons:
+      - ReasoningPersistenceError_on_canonical_assessment_cycle
+      - assessment_child_rows_not_persisted
+      - post_run_real_inference_request_timed_out_after_120_seconds
+      - health_endpoint_did_not_prove_inference_readiness
+    score_decision: unchanged
+    limitations:
+      - Zero findings are inconclusive because the canonical assessment did not complete.
+      - The exact failing assessment persistence operation still needs tracing.
+      - Provider must be restarted and tested with a real completion before rerun.
+  - id: PHASE1-EXECUTION-FOUNDATION-CODE-FIX-2026-09-08
+    date: "2026-09-08"
+    phase: "Phase 1"
+    sub_phase: "Execution Foundation"
+    status: implementation_verified_live_pending
+    comparable_to_baseline: false
+    provider_and_target:
+      provider: not_run_by_operator_request
+      target_workflow: not_run
+    changes:
+      - bounded_assessment_persistence_error_diagnostics
+      - durable_terminal_assessment_error_code_and_message
+      - production_provider_timeout_propagation
+      - focused_regression_coverage
+    verification:
+      focused_tests: 36
+      full_regression_tests: 402
+      full_regression_warnings: 9
+      syntax_compile: passed
+      compose_config: passed
+      yaml_parse: passed
+      git_diff_check: passed
+      provider_inference: not_run
+      live_target_workflow: not_run
+      docker_rebuild_or_recreate: not_run
+    gate:
+      implementation: pass
+      regression: pass
+      live_1f: not_proven
+    score_decision: unchanged
+    limitations:
+      - Live provider completion and assessment persistence are not re-proven yet.
+      - The next live run must verify the new durable table/cause diagnostic.
+      - This code checkpoint does not measure findings, recall, precision, or report export.
+
+  - id: PHASE1-EXECUTION-FOUNDATION-LIVE-ACCEPTANCE-CURRENT-2026-09-08
+    date: "2026-09-08"
+    phase: "Phase 1"
+    sub_phase: "Execution Foundation"
+    status: failed_gate
+    comparable_to_baseline: false
+    provider_and_target:
+      provider: dolphin3-cyber_via_configured_local_tunnel
+      target: http://host.docker.internal:8446/benchmark
+      job_id: "f87c3033-e0f1-4ed1-b669-dd6d22721dc3"
+      session_id: "949b5b63-f75b-4106-9b8f-7e9b48876804"
+    configuration:
+      deterministic_fallback: false
+      reasoning_control_mode: ai_first
+      explicit_scope_session: true
+    live_evidence:
+      api_worker_readiness: passed
+      provider_models: passed
+      direct_completion_preflight: passed
+      durable_reasoning_cycles: 1
+      failed_model_calls: 2
+      authoritative_tool_runs: 0
+      candidates: 0
+      validated_findings: 0
+      report_export: not_ready_409
+    gate:
+      provider_reachability: pass
+      ai_recon_contract: fail
+      canonical_dispatch: not_reached
+      assessment_persistence: not_reached
+      report_export: not_reached
+      live_1f: fail
+    failure_reasons:
+      - provider_returned_empty_hypotheses_and_actions_with_stop_false
+      - gateway_rejected_non_executable_recon_decision
+      - recon_failed_closed_before_authoritative_tool_dispatch
+    score_decision: unchanged
+    limitations:
+      - This is not a vulnerability coverage result; the target was not meaningfully scanned.
+      - Zero findings are inconclusive, not evidence of a clean benchmark.
+      - Provider HTTP health/model listing does not guarantee admissible reasoning behavior.
+      - Next run requires provider contract adherence for a registered recon action.
+
+  - id: PHASE1-EXECUTION-FOUNDATION-PROVIDER-CONTRACT-HARDENING-2026-09-08
+    date: "2026-09-08"
+    phase: "Phase 1"
+    sub_phase: "Execution Foundation"
+    status: backend_verified_provider_pending
+    comparable_to_baseline: false
+    changes:
+      - executable_phase_schema_minimums_and_required_action_fields
+      - concrete_phase_aware_system_and_semantic_retry_prompt
+      - local_reasoning_temperature_zero
+      - deterministic_fallback_remains_disabled
+    verification:
+      focused_gateway_model_tests: 26
+      full_regression_tests: 403
+      full_regression_warnings: 9
+      python_compile: passed
+      provider_notebook_deployed: not_yet
+      live_1f: not_proven
+    gate:
+      backend_contract: pass
+      provider_executable_grammar: pending
+      live_1f: not_proven
+    score_decision: unchanged
+    limitations:
+      - The provider notebook is external to this workspace and still needs the executable grammar/schema patch.
+      - This code verification does not prove live model action adherence or vulnerability coverage.
+
+  - id: PHASE1-EXECUTION-FOUNDATION-LIVE-QWEN-2026-09-08
+    date: "2026-09-08"
+    phase: "Phase 1"
+    sub_phase: "Execution Foundation"
+    status: failed_gate_partial_progress
+    comparable_to_baseline: false
+    provider_and_target:
+      provider: qwen3.8_hauhaucs_via_configured_kaggle_tunnel
+      target: http://host.docker.internal:8446/benchmark
+      job_id: "8e517836-d585-46bb-95a4-2fc4af14f1e0"
+      session_id: "c1535270-b3cf-490f-a14c-2840ec980e2b"
+    configuration:
+      deterministic_fallback: false
+      reasoning_control_mode: ai_first
+      explicit_scope_session: true
+    live_evidence:
+      api_worker_readiness: passed
+      target_reachable_from_api_container: passed
+      provider_health: passed
+      provider_models: passed
+      executable_contract_smoke: passed
+      durable_reasoning_cycles: 3
+      durable_model_calls: 4
+      failed_model_calls: 2
+      authoritative_tool_runs: 2
+      successful_authoritative_tool_runs: 2
+      model_action_traces: 2
+      candidates: 0
+      validated_findings: 0
+      report_status: blocked
+      report_quality_status: review_required
+      report_quality_score: 0.3333
+    gate:
+      provider_reachability: pass
+      ai_recon_contract: pass
+      canonical_recon_dispatch: pass
+      analysis_reasoning_reliability: fail
+      report_export: blocked_by_report_readiness
+      live_1f: fail
+    failure_reasons:
+      - ai_reason_cycle_timed_out_twice_at_180_seconds
+      - all_ai_providers_failed_in_analysis_cycle
+      - analysis_did_not_complete
+    score_decision: unchanged
+    limitations:
+      - Zero findings are inconclusive because analysis did not complete.
+      - This run proves recon action adherence, not full vulnerability coverage.
+      - Next fix must address provider inference latency/reliability for the larger analysis prompt.
+
+  - id: PHASE1-EXECUTION-FOUNDATION-LIFECYCLE-HARDENING-2026-09-08
+    date: "2026-09-08"
+    phase: "Phase 1"
+    sub_phase: "Execution Foundation"
+    status: implementation_verified_live_pending
+    comparable_to_baseline: false
+    provider_and_target:
+      provider: not_run_by_operator_request
+      target_workflow: not_run
+    changes:
+      - phase_aware_adaptive_reasoning_deadlines
+      - stream_progress_and_stream_to_sync_negotiation
+      - active_provider_serialization_and_timeout_cooldown
+      - no_blind_retry_after_unconfirmed_watchdog_timeout
+      - sdk_retry_disabled_in_model_registry
+      - evidence_preserving_prompt_compaction_with_loss_manifest
+      - durable_reasoning_and_assessment_lifecycle_telemetry
+      - fail_closed_json_encoded_partial_phase_results
+    verification:
+      focused_tests: 86
+      full_regression_tests: 409
+      full_regression_warnings: 9
+      syntax_compile: passed
+      yaml_parse: passed
+      compose_config: passed
+      git_diff_check: passed
+      provider_inference: not_run
+      live_target_workflow: not_run
+      docker_rebuild_or_recreate: not_run
+    gate:
+      implementation: pass
+      regression: pass
+      live_1f: not_proven
+    score_decision: unchanged
+    limitations:
+      - Provider-side inference still requires a fresh live completion and acceptance run.
+      - Opaque remote inference cannot be forcibly killed from Python; unconfirmed calls are isolated and not retried on the same provider slot.
+      - This checkpoint does not measure findings, recall, precision, or report export.

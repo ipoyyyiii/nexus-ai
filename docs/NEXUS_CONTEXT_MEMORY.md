@@ -413,3 +413,183 @@ acceptance remains unproven.** The rating is unchanged. A fresh provider-backed
 authorized run is still required to prove durable AI participation, real retry
 recovery, complete tool outcomes, report/export completion, and the machine 1F
 gate. Phase 2–5 capability measurements remain outside this checkpoint.
+
+## Persistent context — AI-only 1F run — 2026-09-04
+
+The deployed runtime was rebuilt with deterministic fallback disabled. The
+authorized OWASP Benchmark live run used `local-dolphin3-cyber` and reached
+the provider successfully: one durable model call succeeded in about 30.3s.
+The model did not select an executable recon action. It returned
+`action_type=hypothesize` with no canonical tool name and placed a scanner name
+only in metadata. Consequently the AI-only run correctly used no deterministic
+fallback (`deterministic_fallback_cycles=0`) and failed closed before any
+authoritative tool execution. This is a model/action-semantics failure, not a
+Colab disconnect, Q5 loading failure, Docker health failure, or transport
+failure.
+
+Important follow-up: `run_phase1` currently continues into analysis after a
+recon exception, which produced a phase narrative with no tool run before the
+integrity gate rejected the job. Fix this sequencing bug, strengthen the
+phase-aware reasoning contract, and validate/reject invented evidence IDs.
+Do not count this run as a 1F pass or as vulnerability coverage evidence.
+
+## Persistent context — Execution Foundation contract hardening — 2026-09-04
+
+The operator paused live testing until the local AI model is manually started.
+The code-only checkpoint closed the known 1C–1F implementation gaps without
+using a deterministic fallback and without contacting a target.
+
+The important architectural rule is now explicit: the first AI decision of a
+canonical phase is also its provider preflight. For recon, a non-stop response
+must contain an exact registered recon tool (`observe` or `run_read_only`) and
+an exact hypothesis ID that exists in the same response. A tool name placed
+only in metadata is invalid. Evidence references must already exist in the
+bounded context. Invalid semantic output gets one AI-only correction attempt;
+otherwise the phase fails closed.
+
+Recon AI telemetry is persisted durably with model attempts, action traces, and
+the authoritative tool dispatch outcome. A recon exception now stops Phase 1
+before analysis, preventing a false later-phase narrative.
+
+Verification is **400 passed, 9 warnings** for the full repository suite,
+plus compile, YAML, Compose config, and diff checks. This proves implementation
+and regression only. Live 1F and all vulnerability coverage/rating claims
+remain pending until the operator starts the local provider.
+
+## Persistent context — Live 1F acceptance — 2026-09-08
+
+The operator restarted the configured deployment and a fresh authorized local
+OWASP Benchmark run was executed with AI-first reasoning and
+`deterministic_fallback=false`. Provider `/health` and `/models` returned 200,
+and API/worker readiness was healthy.
+
+This run materially proved AI participation: a durable recon model call using
+`dolphin3-cyber` succeeded; the model emitted a canonical registered
+`run_read_only` action for `waf_behavior_profile` linked to hypothesis `h1`;
+the authoritative dispatch succeeded; and no deterministic fallback cycle was
+recorded. A later model cycle also persisted and stopped by model decision.
+
+The run did **not** pass 1F. The canonical assessment cycle failed with
+`ReasoningPersistenceError`. The cycle row exists, but child hypothesis,
+action, decision, model-call, and model-trace rows were not persisted. The job
+ended with `Execution integrity failure`, so report/export acceptance was not
+reached. There were 0 candidates and 0 validated findings; treat them as
+inconclusive, not as a clean-target result.
+
+Afterward, a direct real completion request timed out at 120 seconds with zero
+response bytes while `/health` stayed 200. Therefore the provider URL and HTTP
+health are not the primary blocker, but inference readiness is not reliable;
+restart the Colab runtime/provider and require a real completion probe before
+the next job. Then isolate the exact assessment child-persistence failure.
+
+Score remains unchanged. Do not call Execution Foundation 1F passed until a
+fresh run completes canonical assessment persistence, tool outcomes, evidence,
+and report/export without integrity errors.
+
+## Persistent context — Code-side 1F blocker fix — 2026-09-08
+
+Before the next live run, the backend was fixed without contacting the provider
+or target. Assessment persistence errors now expose a stable error code and a
+bounded diagnostic containing the failing table, cause type, and cause message.
+The terminal workflow stores that diagnostic in the durable job state. This
+removes the previous blind spot where every assessment failure appeared only as
+`ReasoningPersistenceError`.
+
+The production reasoning factory also passes the configured gateway timeout to
+the underlying ChatOpenAI client. The gateway watchdog and provider HTTP call
+are now bounded consistently, reducing the chance that a timed-out request
+continues behind the local provider's inference lock.
+
+Verification: focused **36 passed**; full **402 passed, 9 warnings**; compile,
+YAML, Compose config, and diff checks passed. No live provider/target was run,
+and no Docker image/container was rebuilt or recreated.
+
+Live 1F and the rating remain unchanged until the operator rebuilds/recreates,
+restarts the same Dolphin3-Cyber provider, and completes the authorized live
+acceptance.
+
+## Persistent context — Current live 1F result — 2026-09-08
+
+The current recreated API/worker was tested against the authorized local OWASP
+Benchmark with `ai_first` and `deterministic_fallback=false`. Readiness, model
+listing, and a direct provider completion preflight passed. The actual job did
+not pass: recon failed closed before any authoritative tool run.
+
+Durable reasoning shows two `_GatewayProtocolError` attempts. A realistic
+provider reproduction returned empty `hypotheses` and `actions` while
+`stop.triggered=false`. That is not a transport failure and not a valid stop;
+Phase 1F requires an exact registered read-only action linked to a hypothesis
+in this state. The backend correctly refused to invent a deterministic plan.
+
+Current live result: 1 failed reasoning cycle, 2 failed model calls, 0 tool
+runs, 0 candidates, 0 validated findings, and export `409 report_not_ready`.
+The zero findings are inconclusive. Phase 1F is still failed and rating is
+unchanged. The next fix must target the provider's recon-prompt behavior
+(prompt/template/model adherence), followed by the same live acceptance run.
+
+## Persistent context — Provider contract hardening — 2026-09-08
+
+Backend code now makes executable-phase requirements explicit in the provider
+schema and prompts: non-empty hypothesis/action arrays, exact tool linkage,
+and an AI-only semantic retry containing a concrete valid action template.
+Local reasoning temperature is now `0.0`. Focused tests passed **26/26** and
+full regression passed **403 tests with 9 warnings**.
+
+This does not yet complete the fix because the model server is an external
+Kaggle/Colab notebook. That notebook must inspect the incoming
+`require_executable_action` flag and apply an executable JSON grammar/schema
+with `minItems: 1` plus required `tool_name` and `hypothesis_id`. Until that
+provider-side deployment is done and the executable contract smoke test passes,
+Phase 1F remains failed/unproven and rating remains unchanged.
+
+## Persistent context — Qwen live 1F result — 2026-09-08
+
+The corrected Qwen3.8 HauhauCS provider passed health, model listing, and the
+executable contract smoke test. A fresh authorized OWASP Benchmark run was
+executed with `ai_first` and `deterministic_fallback=false`.
+
+This run proves the previous recon contract blocker is fixed in live use: the
+real recon model call succeeded, emitted two linked actions (`httpx_probe` and
+`browser_screenshot`), and both authoritative tool runs succeeded with durable
+dispatch outcomes.
+
+Phase 1F still failed later. The canonical `ai_reason` cycle made two provider
+attempts and both timed out at the 180-second reasoning watchdog. The advisory
+assessment stopped without capabilities because the analysis cycle had failed.
+Durable result: 3 reasoning cycles, 4 model calls, 2 timeout failures, 2
+authoritative tool runs, 0 candidates, 0 validated findings, and a blocked
+report with quality score `0.3333`.
+
+The zero findings are inconclusive; analysis did not complete. Provider
+reachability and executable recon adherence are now proven. The remaining 1F
+blocker is Qwen inference latency/reliability on the larger analysis prompt.
+Rating remains unchanged.
+
+## Persistent context — Lifecycle hardening after Qwen timeout — 2026-09-08
+
+The backend now separates the campaign wall-clock from each model-invocation
+lease and each tool timeout. Reasoning leases are phase-aware and adaptive;
+the configured defaults are recon 420s, vulnerability analysis 900s, and
+assessment 600s, with a bounded prompt-size allowance and a 1800s ceiling.
+The autonomous mission may use the durable execution budget instead of an
+arbitrary 900s inner cap.
+
+The gateway now records request ID, phase, transport mode, progress events,
+first/last progress, timeout kind, and whether provider termination was
+confirmed. It can consume provider streaming progress and falls back to the
+current synchronous notebook endpoint only when streaming is explicitly
+rejected. A watchdog timeout with unconfirmed termination is not blindly
+retried; the provider slot remains isolated/cooldown-protected so a second
+inference cannot queue behind the first. SDK-level retries are disabled.
+
+Oversized prompts are compacted while retaining recent evidence-bearing rows
+and a digest/count manifest. They are no longer reduced to a digest-only
+context that leaves the AI without observations. Assessment and execution
+integrity paths persist the same lifecycle diagnostics and fail closed on
+JSON-encoded partial/failed phase results.
+
+Verification is **86 focused tests passed** and **409 full regression tests
+passed with 9 warnings**; compile, YAML, Compose, and diff checks passed. No
+provider or target was contacted in this checkpoint. Phase 1F remains
+unproven and the score remains unchanged until the operator recreates the
+backend/worker, restarts the provider, and repeats live acceptance.
